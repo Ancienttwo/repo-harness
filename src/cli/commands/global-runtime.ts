@@ -12,13 +12,13 @@ import { checkSeatRoutingModels, seatsRanges } from '../../effects/board/seats-c
 import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "fs";
 import { upsertManagedBlock } from "../../core/adoption/managed-block";
 import { assertConfigurationPath } from "../installer/configuration-ownership";
-import { runtimeStateIgnoreOperation, userExcludesFilePath } from "../../effects/adoption/gitignore-plan";
+import { ignoreBlockProof, runtimeStateIgnoreOperation, userExcludesFilePath } from "../../effects/adoption/gitignore-plan";
 import { sha256Hex } from "../../core/evidence/sha256";
 import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { syncWazaSharedRules, wazaStagingRulesAbsent } from "../installer/waza-rules";
-import { applyGlobalContextRefresh, GLOBAL_RULES_BEGIN, GLOBAL_RULES_END, globalContextPath, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
+import { applyGlobalContextRefresh, GLOBAL_RULES_BEGIN, GLOBAL_RULES_END, globalContextPath, preflightGlobalContextRefresh, type GlobalContextRefreshPlan, type ReportLanguageFlag } from "../installer/global-context";
 import { CLI_NAME, namesRetiredCli, RETIRED_CLI_NAME } from "../../core/skill-surface/cli-name";
 import { shellQuote } from "../../core/shell-quote";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
@@ -996,7 +996,7 @@ function retireCliLink(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
 }
 
 /** Update rewrites only the files that it manages; a user-owned call of the retired command gets a notice. */
-function findRetiredCliCalls(env: NodeJS.ProcessEnv, target: InstallTargetSpec): GlobalRuntimeStep {
+function findRetiredCliCalls(env: NodeJS.ProcessEnv, target: InstallTargetSpec, globalRules: GlobalContextRefreshPlan): GlobalRuntimeStep {
   const step = RETIRED_CLI_REFERENCES_STEP;
   const home = homeDir(env);
   const hosts = hostIds(target);
@@ -1012,10 +1012,13 @@ function findRetiredCliCalls(env: NodeJS.ProcessEnv, target: InstallTargetSpec):
       unread.push(`${path} (${(error as NodeJS.ErrnoException).code ?? 'unreadable'})`);
       return [];
     }
-    // Update writes the managed rules block itself, so the scan skips the span between its markers.
+    // The refresh writes a proved rules block, so the scan skips its span. A block that the
+    // refresh keeps unwritten (edited, or without a recorded language) is user text.
+    const kept = globalRules.files.some((file) => file.path === path && file.outcome === 'skipped'
+      && (file.state === 'managed-stale' || file.state === 'managed-unrecorded'));
     let managed = false;
     return text.split('\n').flatMap((line, index) => {
-      const skip = managed || line.includes(GLOBAL_RULES_BEGIN);
+      const skip = !kept && (managed || line.includes(GLOBAL_RULES_BEGIN));
       managed = skip && !line.includes(GLOBAL_RULES_END);
       return !skip && namesRetiredCli(line) ? [`${path}:${index + 1}`] : [];
     });
@@ -1047,8 +1050,12 @@ function writeRuntimeIgnoreRules(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   }
   try {
     const existing = existsSync(target.path) ? readFileSync(target.path, 'utf-8') : '';
-    const update = upsertManagedBlock(existing, runtimeStateIgnoreOperation(target.path));
+    const operation = runtimeStateIgnoreOperation(target.path);
+    const update = upsertManagedBlock(existing, operation, ignoreBlockProof(operation));
     if (!update.ok) return { step, status: 'failed', detail: `${target.path}: ${update.error}` };
+    if (update.kept !== undefined) {
+      return { step, status: 'ok', detail: `${target.path}: kept the edited block "${update.kept}"; it differs from every released block, so update does not change it. Delete the block, then run rh update again to get the current one` };
+    }
     if (!update.changed) return { step, status: 'ok', detail: `${target.path}: current` };
     mkdirSync(dirname(target.path), { recursive: true });
     writeFileSync(target.path, update.content!);
@@ -2006,7 +2013,7 @@ export function runGlobalRuntimeSetup(
   steps.push({ step: GLOBAL_RULES_REFRESH_STEP, ...applyGlobalContextRefresh(globalRules, homeDir(env)) });
   if (steps.at(-1)?.status === "failed") return finalizeRuntimeResult(steps);
   // After the refresh, so the managed block is current and every remaining call is in user text.
-  if (updateMode) steps.push(findRetiredCliCalls(env, target));
+  if (updateMode) steps.push(findRetiredCliCalls(env, target, globalRules));
 
   const refreshExternalSkills = opts.externalSkills === true;
   if (refreshExternalSkills) {

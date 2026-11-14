@@ -1,8 +1,9 @@
 import { describe, test, expect } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, relative } from "path";
 import { spawnSync } from "child_process";
+import { RETIRED_PACKAGE_SCRIPT_KEYS } from "../src/core/adoption/package-scripts";
 
 const ROOT = join(import.meta.dir, "..");
 const SCAFFOLD_PARITY_TIMEOUT_MS = 15000;
@@ -161,7 +162,90 @@ describe("create-project-dirs scaffold parity", () => {
         expect(scripts.test).toBe("bun test");
         expect(scripts["check:task-sync"]).toBeUndefined();
         expect(scripts["check:task-workflow"]).toBe(command.startsWith("repo-harness") ? undefined : command);
+        if (!command.startsWith("repo-harness")) {
+          expect(result.stderr).toContain('[repo-harness] kept package.json script check:task-workflow: "bun run custom-workflow.ts"');
+        }
       }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("init replaces a released package script value and keeps a customized one with a notice", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "scaffold-released-script-"));
+    try {
+      writeFileSync(join(cwd, "package.json"), JSON.stringify({
+        scripts: { "check:brain": "repo-harness brain check", "sync:brain": "bun run my-sync.ts" },
+      }));
+      const result = spawnSync("bash", ["-c", 'source "$1"; pi_ensure_task_sync "$2" 0 apply',
+        "bash", join(ROOT, "scripts/lib/project-init-lib.sh"), cwd], { cwd, encoding: "utf-8" });
+      expect(result.status).toBe(0);
+      const scripts = JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8")).scripts;
+      expect(scripts["check:brain"]).toBe("rh brain check");
+      expect(scripts["sync:brain"]).toBe("bun run my-sync.ts");
+      expect(result.stderr).toContain('[repo-harness] kept package.json script sync:brain: "bun run my-sync.ts"');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("bash init fails closed before a write when the released values file is missing or malformed", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "scaffold-released-values-"));
+    try {
+      // The lib is sourced from its own directory, so BASH_SOURCE has no directory part.
+      mkdirSync(join(cwd, "pkg/scripts/lib"), { recursive: true });
+      mkdirSync(join(cwd, "pkg/assets"), { recursive: true });
+      mkdirSync(join(cwd, "project"));
+      cpSync(join(ROOT, "scripts/lib/project-init-lib.sh"), join(cwd, "pkg/scripts/lib/project-init-lib.sh"));
+      const asset = join(cwd, "pkg/assets/released-managed-values.v1.json");
+      const valid = JSON.parse(readFileSync(join(ROOT, "assets/released-managed-values.v1.json"), "utf-8"));
+      const pkg = `${JSON.stringify({ scripts: { "check:brain": "check" } }, null, 2)}\n`;
+      const init = (values: string | null) => {
+        rmSync(asset, { force: true });
+        if (values !== null) writeFileSync(asset, values);
+        writeFileSync(join(cwd, "project/package.json"), pkg);
+        return spawnSync("bash", ["-c", 'cd "$1" && source project-init-lib.sh && pi_ensure_task_sync "$2" 0 apply', "bash",
+          join(cwd, "pkg/scripts/lib"), join(cwd, "project")], { encoding: "utf-8" });
+      };
+      expect(init(JSON.stringify(valid)).status).toBe(0);
+      expect(JSON.parse(readFileSync(join(cwd, "project/package.json"), "utf-8")).scripts["check:brain"]).toBe("check");
+      const { legacySections: _, ...rulesWithoutSections } = valid.globalRulesBlock;
+      for (const values of [null, "{", JSON.stringify({ ...valid, packageScripts: { ...valid.packageScripts, "check:brain": "repo-harness brain check" } }),
+        JSON.stringify({ ...valid, globalRulesBlock: rulesWithoutSections })]) {
+        const result = init(values);
+        expect(result.status).not.toBe(0);
+        expect(readFileSync(join(cwd, "project/package.json"), "utf-8")).toBe(pkg);
+      }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("the bash retired package script keys equal RETIRED_PACKAGE_SCRIPT_KEYS", () => {
+    const lib = readFileSync(join(ROOT, "scripts/lib/project-init-lib.sh"), "utf-8");
+    const keys = JSON.parse(lib.match(/^for \(const key of (\[[^\]]*\])\) \{$/m)?.[1] ?? "null");
+    expect([...keys].sort()).toEqual([...RETIRED_PACKAGE_SCRIPT_KEYS].sort());
+  });
+
+  test("init preserves an edited reference config stub with a notice", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "scaffold-edited-stub-"));
+    try {
+      const install = () => spawnSync("bash", ["-c", 'source "$1"; pi_install_reference_configs "$2" "$3" apply',
+        "bash", join(ROOT, "scripts/lib/project-init-lib.sh"), cwd, join(ROOT, "assets/reference-configs")], { cwd, encoding: "utf-8" });
+      expect(install().status).toBe(0);
+      const stubPath = join(cwd, "docs/reference-configs/external-tooling.md");
+      const edited = `${readFileSync(stubPath, "utf-8")}\nLocal note.\n`;
+      writeFileSync(stubPath, edited);
+      // A Windows checkout converts the stub to CRLF; it is still the current stub.
+      const crlfPath = join(cwd, "docs/reference-configs/harness-overview.md");
+      const stub = readFileSync(crlfPath, "utf-8");
+      writeFileSync(crlfPath, stub.replaceAll("\n", "\r\n"));
+      const result = install();
+      expect(result.status).toBe(0);
+      expect(readFileSync(stubPath, "utf-8")).toBe(edited);
+      expect(result.stderr).toContain("[repo-harness] preserved user-authored reference config: docs/reference-configs/external-tooling.md");
+      expect(result.stderr).not.toContain("docs/reference-configs/harness-overview.md");
+      expect(readFileSync(crlfPath, "utf-8")).toBe(stub);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -47,11 +47,22 @@ function endsWithLineBreak(value: string): boolean {
 export interface ManagedBlockUpdate {
   readonly ok: boolean;
   readonly changed: boolean;
+  /** The existing block differs from the rendering and has no proof that it is managed; it is kept. */
+  readonly kept?: string;
   readonly content?: string;
   readonly error?: string;
 }
 
-export function upsertManagedBlock(existing: string, operation: AppendManagedBlockOperation): ManagedBlockUpdate {
+/**
+ * `isManaged` receives an existing block that differs from the rendering, from
+ * its BEGIN line to its END line joined by `\n`. Only a block that it proves
+ * managed is replaced; any other block is kept and named in `kept`.
+ */
+export function upsertManagedBlock(
+  existing: string,
+  operation: AppendManagedBlockOperation,
+  isManaged: (block: string) => boolean,
+): ManagedBlockUpdate {
   const block = renderManagedBlock(operation);
   const newline = newlineFor(existing);
   const normalizedExisting = normalizeLineEndings(existing.trimEnd());
@@ -70,6 +81,7 @@ export function upsertManagedBlock(existing: string, operation: AppendManagedBlo
     if (currentBlock === block) {
       return { ok: true, changed: false, content: endsWithLineBreak(existing) ? existing : `${existing}${newline}` };
     }
+    if (!isManaged(currentBlock)) return { ok: true, changed: false, kept: marker.begin, content: existing };
     const nextLines = [...lines.slice(0, range.start), ...block.split("\n"), ...lines.slice(range.end + 1)];
     return { ok: true, changed: true, content: `${withNewlineStyle(nextLines.join("\n").trimEnd(), newline)}${newline}` };
   }
@@ -80,7 +92,3 @@ export function upsertManagedBlock(existing: string, operation: AppendManagedBlo
   return { ok: true, changed: true, content };
 }
 
-export function managedBlockNeedsUpdate(existing: string, operation: AppendManagedBlockOperation): boolean {
-  const update = upsertManagedBlock(existing, operation);
-  return !update.ok || update.changed;
-}

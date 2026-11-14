@@ -370,15 +370,18 @@ describe('runtime ignore rules step', () => {
       mkdirSync(join(root, 'custom'));
       const before = '# user rules\n*.swp\n';
       const after = '*.orig\n';
-      writeFileSync(custom, `${before}${begin}stale-rule/\n# END: repo-harness runtime-state\n${after}`);
+      const edited = `${before}${begin}stale-rule/\n# END: repo-harness runtime-state\n${after}`;
+      writeFileSync(custom, edited);
       Bun.spawnSync(['git', 'config', '--global', 'core.excludesFile', custom], { env });
       rmSync(defaultFile);
-      expect(ignoreStep(update())).toMatchObject({ status: 'ok', detail: `${custom}: written` });
+      // An edited block is no released block: update keeps it and says so.
+      expect(ignoreStep(update())).toMatchObject({ status: 'ok', detail: `${custom}: kept the edited block "# BEGIN: repo-harness runtime-state"; it differs from every released block, so update does not change it. Delete the block, then run rh update again to get the current one` });
       expect(existsSync(defaultFile)).toBe(false);
+      expect(readFileSync(custom, 'utf8')).toBe(edited);
+      writeFileSync(custom, `${before}${after}`);
+      expect(ignoreStep(update())).toMatchObject({ status: 'ok', detail: `${custom}: written` });
       const written = readFileSync(custom, 'utf8');
-      expect(written).toStartWith(`${before}${begin}`);
-      expect(written).toEndWith(`# END: repo-harness runtime-state\n${after}`);
-      expect(written).not.toContain('stale-rule/');
+      expect(written).toStartWith(`${before}${after}\n${begin}`);
       const currentRun = update();
       expect(ignoreStep(currentRun)).toMatchObject({ status: 'ok', detail: `${custom}: current` });
       expect(readFileSync(custom, 'utf8')).toBe(written);

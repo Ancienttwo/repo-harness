@@ -5,15 +5,16 @@ import type { AdoptionMode } from "../../core/adoption/modes";
 import type { AdoptionOperation, AdoptionWarning, WriteFileOperation } from "../../core/adoption/operations";
 import { makeOperationId } from "../../core/adoption/operations";
 import { adoptionTemplateFile } from "./manifest-templates";
-import { gitignoreManagedBlockOperation } from "./gitignore-plan";
-import { managedBlockNeedsUpdate } from "../../core/adoption/managed-block";
+import { gitignoreManagedBlockOperation, ignoreBlockProof } from "./gitignore-plan";
+import { upsertManagedBlock } from "../../core/adoption/managed-block";
 import { renderWorkflowContractMarker } from "../../core/adoption/workflow-contract-asset";
 import { minimumHarnessVersionOf } from "../../core/adoption/minimum-harness-version";
 import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-inventory";
 import { runGit } from "../git/run-git";
 import { pruneUnknownPolicyKeys } from "../../core/workflow/policy-schema";
 import { withoutRepositorySelectingGitEnv } from "../git/runner";
-import { MANAGED_PACKAGE_SCRIPTS } from "../../core/adoption/package-scripts";
+import { MANAGED_PACKAGE_SCRIPTS, RETIRED_PACKAGE_SCRIPT_KEYS } from "../../core/adoption/package-scripts";
+import { isReleasedPackageScript, isReleasedReferenceConfig } from "../upgrade/released-values";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
 const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");
@@ -392,7 +393,7 @@ function addLegacyCleanup(repoRoot: string, operations: AdoptionOperation[]): Ad
   return warnings;
 }
 
-function addReferenceOperations(repoRoot: string, documentationProfile: string, operations: AdoptionOperation[]): void {
+function addReferenceOperations(repoRoot: string, documentationProfile: string, operations: AdoptionOperation[]): AdoptionWarning[] {
   const minimal = new Set([
     "harness-overview.md",
     "agentic-development-flow.md",
@@ -404,37 +405,44 @@ function addReferenceOperations(repoRoot: string, documentationProfile: string, 
     "global-working-rules.md",
     "minimal-change-hooks.md",
   ]);
+  const warnings: AdoptionWarning[] = [];
   for (const name of readdirSync(REFERENCE_ROOT).filter((entry) => entry.endsWith(".md")).sort()) {
     if (!documentationProfile.startsWith("full") && !minimal.has(name)) continue;
     const target = `docs/reference-configs/${name}`;
     const existing = fileContent(repoRoot, target);
-    const asset = readFileSync(join(REFERENCE_ROOT, name), "utf-8");
-    const generated = existing === undefined || existing.includes("<!-- repo-harness: reference-config-stub v1 -->") || existing === asset;
-    if (!generated) continue;
-    operations.push(writeOperation(repoRoot, target, referenceStub(name), "Install deterministic reference-config runtime stub", { risk: "low" }));
+    const stub = referenceStub(name);
+    // A Windows checkout converts LF to CRLF; only other byte differences are edits.
+    if (existing !== undefined && existing.replaceAll("\r\n", "\n") !== stub && !isReleasedReferenceConfig(name.replace(/\.md$/, ""), existing)) {
+      warnings.push({ code: "customized-managed-value", message: `Preserving ${target}: it is not a reference-config stub that a release wrote; delete it to get the current stub`, risk: "low" });
+      continue;
+    }
+    operations.push(writeOperation(repoRoot, target, stub, "Install deterministic reference-config runtime stub", { risk: "low" }));
   }
+  return warnings;
 }
 
-function addPackageOperation(repoRoot: string, operations: AdoptionOperation[]): void {
+function addPackageOperation(repoRoot: string, operations: AdoptionOperation[]): AdoptionWarning[] {
   const current = jsonFile(repoRoot, "package.json");
-  if (!current) return;
+  if (!current) return [];
   const scripts = isObject(current.scripts) ? { ...current.scripts } : {};
-  Object.assign(scripts, MANAGED_PACKAGE_SCRIPTS);
-  if (scripts["check:brain-manifest"] === "repo-harness run check-brain-manifest") {
-    delete scripts["check:brain-manifest"];
+  const kept: string[] = [];
+  for (const key of RETIRED_PACKAGE_SCRIPT_KEYS) {
+    if (!Object.hasOwn(scripts, key)) continue;
+    if (isReleasedPackageScript(key, scripts[key])) delete scripts[key];
+    else kept.push(`${key}: ${JSON.stringify(scripts[key])}`);
   }
-  if (scripts["sync:brain-docs"] === "repo-harness run sync-brain-docs --all") {
-    delete scripts["sync:brain-docs"];
-  }
-  if (scripts["check:task-workflow"] === "repo-harness run check-task-workflow --strict") {
-    delete scripts["check:task-workflow"];
-  }
-  if (scripts["check:architecture-sync"] === "repo-harness run check-architecture-sync") {
-    delete scripts["check:architecture-sync"];
+  for (const [key, value] of Object.entries(MANAGED_PACKAGE_SCRIPTS)) {
+    if (!Object.hasOwn(scripts, key) || scripts[key] === value || isReleasedPackageScript(key, scripts[key])) scripts[key] = value;
+    else kept.push(`${key}: ${JSON.stringify(scripts[key])} (current value: ${JSON.stringify(value)})`);
   }
   const raw = fileContent(repoRoot, "package.json")!;
   const content = renderJsonObjectUpdate(raw, { ...current, private: current.private ?? true, scripts });
   operations.push(writeOperation(repoRoot, "package.json", content, "Install canonical repo-harness workflow package scripts", { risk: "medium" }));
+  return kept.length === 0 ? [] : [{
+    code: "customized-managed-value",
+    message: `Preserving package.json scripts that differ from every released value: ${kept.join("; ")}`,
+    risk: "medium",
+  }];
 }
 
 /** The caller has parsed raw as a JSON object. Keep unchanged members' bytes. */
@@ -554,9 +562,15 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
 
   const gitignore = fileContent(opts.repoRoot, ".gitignore") ?? "";
   const gitignoreOperation = gitignoreManagedBlockOperation(opts.repoRoot, "planned");
+  const gitignoreUpdate = upsertManagedBlock(gitignore, gitignoreOperation, ignoreBlockProof(gitignoreOperation));
+  const gitignoreWarnings: AdoptionWarning[] = gitignoreUpdate.kept === undefined ? [] : [{
+    code: "customized-managed-value",
+    message: `Preserving the edited block "${gitignoreUpdate.kept}" in .gitignore: it differs from every released block; delete the block to get the current one`,
+    risk: "low",
+  }];
   operations.push({
     ...gitignoreOperation,
-    status: managedBlockNeedsUpdate(gitignore, gitignoreOperation) ? "planned" : "skipped",
+    status: !gitignoreUpdate.ok || gitignoreUpdate.changed ? "planned" : "skipped",
     expectedAbsent: fileContent(opts.repoRoot, ".gitignore") === undefined,
     expectedContentHash: fileContent(opts.repoRoot, ".gitignore") === undefined ? undefined : contentHash(gitignore),
   });
@@ -570,7 +584,7 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
     if (policyCurrent !== undefined) {
       operations.push(writeOperation(opts.repoRoot, ".ai/harness/policy.json", policyText, "Remove policy keys that no reader uses", { risk: "medium" }));
     }
-    return { operations, warnings: [...addLegacyCleanup(opts.repoRoot, operations), ...unknownKeyWarnings] };
+    return { operations, warnings: [...gitignoreWarnings, ...addLegacyCleanup(opts.repoRoot, operations), ...unknownKeyWarnings] };
   }
 
   operations.push(writeOperation(opts.repoRoot, ".ai/harness/policy.json", policyText, "Merge harness policy defaults and remove policy keys that no reader uses", { risk: "medium" }));
@@ -605,11 +619,14 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
     { path: "AGENTS.md", content: rootContextContent() },
   ]) operations.push(writeOperation(opts.repoRoot, file.path, file.content, "Install canonical root workflow context when absent", { ifMissing: true, risk: "medium" }));
 
-  addReferenceOperations(opts.repoRoot, documentationProfile, operations);
-  addPackageOperation(opts.repoRoot, operations);
+  const referenceWarnings = addReferenceOperations(opts.repoRoot, documentationProfile, operations);
+  const packageWarnings = addPackageOperation(opts.repoRoot, operations);
   const cleanupWarnings = addLegacyCleanup(opts.repoRoot, operations);
 
   const warnings: AdoptionWarning[] = [
+    ...gitignoreWarnings,
+    ...referenceWarnings,
+    ...packageWarnings,
     ...cleanupWarnings,
     ...unknownKeyWarnings,
     ...(opts.mode === "self-host"

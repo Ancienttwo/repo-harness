@@ -211,7 +211,10 @@ pi_runtime_block_end_for() {
 
 pi_has_runtime_block() {
   local file_path="$1"
-  grep -Fxq -e "$PI_RUNTIME_BLOCK_BEGIN" -e "$PI_LEGACY_RUNTIME_BLOCK_BEGIN" "$file_path"
+  local found
+  # grep -q exits on the first match; under pipefail the SIGPIPE to sed would make a found marker read as missing.
+  found="$(sed 's/\r$//' "$file_path" | grep -Fx -c -e "$PI_RUNTIME_BLOCK_BEGIN" -e "$PI_LEGACY_RUNTIME_BLOCK_BEGIN" || true)"
+  [ "${found:-0}" -gt 0 ]
 }
 
 pi_ensure_gitignore_block() {
@@ -246,17 +249,14 @@ pi_ensure_gitignore_block() {
   local block_written=0
   tmp_file="$(mktemp)"
 
-  local block_end
+  local block_end existing_block found_end released
   while IFS= read -r line || [[ -n "$line" ]]; do
-    if block_end="$(pi_runtime_block_end_for "$line")"; then
-      if [[ "$block_written" -eq 0 ]]; then
-        printf '%s\n' "$block" >> "$tmp_file"
-        block_written=1
-      fi
-
-      local found_end=0
+    if block_end="$(pi_runtime_block_end_for "${line%$'\r'}")"; then
+      existing_block="${line%$'\r'}"
+      found_end=0
       while IFS= read -r inner_line || [[ -n "$inner_line" ]]; do
-        if [[ "$inner_line" == "$block_end" ]]; then
+        existing_block+=$'\n'"${inner_line%$'\r'}"
+        if [[ "${inner_line%$'\r'}" == "$block_end" ]]; then
           found_end=1
           break
         fi
@@ -267,6 +267,22 @@ pi_ensure_gitignore_block() {
         echo "managed block is missing end marker: $block_end" >&2
         return 1
       fi
+
+      if [[ "$existing_block" != "$block" ]]; then
+        released=0
+        printf '%s' "$existing_block" | pi_released_managed_value project-ignore-block - || released=$?
+        if [[ "$released" -ne 0 ]]; then
+          rm -f "$tmp_file"
+          [[ "$released" -eq 1 ]] || return 1
+          echo "[repo-harness] kept edited managed block in $file_path: $line (not a released repo-harness block)" >&2
+          return 0
+        fi
+      fi
+
+      if [[ "$block_written" -eq 0 ]]; then
+        printf '%s\n' "$block" >> "$tmp_file"
+        block_written=1
+      fi
       continue
     fi
 
@@ -274,6 +290,106 @@ pi_ensure_gitignore_block() {
   done < "$file_path"
 
   mv "$tmp_file" "$file_path"
+}
+
+pi_released_managed_values_file() {
+  local lib_dir
+  lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || return 1
+  printf '%s' "$lib_dir/../../assets/released-managed-values.v1.json"
+}
+
+# Reads and checks assets/released-managed-values.v1.json with the same rules as
+# src/effects/upgrade/released-values.ts; a missing or malformed field throws.
+PI_RELEASED_VALUES_JS='
+const releasedValues = (file) => {
+  const fail = (path, expected) => { throw new Error(`${file}: ${path} must be ${expected}`); };
+  const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+  const object = (value, path) => isObject(value) ? value : fail(path, "an object");
+  const string = (value, path) => typeof value === "string" ? value : fail(path, "a string");
+  const FINGERPRINT = /^sha256:[0-9a-f]{64}$/;
+  const strings = (value, path, pattern) => Array.isArray(value) && value.every((item) => typeof item === "string" && (!pattern || pattern.test(item)))
+    ? value : fail(path, pattern ? "an array of sha256 fingerprints" : "an array of strings");
+  const lists = (value, path, pattern) => {
+    for (const [key, item] of Object.entries(object(value, path))) strings(item, `${path}.${key}`, pattern);
+    return value;
+  };
+  let root;
+  try { root = JSON.parse(require("fs").readFileSync(file, "utf8")); } catch (error) { throw new Error(`${file}: ${error.message}`); }
+  object(root, "$");
+  if (root.schema !== "repo-harness.released-managed-values.v1") fail("$.schema", JSON.stringify("repo-harness.released-managed-values.v1"));
+  strings(root.releases, "$.releases");
+  lists(root.packageScripts, "$.packageScripts");
+  lists(root.referenceConfigs, "$.referenceConfigs", FINGERPRINT);
+  const project = object(root.projectGitignoreBlock, "$.projectGitignoreBlock");
+  strings(project.blocks, "$.projectGitignoreBlock.blocks", FINGERPRINT);
+  if (!Array.isArray(project.retiredSections)) fail("$.projectGitignoreBlock.retiredSections", "an array");
+  project.retiredSections.forEach((value, index) => {
+    const path = `$.projectGitignoreBlock.retiredSections[${index}]`;
+    const retired = object(value, path);
+    string(retired.header, `${path}.header`);
+    strings(retired.rules, `${path}.rules`);
+    strings(retired.bases, `${path}.bases`, FINGERPRINT);
+  });
+  strings(object(root.userExcludesBlock, "$.userExcludesBlock").blocks, "$.userExcludesBlock.blocks", FINGERPRINT);
+  const rules = object(root.globalRulesBlock, "$.globalRulesBlock");
+  strings(rules.blocks, "$.globalRulesBlock.blocks", FINGERPRINT);
+  string(rules.customInstructionSentinel, "$.globalRulesBlock.customInstructionSentinel");
+  strings(rules.customInstructionBlocks, "$.globalRulesBlock.customInstructionBlocks", FINGERPRINT);
+  lists(rules.legacySections, "$.globalRulesBlock.legacySections", FINGERPRINT);
+  return root;
+};
+const releasedList = (record, key) => Object.hasOwn(record, key) ? record[key] : [];
+const sha256 = (text) => "sha256:" + require("crypto").createHash("sha256").update(text).digest("hex");
+'
+
+# Exit 0 when <input> (a file, or - for stdin) is a released value, 1 when it is
+# not, 2 when the released values cannot be read.
+#   reference-config <doc id> <file> <current stub file>: the file with CRLF read
+#     as LF equals the current stub or a released stub
+#   project-ignore-block - : a released project .gitignore block, BEGIN to END
+#     joined by \n; a released retired-rule section sits directly before END
+pi_released_managed_value() {
+  local check="$1"
+  local js_runtime
+
+  js_runtime="$(pi_resolve_js_runtime)" || {
+    echo "[repo-harness] no JavaScript runtime found; cannot check released managed values" >&2
+    return 2
+  }
+  "$js_runtime" -e "$PI_RELEASED_VALUES_JS"'
+const fs = require("fs");
+const [file, check, ...args] = process.argv.slice(1);
+try {
+  const values = releasedValues(file);
+  let released;
+  if (check === "reference-config") {
+    const [docId, input, currentStub] = args;
+    const text = fs.readFileSync(input, "utf8").replaceAll("\r\n", "\n");
+    released = text === fs.readFileSync(currentStub, "utf8") || releasedList(values.referenceConfigs, docId).includes(sha256(text));
+  } else if (check === "project-ignore-block") {
+    const block = fs.readFileSync(0, "utf8");
+    const group = values.projectGitignoreBlock;
+    const lines = block.split("\n");
+    const end = lines.pop();
+    const content = lines.join("\n");
+    released = group.blocks.includes(sha256(block)) || group.retiredSections.some((retired) => {
+      const at = content.lastIndexOf(`\n\n${retired.header}\n`);
+      let next = 0;
+      return at !== -1 && content.slice(at + retired.header.length + 3).split("\n").every((rule) => {
+        const index = retired.rules.indexOf(rule, next);
+        next = index + 1;
+        return index !== -1;
+      }) && retired.bases.includes(sha256(`${content.slice(0, at)}\n${end}`));
+    });
+  } else {
+    throw new Error(`unknown check ${check}`);
+  }
+  process.exit(released ? 0 : 1);
+} catch (error) {
+  console.error(`[repo-harness] cannot read released managed values: ${error.message}`);
+  process.exit(2);
+}
+' "$(pi_released_managed_values_file)" "$check" "${@:2}"
 }
 
 pi_resolve_json_runtime() {
@@ -701,6 +817,7 @@ pi_install_reference_configs() {
   local mode="${3:-apply}"
   local ref_dir="$target_dir/docs/reference-configs"
   local name
+  local managed
   local source_repo_target=0
 
   if [[ "$mode" != "apply" ]]; then
@@ -729,12 +846,13 @@ pi_install_reference_configs() {
       continue
     fi
 
-    if pi_should_preserve_reference_config "$ref_dir/$name" "$ref_assets_dir/$name"; then
-      echo "[repo-harness] preserved user-authored reference config: docs/reference-configs/$name"
-      continue
-    fi
-
-    pi_write_reference_config_stub "$ref_dir/$name" "$name" "$ref_assets_dir"
+    managed=0
+    pi_reference_config_is_managed "$ref_dir/$name" "$name" "$ref_assets_dir" || managed=$?
+    case "$managed" in
+      0) pi_write_reference_config_stub "$ref_dir/$name" "$name" "$ref_assets_dir" ;;
+      1) echo "[repo-harness] preserved user-authored reference config: docs/reference-configs/$name" >&2 ;;
+      *) return 1 ;;
+    esac
   done < <(pi_reference_config_names "$ref_assets_dir")
 }
 
@@ -761,31 +879,23 @@ pi_repo_harness_version_for_refs() {
   printf '%s\n' "unknown"
 }
 
-pi_should_preserve_reference_config() {
+# Exit 0 when init may write the stub: the file is missing, equals the stub this
+# code writes, or is a released repo-harness value. Exit 1 keeps the file; 2 is an error.
+pi_reference_config_is_managed() {
   local target_file="$1"
-  local asset_file="$2"
+  local name="$2"
+  local ref_assets_dir="$3"
+  local current_stub
+  local status=0
 
-  [[ -f "$target_file" ]] || return 1
-  if [[ -f "$asset_file" ]] && cmp -s "$target_file" "$asset_file"; then
-    return 1
+  [[ -f "$target_file" ]] || return 0
+  current_stub="$(mktemp)"
+  pi_write_reference_config_stub "$current_stub" "$name" "$ref_assets_dir"
+  if ! cmp -s "$target_file" "$current_stub"; then
+    pi_released_managed_value reference-config "$(pi_reference_config_doc_id "$name")" "$target_file" "$current_stub" || status=$?
   fi
-  if grep -Fq "$PI_REFERENCE_CONFIG_STUB_MARKER" "$target_file"; then
-    return 1
-  fi
-  local target_heading asset_heading
-  target_heading="$(pi_reference_config_first_heading "$target_file")"
-  asset_heading="$(pi_reference_config_first_heading "$asset_file")"
-  if [[ -n "$asset_heading" && "$target_heading" == "$asset_heading" ]]; then
-    return 1
-  fi
-
-  return 0
-}
-
-pi_reference_config_first_heading() {
-  local file="$1"
-  [[ -f "$file" ]] || return 0
-  sed -n 's/^# //p' "$file" | head -n 1
+  rm -f "$current_stub"
+  return "$status"
 }
 
 pi_write_reference_config_stub() {
@@ -1336,6 +1446,7 @@ pi_ensure_task_sync() {
   local package_file="$target_dir/package.json"
   local js_runtime
   local project_name
+  local default_package
 
   if [[ ! -f "$package_file" && "$create_if_missing" != "1" ]]; then
     if [[ "$mode" != "apply" ]]; then
@@ -1349,10 +1460,9 @@ pi_ensure_task_sync() {
     return 0
   fi
 
-  if [[ ! -f "$package_file" ]]; then
-    project_name="$(basename "$target_dir" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9-' '-')"
-    project_name="${project_name:-project}"
-    cat > "$package_file" <<EOF_PACKAGE
+  project_name="$(basename "$target_dir" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9-' '-')"
+  project_name="${project_name:-project}"
+  default_package="$(cat <<EOF_PACKAGE
 {
   "name": "$project_name",
   "private": true,
@@ -1364,6 +1474,10 @@ pi_ensure_task_sync() {
   }
 }
 EOF_PACKAGE
+)"
+
+  if [[ ! -f "$package_file" ]]; then
+    printf '%s\n' "$default_package" > "$package_file"
     return 0
   fi
 
@@ -1373,30 +1487,29 @@ EOF_PACKAGE
     return 0
   fi
 
-  "$js_runtime" -e '
+  # The default package scripts are the current values; a different existing
+  # value changes only when it is a released repo-harness value.
+  "$js_runtime" -e "$PI_RELEASED_VALUES_JS"'
 const fs = require("fs");
-const file = process.argv[1];
+const [file, defaultPackage, valuesFile] = process.argv.slice(1);
+const values = releasedValues(valuesFile);
+const released = (key, value) => typeof value === "string" && releasedList(values.packageScripts, key).includes(value);
+const keep = (key, value) => console.error(`[repo-harness] kept package.json script ${key}: ${JSON.stringify(value)} (not a released repo-harness value)`);
 const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
 pkg.private ??= true;
 pkg.scripts ??= {};
-pkg.scripts["check:brain"] = "rh brain check";
-if (pkg.scripts["check:brain-manifest"] === "repo-harness run check-brain-manifest") {
-  delete pkg.scripts["check:brain-manifest"];
+const target = pkg.scripts;
+for (const [key, value] of Object.entries(JSON.parse(defaultPackage).scripts)) {
+  if (!Object.hasOwn(target, key) || target[key] === value || released(key, target[key])) target[key] = value;
+  else keep(key, target[key]);
 }
-pkg.scripts["check:context-files"] = "rh run check-context-files";
-pkg.scripts["check:deploy-sql"] = "rh run check-deploy-sql-order";
-if (pkg.scripts["check:task-workflow"] === "repo-harness run check-task-workflow --strict") {
-  delete pkg.scripts["check:task-workflow"];
-}
-if (pkg.scripts["check:architecture-sync"] === "repo-harness run check-architecture-sync") {
-  delete pkg.scripts["check:architecture-sync"];
-}
-pkg.scripts["sync:brain"] = "rh brain sync";
-if (pkg.scripts["sync:brain-docs"] === "repo-harness run sync-brain-docs --all") {
-  delete pkg.scripts["sync:brain-docs"];
+for (const key of ["check:brain-manifest", "check:task-workflow", "check:architecture-sync", "sync:brain-docs"]) {
+  if (!Object.hasOwn(target, key)) continue;
+  if (released(key, target[key])) delete target[key];
+  else keep(key, target[key]);
 }
 fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
-' "$package_file"
+' "$package_file" "$default_package" "$(pi_released_managed_values_file)"
 }
 
 pi_factor_factory_gitignore_entries() {

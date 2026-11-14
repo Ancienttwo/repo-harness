@@ -5,7 +5,8 @@ import { createHash } from "crypto";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { planAdoption } from "../../src/effects/adoption/plan";
-import { planLegacyLeftovers } from "../../src/effects/upgrade/legacy-inventory";
+import { planLegacyLeftovers, RETIRED_RUNTIME_IGNORE_RULES } from "../../src/effects/upgrade/legacy-inventory";
+import { GITIGNORE_MANAGED_BLOCK_CONTENT } from "../../src/effects/adoption/gitignore-plan";
 import { isRepoHarnessSourceCheckout } from "../../src/effects/source-checkout";
 import { applyAdoptionPlan, rollbackAdoptionTransaction } from "../../src/effects/fs-transaction";
 import type { AdoptionOperation, AdoptionPlan } from "../../src/core/adoption/operations";
@@ -242,7 +243,9 @@ describe("canonical adoption plan", () => {
         mkdirSync(join(repo, dirname(path)), { recursive: true });
         writeFileSync(join(repo, path), "old runtime state\n");
       }
-      writeFileSync(join(repo, ".gitignore"), `# BEGIN: repo-harness generated-runtime\n${oldRules.join("\n")}\n# END: repo-harness generated-runtime\n`);
+      // The block as a release rendered it: the base block and a retired-rule section.
+      const releasedRetired = ["", "# Retired runtime state that still exists; repo-harness upgrade lists these files", ...RETIRED_RUNTIME_IGNORE_RULES.slice(0, -1)];
+      writeFileSync(join(repo, ".gitignore"), ["# BEGIN: repo-harness generated-runtime", GITIGNORE_MANAGED_BLOCK_CONTENT, ...releasedRetired, "# END: repo-harness generated-runtime", ""].join("\n"));
       const untracked = () => spawnSync("git", ["status", "--porcelain", "--untracked-files=all", "--", codegraph, ...retired], { cwd: repo, encoding: "utf8" }).stdout;
       const refresh = () => expect(applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true })).ok).toBe(true);
 
@@ -296,7 +299,7 @@ describe("canonical adoption plan", () => {
       writeFileSync(join(repo, "package.json"), [
         "{", '\t"name": "fixture",', '    "scripts": {', '\t\t"test": "bun test",',
         '        "check:task-workflow": "repo-harness run check-task-workflow --strict",',
-        '\t\t"check:context-files": "old"', "\t}", "}", "",
+        '\t\t"check:context-files": "bash scripts/check-context-files.sh"', "\t}", "}", "",
       ].join("\n"));
       const mixed = packageOperation();
       expect(mixed.content).toBe([
@@ -354,11 +357,17 @@ describe("canonical adoption plan", () => {
       writeFileSync(join(customized, "package.json"), JSON.stringify({ name: "fixture", scripts: {
         "check:brain-manifest": "repo-harness run check-brain-manifest",
         "sync:brain-docs": "bun run custom-sync-brain.ts",
+        "check:deploy-sql": "bash my-sql-check.sh",
       } }, null, 2));
-      expect(applyAdoptionPlan(planAdoption({ repoRoot: customized, mode: "standard", apply: true })).ok).toBe(true);
+      const customizedPlan = planAdoption({ repoRoot: customized, mode: "standard", apply: true });
+      expect(customizedPlan.warnings.find((warning) => warning.code === "customized-managed-value")?.message)
+        .toBe('Preserving package.json scripts that differ from every released value: sync:brain-docs: "bun run custom-sync-brain.ts"; '
+          + 'check:deploy-sql: "bash my-sql-check.sh" (current value: "rh run check-deploy-sql-order")');
+      expect(applyAdoptionPlan(customizedPlan).ok).toBe(true);
       const customizedScripts = JSON.parse(readFileSync(join(customized, "package.json"), "utf-8")).scripts;
       expect(customizedScripts["check:brain-manifest"]).toBeUndefined();
       expect(customizedScripts["sync:brain-docs"]).toBe("bun run custom-sync-brain.ts");
+      expect(customizedScripts["check:deploy-sql"]).toBe("bash my-sql-check.sh");
       expect(customizedScripts["check:brain"]).toBe("rh brain check");
       expect(customizedScripts["sync:brain"]).toBe("rh brain sync");
     } finally {
@@ -479,9 +488,24 @@ describe("canonical adoption plan", () => {
     try {
       mkdirSync(join(repo, "docs", "reference-configs"), { recursive: true });
       writeFileSync(join(repo, "docs", "reference-configs", "harness-overview.md"), "# Local Operations Guide\n");
-      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      // A stub marker alone is no proof: an edited stub is kept.
+      const editedStub = "<!-- repo-harness: reference-config-stub v1 -->\n# repo-harness Reference: external-tooling\n\nMy notes.\n";
+      writeFileSync(join(repo, "docs", "reference-configs", "external-tooling.md"), editedStub);
+      // A Windows checkout of a stub that v0.32.0 wrote has CRLF line endings; it is still a released stub.
+      const stubPath = join(repo, "docs", "reference-configs", "design-options.md");
+      const currentStub = planAdoption({ repoRoot: repo, mode: "standard", apply: false }).operations
+        .find((operation) => operation.path === "docs/reference-configs/design-options.md" && operation.kind === "writeFile") as { content: string };
+      writeFileSync(stubPath, currentStub.content.replaceAll("`rh docs ", "`repo-harness docs ").replaceAll("\n", "\r\n"));
+      const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: true });
+      expect(plan.warnings.filter((warning) => warning.code === "customized-managed-value").map((warning) => warning.message)).toEqual([
+        "Preserving docs/reference-configs/external-tooling.md: it is not a reference-config stub that a release wrote; delete it to get the current stub",
+        "Preserving docs/reference-configs/harness-overview.md: it is not a reference-config stub that a release wrote; delete it to get the current stub",
+      ]);
+      const apply = applyAdoptionPlan(plan);
       expect(apply.ok).toBe(true);
       expect(readFileSync(join(repo, "docs", "reference-configs", "harness-overview.md"), "utf-8")).toBe("# Local Operations Guide\n");
+      expect(readFileSync(join(repo, "docs", "reference-configs", "external-tooling.md"), "utf-8")).toBe(editedStub);
+      expect(readFileSync(stubPath, "utf-8")).toBe(currentStub.content);
     } finally {
       cleanup(repo);
     }

@@ -10,6 +10,7 @@ import {
   SHIPPED_GLOBAL_RULES_SECTIONS,
   type ReportingLanguagePreset,
 } from "../src/cli/installer/global-context";
+import { legacySections } from "../scripts/check-released-managed-values";
 
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_TEMPLATE = join(ROOT, "assets/reference-configs/global-working-rules.md");
@@ -44,7 +45,7 @@ describe("global working rules distribution", () => {
    * driven by the init reporting preset, so both directions are pinned here.
    */
   function renderedManagedBlock(preset: ReportingLanguagePreset, instruction: string): string {
-    return mergeManagedBlock("", renderGlobalRulesBlock(ROOT, { preset, instruction })).content;
+    return mergeManagedBlock("", renderGlobalRulesBlock(ROOT, { preset, instruction }), ROOT).content;
   }
 
   test("the default rendering keeps the English completion-summary label", () => {
@@ -99,7 +100,7 @@ describe("global working rules distribution", () => {
     const content = ["## Mine", "```", "~~~", "## Reporting", "```", "end", ""].join("\n");
     expect(inspectGlobalContext(content, ROOT).state).toBe("no-rules");
     const block = renderGlobalRulesBlock(ROOT, { preset: "en", instruction: "Use English to report to user." });
-    const merged = mergeManagedBlock(content, block);
+    const merged = mergeManagedBlock(content, block, ROOT);
     expect(merged.replaced).toEqual([]);
     expect(merged.content).toBe(`${content.trimEnd()}\n\n${block}`);
   });
@@ -112,7 +113,7 @@ describe("global working rules distribution", () => {
     const inspection = inspectGlobalContext(rendered, ROOT);
     expect(inspection.state).toBe("managed-current");
     expect(inspection.language).toEqual({ preset: "custom", instruction });
-    expect(mergeManagedBlock(rendered, renderGlobalRulesBlock(ROOT, inspection.language!)).content).toBe(rendered);
+    expect(mergeManagedBlock(rendered, renderGlobalRulesBlock(ROOT, inspection.language!), ROOT).content).toBe(rendered);
   });
 
   test("the rendered block records its reporting-language inputs", () => {
@@ -147,15 +148,15 @@ describe("global working rules distribution", () => {
   const zhBlock = () => renderGlobalRulesBlock(ROOT, { preset: "zh-CN", instruction: "Use Chinese to report to user." });
 
   test("merges the managed block beside user content and a second merge is unchanged", () => {
-    const first = mergeManagedBlock("user content\n", zhBlock());
-    const second = mergeManagedBlock(first.content, zhBlock());
+    const first = mergeManagedBlock("user content\n", zhBlock(), ROOT);
+    const second = mergeManagedBlock(first.content, zhBlock(), ROOT);
     expect(formatGlobalContextWrite(AGENTS_PATH, "user content\n", first)).toBe(`appended:${AGENTS_PATH}`);
     expect(formatGlobalContextWrite(AGENTS_PATH, first.content, second)).toBe(`unchanged:${AGENTS_PATH}`);
     const codex = first.content;
     expect(codex).toContain("user content");
     expect(codex).toContain("<!-- BEGIN: repo-harness global-working-rules -->");
     expect(codex).toContain(
-      "<!-- repo-harness manages this block; edits inside are overwritten on sync. Keep personal rules outside the markers. -->",
+      "<!-- repo-harness manages this block; sync keeps an edited block unchanged. Keep personal rules outside the markers. -->",
     );
     expect(codex).toContain("- Use Chinese to report to user.");
     expect(codex).toContain(
@@ -180,21 +181,36 @@ describe("global working rules distribution", () => {
       "<!-- END: repo-harness global-working-rules -->",
       "",
     ].join("\n");
-    const merged = mergeManagedBlock(duplicated, zhBlock());
+    const merged = mergeManagedBlock(duplicated, zhBlock(), ROOT);
     expect(merged.status).toBe("blocked-unbalanced");
     expect(merged.content).toBe(duplicated);
   });
 
-  test("replaces a legacy unmarked rules copy with the managed block", () => {
-    const existing = ["# Global Working Rules", "", "- Custom user-owned rule.", ""].join("\n");
-    const merged = mergeManagedBlock(existing, zhBlock());
+  // The current template is a released template, so its sections are released sections.
+  const released = new Map(legacySections(readFileSync(ASSETS_TEMPLATE, "utf-8").match(/```md\n([\s\S]*?)\n```/)![1]!));
+
+  test("replaces a released legacy rules copy and keeps an edited one", () => {
+    const existing = `${released.get("# Global Working Rules")}\n`;
+    const merged = mergeManagedBlock(existing, zhBlock(), ROOT);
     expect(formatGlobalContextWrite(AGENTS_PATH, existing, merged)).toBe(
       `migrated-legacy:${AGENTS_PATH} (replaced: Global Working Rules; kept user sections: none)`,
     );
-    // The H1 preamble is part of the shipped legacy span.
-    expect(merged.content).not.toContain("- Custom user-owned rule.");
     expect(merged.content).toBe(zhBlock());
     expect(inspectGlobalContext(merged.content, ROOT).state).toBe("managed-current");
+
+    const edited = ["# Global Working Rules", "", "- Custom user-owned rule.", ""].join("\n");
+    const kept = mergeManagedBlock(edited, zhBlock(), ROOT);
+    expect(kept.content).toBe(`${edited}\n${zhBlock()}`);
+    expect(formatGlobalContextWrite(AGENTS_PATH, edited, kept)).toBe(
+      `appended:${AGENTS_PATH} (kept edited sections: Global Working Rules; they differ from every released section, so sync does not change them)`,
+    );
+  });
+
+  test("keeps an edited managed block unchanged", () => {
+    const edited = zhBlock().replace("- Use Chinese to report to user.", "- Use Chinese to report to user. My edit.");
+    const content = `user content\n\n${edited}`;
+    expect(mergeManagedBlock(content, zhBlock(), ROOT)).toMatchObject({ status: "kept-edited", content });
+    expect(inspectGlobalContext(content, ROOT).state).toBe("managed-stale");
   });
 
   test("migrates a mixed legacy file and keeps a custom sentence refreshable", () => {
@@ -202,13 +218,13 @@ describe("global working rules distribution", () => {
     const userAfter = "## Disk hygiene\n\nKeep the disk clean.\n";
     const existing = [
       userBefore,
-      "# Global Working Rules\n\nOld preamble.\n\n",
-      "## Reporting\n\n- Old reporting rule.\n\n",
+      `${released.get("# Global Working Rules")}\n\n`,
+      `${released.get("## Reporting")}\n\n`,
       userAfter,
     ].join("");
     const instruction = "Report in French --> keep code terms in English.";
     const block = renderGlobalRulesBlock(ROOT, { preset: "custom", instruction });
-    const merged = mergeManagedBlock(existing, block);
+    const merged = mergeManagedBlock(existing, block, ROOT);
     expect(formatGlobalContextWrite(AGENTS_PATH, existing, merged)).toBe(
       `migrated-legacy:${AGENTS_PATH} (replaced: Global Working Rules, Reporting; kept user sections: CodeGraph, Disk hygiene)`,
     );

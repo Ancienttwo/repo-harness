@@ -11,11 +11,13 @@ responsibilities:
   - Keep .ai/harness/workflow-contract.json as an opt-in marker only.
   - Load the contract from the package or an explicit source checkout and reject unsafe helper entries.
   - Check the context map and select agent context blocks.
+  - "Rebuild assets/released-managed-values.v1.json from the release tags and fail on drift."
 source:
   include:
     - .ai/context/**
     - scripts/workflow-contract.ts
     - scripts/check-context-*
     - scripts/select-agent-context-blocks.sh
+    - scripts/check-released-managed-values.ts
   exclude:
     - scripts/check-context-map.ts
