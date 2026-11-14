@@ -2,16 +2,24 @@
  * Declared workflow job dependencies (repo-harness issues #1256, #2749).
  *
  * The provider job list carries no workflow job id or dependency edge. The
- * collector reads the workflow definition and maps each provider job name to
- * one workflow job by a closed name expansion: every display name the
- * workflow can produce is computed exactly, and a provider name maps only by
- * equality. A workflow shape whose names cannot be computed exactly gives no
- * graph, and the collector keeps its fail-closed path.
+ * collector reads the workflow definition and maps a provider job name to a
+ * workflow job only when no other job can produce that name. The reader never
+ * reads matrix values: each job contributes the literal prefix of its display
+ * name, and a job can produce a name when one of the two starts with the
+ * other. A workflow shape outside the closed name domain gives no graph, and
+ * the collector keeps its fail-closed path.
  */
 
+interface WorkflowJobNameV1 {
+  readonly id: string;
+  /** The static name, or the name text before the first `${{`. */
+  readonly prefix: string;
+  /** The display name of a non-matrix job with a static name; null otherwise. */
+  readonly exact: string | null;
+}
+
 export interface WorkflowGraphV1 {
-  /** Expanded display name -> workflow job id. Every expanded name is unique. */
-  readonly jobByName: ReadonlyMap<string, string>;
+  readonly jobs: readonly WorkflowJobNameV1[];
   /** Workflow job id -> declared needs. */
   readonly needs: ReadonlyMap<string, readonly string[]>;
 }
@@ -28,72 +36,23 @@ export interface RequiredJobPlacementV1 {
   readonly failed: ReadonlyMap<string, FailedJobPlacementV1>;
 }
 
-const MATRIX_EXPRESSION = /\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}/gu;
-/** Never integer-like, so object enumeration keeps declaration order. */
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_-]*$/u;
-/** Plain scalars that YAML 1.1 reads as booleans and YAML 1.2 reads as strings. */
-const YAML_VERSION_SCALAR = /^(?:y|n|yes|no|on|off)$/iu;
-/** GitHub formats numbers with invariant G15; String() gives the same text up to 15 digits. */
-const MAX_EXACT_INTEGER = 999_999_999_999_999;
+const JOB_ID = /^[A-Za-z_][A-Za-z0-9_-]*$/u;
+/** Plain text that Bun.YAML and GitHub read as the same string. */
+const NAME_TEXT = /^[A-Za-z][A-Za-z0-9 ()/._-]*$/u;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isExactIdentifier(value: string): boolean {
-  return IDENTIFIER.test(value) && !YAML_VERSION_SCALAR.test(value);
-}
-
-/** The text GitHub gives a matrix value in a display name; null outside the domain reproduced exactly. */
-function formatMatrixValue(value: unknown): string | null {
-  if (typeof value === 'boolean') return String(value);
-  if (typeof value === 'number') {
-    return Number.isInteger(value) && Math.abs(value) <= MAX_EXACT_INTEGER && !Object.is(value, -0) ? String(value) : null;
-  }
-  if (typeof value === 'string') return value.includes('${{') || YAML_VERSION_SCALAR.test(value) ? null : value;
-  return null;
-}
-
-/** A static matrix of formatted plain lists in declaration order; undefined when the job has none, null when not exact. */
-function staticMatrix(strategy: unknown): [string, string[]][] | undefined | null {
-  if (strategy === undefined) return undefined;
-  if (!isRecord(strategy)) return null;
-  if (strategy.matrix === undefined) return undefined;
-  if (!isRecord(strategy.matrix)) return null;
-  const entries = Object.entries(strategy.matrix);
-  if (entries.length === 0) return null;
-  const axes: [string, string[]][] = [];
-  for (const [key, values] of entries) {
-    // include, exclude and expressions add or remove instances the reader cannot compute.
-    if (key === 'include' || key === 'exclude' || !isExactIdentifier(key)) return null;
-    if (!Array.isArray(values) || values.length === 0) return null;
-    const formatted = values.map(formatMatrixValue);
-    if (formatted.some(value => value === null)) return null;
-    axes.push([key, formatted as string[]]);
-  }
-  return axes;
-}
-
-function combinations(axes: readonly [string, string[]][]): Map<string, string>[] {
-  return axes.reduce<Map<string, string>[]>((rows, [key, values]) =>
-    rows.flatMap(row => values.map(value => new Map([...row, [key, value]]))), [new Map()]);
-}
-
-/** Every display name GitHub gives the job's instances; null when one cannot be computed exactly. */
-function expandNames(id: string, job: Record<string, unknown>): string[] | null {
-  if (job.name !== undefined && typeof job.name !== 'string') return null;
+/** The job's name prefix and exact name; null outside the closed name domain. */
+function jobName(id: string, job: Record<string, unknown>): WorkflowJobNameV1 | null {
   const name = job.name ?? id;
-  if (YAML_VERSION_SCALAR.test(name)) return null;
-  const axes = staticMatrix(job.strategy);
-  if (axes === null) return null;
-  const keys = [...name.matchAll(MATRIX_EXPRESSION)].map(match => match[1]!);
-  if (name.replace(MATRIX_EXPRESSION, '').includes('${{')) return null;
-  if (axes === undefined) return keys.length === 0 ? [name] : null;
-  const axisKeys = new Set(axes.map(([key]) => key));
-  if (keys.some(key => !axisKeys.has(key))) return null;
-  return combinations(axes).map(row => keys.length > 0
-    ? name.replace(MATRIX_EXPRESSION, (_, key: string) => row.get(key)!)
-    : `${name} (${[...row.values()].join(', ')})`);
+  if (typeof name !== 'string') return null;
+  const template = name.indexOf('${{');
+  const prefix = template < 0 ? name : name.slice(0, template);
+  if (!NAME_TEXT.test(prefix) || prefix.includes('  ') || (template < 0 && prefix.endsWith(' '))) return null;
+  const matrix = job.strategy !== undefined && (!isRecord(job.strategy) || job.strategy.matrix !== undefined);
+  return { id, prefix, exact: template < 0 && !matrix ? name : null };
 }
 
 function declaredNeeds(value: unknown): string[] | null {
@@ -104,34 +63,39 @@ function declaredNeeds(value: unknown): string[] | null {
 }
 
 /**
- * Parses a workflow into its expanded job names and needs. Returns null for
- * invalid YAML, a needs value that is not a string or a list of strings, a
- * job id outside the identifier domain, a name or matrix the expansion cannot
- * compute, a reusable-workflow job (its callee jobs have names the workflow
- * does not declare), or a duplicate expanded name. The YAML reader keeps the
- * last of duplicate mapping keys; GitHub rejects such a workflow, so no run
- * reaches this reader with one.
+ * Parses a workflow into its job names and needs. Returns null for invalid
+ * YAML, a needs value that is not a string or a list of strings, a job id or
+ * name outside its domain, a reusable-workflow job (its callee jobs have
+ * names the workflow does not declare), or a duplicate exact name. The YAML
+ * reader keeps the last of duplicate mapping keys; GitHub rejects such a
+ * workflow, so no run reaches this reader with one.
  */
 export function parseWorkflowGraph(text: string): WorkflowGraphV1 | null {
   let parsed: unknown;
   try { parsed = Bun.YAML.parse(text); }
   catch { return null; }
   if (!isRecord(parsed) || !isRecord(parsed.jobs)) return null;
-  const jobByName = new Map<string, string>();
+  const jobs: WorkflowJobNameV1[] = [];
   const needs = new Map<string, readonly string[]>();
   for (const [id, job] of Object.entries(parsed.jobs)) {
-    if (!isExactIdentifier(id) || !isRecord(job) || job.uses !== undefined) return null;
+    if (!JOB_ID.test(id) || !isRecord(job) || job.uses !== undefined) return null;
     const jobNeeds = declaredNeeds(job.needs);
-    const names = expandNames(id, job);
-    if (jobNeeds === null || names === null) return null;
-    for (const name of names) {
-      if (jobByName.has(name)) return null;
-      jobByName.set(name, id);
-    }
+    const name = jobName(id, job);
+    if (jobNeeds === null || name === null) return null;
+    if (name.exact !== null && jobs.some(other => other.exact === name.exact)) return null;
+    jobs.push(name);
     needs.set(id, Object.freeze([...jobNeeds]));
   }
   if (needs.size === 0) return null;
-  return Object.freeze({ jobByName, needs });
+  return Object.freeze({ jobs: Object.freeze(jobs), needs });
+}
+
+/** The one job that produces the provider name; null when none or more than one job can. */
+function resolveJob(graph: WorkflowGraphV1, name: string): WorkflowJobNameV1 | null {
+  const producers = graph.jobs.filter(job => name.startsWith(job.prefix) || job.prefix.startsWith(name));
+  if (producers.length !== 1) return null;
+  const [job] = producers;
+  return (job!.exact === null ? name.startsWith(job!.prefix) : name === job!.exact) ? job! : null;
 }
 
 /** The ids the root job reaches through `needs`; null on a missing need or a cycle. */
@@ -152,7 +116,8 @@ function needsClosure(graph: WorkflowGraphV1, root: string): ReadonlySet<string>
 /**
  * Places each failed provider job against the full needs graph of the
  * required job. Returns null when the required name or its graph does not
- * resolve. A failed name that equals no expanded name, or a transitive need,
+ * resolve. A failed job is `outside` only when it is the exact name of one
+ * non-matrix job outside the graph; an unresolved name or a transitive need
  * is `unknown`.
  */
 export function placeFailedJobs(
@@ -160,16 +125,17 @@ export function placeFailedJobs(
   requiredName: string,
   failedNames: readonly string[],
 ): RequiredJobPlacementV1 | null {
-  const root = graph.jobByName.get(requiredName);
+  const root = resolveJob(graph, requiredName)?.id;
   if (root === undefined) return null;
   const closure = needsClosure(graph, root);
   if (closure === null) return null;
   const declared = graph.needs.get(root)!;
   const failed = new Map<string, FailedJobPlacementV1>();
   for (const name of failedNames) {
-    const id = graph.jobByName.get(name);
-    failed.set(name, id === undefined || id === root ? 'unknown'
-      : declared.includes(id) ? 'needed' : closure.has(id) ? 'unknown' : 'outside');
+    const job = resolveJob(graph, name);
+    failed.set(name, job === null || job.id === root ? 'unknown'
+      : declared.includes(job.id) ? 'needed'
+      : !closure.has(job.id) && job.exact === name ? 'outside' : 'unknown');
   }
   return Object.freeze({ direct: declared.length === 0, failed });
 }

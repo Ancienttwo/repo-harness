@@ -684,10 +684,7 @@ function workflowDefinition(selectionNeeds = '', requiredNeeds = '[selection, ve
     '      matrix:',
     '        shard: [1, 2, 3]',
     '  projection:',
-    '    name: Projection provider (${{ matrix.os }})',
-    '    strategy:',
-    '      matrix:',
-    '        os: [windows-latest]',
+    `    name: ${PROJECTION_JOB}`,
     ...extraJob,
     '  required:',
     '    name: Required / CI',
@@ -696,7 +693,17 @@ function workflowDefinition(selectionNeeds = '', requiredNeeds = '[selection, ve
 }
 
 const SETUP_JOB = ['  setup:', '    name: Setup'];
+const MATRIX_K = ['    strategy:', '      matrix:', '        k: [a]'];
 const LINT_MATRIX = ['    strategy:', '      matrix:', '        os: [ubuntu-latest]'];
+
+/** A matrix job in the needs and an unrelated static job named with the value as GitHub displays it. */
+function r4Probes(values: readonly (readonly [string, string])[]): Record<`r4-${string}`, OtherFailure> {
+  return Object.fromEntries(values.flatMap(([value, shown]) => [
+    [`r4-template ${value}`, `Build \${{ matrix.val }}`, `Build ${shown}`],
+    [`r4-suffix ${value}`, 'Build', `Build (${shown})`],
+  ].map(([scenario, name, job]) => [scenario, { summary: 'success', job, workflow: workflowDefinition('build', undefined, [
+    '  build:', `    name: ${name}`, '    strategy:', '      matrix:', `        val: [${value}]`, '  other:', `    name: ${job}`]) }])));
+}
 
 const MAIN_CI = readFileSync(join(import.meta.dir, '../../.github/workflows/ci.yml'), 'utf8');
 
@@ -733,16 +740,15 @@ const OTHER_FAILURES = {
   'deep-indent-matrix': { summary: 'success', job: 'Build (a)', workflow: workflowDefinition('build', undefined, [
     '  build:', '    name: Build', '    strategy:', '        matrix:', '          k: [a]',
     '  buildx:', '    name: Build ${{ inputs.k }}']) },
-  // A static Build (two, one) owns the real name when the reader reorders keys, formats 1E+15 or reads on as a string.
-  'integer-like-matrix-keys': { summary: 'success', job: 'Build (two, one)', workflow: workflowDefinition('build', undefined, [
-    '  build:', '    name: Build', '    strategy:', '      matrix:', "        '2': [two]", "        '1': [one]",
-    '  other:', '    name: Build (two, one)']) },
-  'g15-matrix-number': { summary: 'success', job: 'Build 1E+15', workflow: workflowDefinition('build', undefined, [
-    '  build:', '    name: Build ${{ matrix.n }}', '    strategy:', '      matrix:', '        n: [1000000000000000]',
-    '  other:', '    name: Build 1E+15']) },
-  'yaml-version-scalar': { summary: 'success', job: 'Build true', workflow: workflowDefinition('build', undefined, [
-    '  build:', '    name: Build ${{ matrix.flag }}', '    strategy:', '      matrix:', '        flag: [on]',
-    '  other:', '    name: Build true']) },
+  // GitHub keeps signed hex and octal as strings and wraps 32-bit values; Bun.YAML reads other integers.
+  ...r4Probes([['+0x10', '+0x10'], ['-0x10', '-0x10'], ['+0o10', '+0o10'], ['-0o7', '-0o7'],
+    ['0xFFFFFFFF', '-1'], ['0o37777777777', '-1'], ['0x80000000', '-2147483648']]),
+  'static-starts-with-prefix': { summary: 'success', job: 'Build x', workflow: workflowDefinition('build', undefined, [
+    '  build:', '    name: Build ${{ matrix.k }}', ...MATRIX_K, '  other:', '    name: Build x']) },
+  'prefix-starts-with-static': { summary: 'success', job: 'Lint', workflow: workflowDefinition('lintx', undefined, [
+    '  lintx:', '    name: Lint check ${{ matrix.k }}', ...MATRIX_K, '  other:', '    name: Lint']) },
+  'name-outside-domain': { summary: 'success', job: PROJECTION_JOB, workflow: workflowDefinition('', undefined, [
+    '  deploy:', '    name: Deploy!']) },
   'transitive-need': { summary: 'success', job: 'Setup', workflow: workflowDefinition('setup', undefined, SETUP_JOB) },
   'missing-nested-need': { summary: 'success', job: PROJECTION_JOB, workflow: workflowDefinition('ghost') },
   'default-matrix-name': { summary: 'success', job: 'lint (ubuntu-latest)',
@@ -754,7 +760,7 @@ const OTHER_FAILURES = {
 
 type EvidenceScenario = 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'association-unknown'
   | 'evidence-unavailable' | 'original-test-skipped' | 'original-test-not-executed' | 'no-annotations'
-  | keyof typeof OTHER_FAILURES;
+  | keyof typeof OTHER_FAILURES | `r4-${string}`;
 
 function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadinessInput['gh_runner']> {
   const source = fakeGh();
@@ -912,8 +918,8 @@ test('a failed job outside the needs is failure evidence only beside a failed at
 
 test.each(['transitive-need', 'missing-nested-need', 'skipped-transitive-need', 'workflow-changed-on-base',
   'quoted-block-need', 'scalar-need-next-line', 'format-name-collision', 'reusable-name-collision',
-  'reusable-callee-template', 'deep-indent-body', 'deep-indent-matrix', 'integer-like-matrix-keys', 'g15-matrix-number',
-  'yaml-version-scalar'] as const)(
+  'reusable-callee-template', 'deep-indent-body', 'deep-indent-matrix', 'static-starts-with-prefix',
+  'prefix-starts-with-static', 'name-outside-domain', ...Object.keys(OTHER_FAILURES).filter(key => key.startsWith('r4-')) as `r4-${string}`[]])(
   'an old failure that may sit in the needs graph stays on the fail-closed path: %s', (scenario) => {
     expect(() => evidenceVerdict(scenario)).toThrow('RequiredCheckObservation has no failed attempt');
   });
