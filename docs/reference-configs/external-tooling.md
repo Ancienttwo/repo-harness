@@ -1152,7 +1152,7 @@ owner's GO for its reviewed head, green checks, a passing
 not hand edits inside generated regions.
 Service installation and activation are operator steps, not package-install effects.
 
-`AgentNotice` reads package-local archctx 0.9.1
+`AgentNotice` reads the pinned package-local archctx
 `checkpoint --changed-path <path>... --json`. In practice, only citation debt
 (`stale-anchor`) reaches the session. Checkpoint receives only owned changed
 paths. An ambiguous owner stops the ownership resolve before checkpoint runs.
@@ -1400,8 +1400,8 @@ rh refactor decide <recommendation-id> accept|defer|reject --reason "<text>" [--
 and bounded `evidence` of its observation (`kind`, `totalCount`, `truncated`
 and the first items) and the statistics of every affected module (files, lines,
 fan-in, fan-out, cycles, direction violations, unresolved imports). Direction
-violations are filled only when the model declares constraints. archctx 0.9.1
-does not measure instability or test files, so they are not shown. A suggestion
+violations are filled only when the model declares constraints. repo-harness
+does not show instability or test file counts in module statistics. A suggestion
 recorded by an earlier scan has `snapshot: "earlier"`, keeps its recorded
 metrics and evidence, and shows no module statistics.
 
