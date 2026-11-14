@@ -2,10 +2,11 @@ import { readFileSync } from "fs";
 import { homedir } from "os";
 import { isAbsolute, join } from "path";
 import type { AppendManagedBlockOperation, ManagedBlockMarker } from "../../core/adoption/operations";
-import { managedBlockMarker } from "../../core/adoption/managed-block";
+import { managedBlockMarker, renderManagedBlock } from "../../core/adoption/managed-block";
 import { makeOperationId } from "../../core/adoption/operations";
 import { gitSpawnSync } from "../git/runner";
 import { RETIRED_RUNTIME_IGNORE_RULES, retiredRuntimeRuleFiles } from "../upgrade/legacy-inventory";
+import { isReleasedIgnoreBlock } from "../upgrade/released-values";
 
 export const GITIGNORE_MANAGED_BLOCK_MARKER = "repo-harness generated-runtime";
 
@@ -26,6 +27,30 @@ function gitignoreManagedBlockContent(repoRoot: string, extraContent: string): s
   const retained = RETIRED_RUNTIME_IGNORE_RULES.filter((rule) => retiredRuntimeRuleFiles(repoRoot, rule).length > 0);
   const retiredContent = retained.length > 0 ? [RETIRED_RUNTIME_HEADER, ...retained].join("\n") : "";
   return [GITIGNORE_MANAGED_BLOCK_CONTENT, retiredContent, extraContent].filter((content) => content.trim().length > 0).join("\n\n");
+}
+
+/** The block without its current retired-rule section: the header and the in-order retired rules after it. */
+function withoutRetiredSection(block: string): string {
+  const lines = block.split("\n");
+  const at = lines.indexOf(RETIRED_RUNTIME_HEADER);
+  if (at < 1 || lines[at - 1] !== "") return block;
+  let end = at + 1;
+  let next = 0;
+  for (; end < lines.length; end++) {
+    const index = RETIRED_RUNTIME_IGNORE_RULES.indexOf(lines[end]!, next);
+    if (index === -1) break;
+    next = index + 1;
+  }
+  return [...lines.slice(0, at - 1), ...lines.slice(end)].join("\n");
+}
+
+/**
+ * Proof that an existing ignore block is managed: a released block, or the
+ * current rendering of this operation with any retired-rule subset.
+ */
+export function ignoreBlockProof(operation: AppendManagedBlockOperation): (block: string) => boolean {
+  const current = withoutRetiredSection(renderManagedBlock(operation));
+  return (block) => isReleasedIgnoreBlock(block) || withoutRetiredSection(block) === current;
 }
 
 export function gitignoreManagedBlockOperation(

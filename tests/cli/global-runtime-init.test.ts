@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, lstatSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { legacySections } from '../../scripts/check-released-managed-values';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
@@ -18,7 +19,7 @@ import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
 import { applyInstallSelection, beginInstallHostTransaction, installProfileHostMutationPaths, managedInstallSurfaceIsCurrent, readInstallState, recordRefreshedInstallOwnership, loadSkillSurfaceCatalog, rollbackInstallHostTransaction, versions } from '../../src/cli/installer/install-profile';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { MANAGED_AGENTS } from '../../src/effects/terminal/task-role-profiles';
-import { applyGlobalContextRefresh, inspectGlobalContext, preflightGlobalContextRefresh, renderGlobalRulesBlock, setReportingLanguage } from '../../src/cli/installer/global-context';
+import { applyGlobalContextRefresh, GLOBAL_RULES_EDITED, inspectGlobalContext, preflightGlobalContextRefresh, renderGlobalRulesBlock, setReportingLanguage } from '../../src/cli/installer/global-context';
 import { CandidateRequestProtocolRetiredError, encodeCandidateRequest, parseCandidateRequest, type CandidateReconciliationRequest } from '../../src/cli/commands/candidate-reconciliation';
 import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 
@@ -3233,14 +3234,18 @@ describe('Global Working Rules refresh during install and update', () => {
   const userBefore = '## Model Routing\n\nUse the orchestrator model.\n\n';
   const userBetween = '## Herdr 跨 harness 协作\n\n- Talk to the peer pane.\n\n';
   const userAfter = '## Disk hygiene on the Mac mini\n\n- Keep the disk clean.\n';
+  // Sync replaces only released text; the current template is a released template.
+  const released = new Map(legacySections(readFileSync(join(ROOT, 'assets/reference-configs/global-working-rules.md'), 'utf8').match(/```md\n([\s\S]*?)\n```/)![1]!));
   const mixedLegacy = [
     userBefore,
-    '# Global Working Rules\n\nRule 0: old wording.\n\n',
-    '## Sufficiency and Stop Boundaries\n\n- Old stop rule.\n\n',
+    `${released.get('# Global Working Rules')}\n\n`,
+    `${released.get('## Sufficiency and Stop Boundaries')}\n\n`,
     userBetween,
-    '## Progressive Due Diligence\n\n### P1: Architecture Map\n\n- Old map rule.\n\n',
+    `${released.get('## Progressive Due Diligence')}\n\n`,
     userAfter,
   ].join('');
+  // A block that v0.23.1 wrote: it records no reporting language.
+  const releasedUnrecorded = readFileSync(join(ROOT, 'tests/fixtures/global-rules/released-v0.23.1-en.md'), 'utf8');
 
   function withRulesRuntime(body: (fixture: {
     home: string;
@@ -3335,7 +3340,7 @@ describe('Global Working Rules refresh during install and update', () => {
   }));
 
   test('setting the language installs missing, unmanaged and unrecorded rules through the existing merge', () => {
-    for (const current of [null, userBefore, mixedLegacy, '<!-- BEGIN: repo-harness global-working-rules -->\nold\n<!-- END: repo-harness global-working-rules -->\n']) {
+    for (const current of [null, userBefore, mixedLegacy, releasedUnrecorded]) {
       withRulesRuntime(({ home, path }) => {
         if (current === null) rmSync(path, { force: true });
         else writeFileSync(path, current);
@@ -3358,8 +3363,7 @@ describe('Global Working Rules refresh during install and update', () => {
   // An older parent CLI hands update to the candidate without a report language.
   test('a candidate-style update without a language skips legacy and unrecorded files and exits 0', () => withRulesRuntime(({ home, path, run }) => {
     const claudePath = join(home, '.claude', 'CLAUDE.md');
-    const unrecorded = renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' })
-      .replace(/^<!-- repo-harness reporting-language: .*\n/m, '');
+    const unrecorded = releasedUnrecorded;
     mkdirSync(join(home, '.claude'), { recursive: true });
     writeFileSync(path, mixedLegacy);
     writeFileSync(claudePath, unrecorded);
@@ -3423,9 +3427,10 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(rulesStep(unchanged)).toMatchObject({ status: 'ok', detail: `unchanged:${path}` });
     expect(readFileSync(path, 'utf-8')).toBe(expected);
 
-    const stale = expected.replace('Rule 0:', 'Old rule 0:');
+    // A released block in CRLF is proved managed and refreshed in CRLF.
+    const stale = crlf(`${userBefore}${releasedUnrecorded}\n${userAfter}`);
     writeFileSync(path, stale);
-    const refreshed = run();
+    const refreshed = run('en');
     const detail = rulesStep(refreshed)?.detail;
     expect(rulesStep(refreshed)).toMatchObject({ status: 'ok', detail: backedUp(home, path, `updated:${path}`, stale, detail) });
     expect(readFileSync(path, 'utf-8')).toBe(expected);
@@ -3500,13 +3505,11 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(rulesStep(again)).toMatchObject({ status: 'ok', detail: `unchanged:${path}` });
     expect(readFileSync(path, 'utf-8')).toBe(expected);
 
-    // A recorded header refreshes a stale block without a flag; the header wins over a flag.
-    const stale = expected.replace('Rule 0:', 'Old rule 0:');
-    writeFileSync(path, stale);
-    const refreshed = run('en');
-    const refreshedDetail = rulesStep(refreshed)?.detail;
-    expect(rulesStep(refreshed)).toMatchObject({ status: 'ok', detail: backedUp(home, path, `updated:${path}`, stale, refreshedDetail) });
-    expect(readFileSync(path, 'utf-8')).toBe(expected);
+    // An edited block is no released block: update keeps it, with or without a flag.
+    const edited = expected.replace('Rule 0:', 'Old rule 0:');
+    writeFileSync(path, edited);
+    expect(rulesStep(run('en'))).toMatchObject({ status: 'skipped', detail: `skipped-edited:${path} (${GLOBAL_RULES_EDITED})` });
+    expect(readFileSync(path, 'utf-8')).toBe(edited);
 
     // The printed restore command puts the user's pre-migration file back.
     const restore = migratedDetail?.match(/; restore: (.+)\)$/)?.[1] ?? '';
@@ -3515,8 +3518,7 @@ describe('Global Working Rules refresh during install and update', () => {
   }), 60_000);
 
   test('an unrecorded block needs a flag, and install also runs the refresh', () => withRulesRuntime(({ home, path, run }) => {
-    const unrecorded = `${userBefore}${renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' })
-      .replace(/^<!-- repo-harness reporting-language: .*\n/m, '')}`;
+    const unrecorded = `${userBefore}${releasedUnrecorded}`;
     writeFileSync(path, unrecorded);
     const unsynced = run(undefined, false);
     expect(unsynced.exitCode).toBe(0);

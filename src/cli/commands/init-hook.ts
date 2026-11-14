@@ -31,6 +31,7 @@ import { isRepoHarnessSourceCheckout } from '../../effects/source-checkout';
 import { resolveRepoRoot } from '../hook/runtime';
 import { isUserLevelAdapter } from './migrate';
 import {
+  GLOBAL_RULES_EDITED,
   GLOBAL_RULES_UNBALANCED,
   globalContextPath,
   globalContextPathRefusal,
@@ -505,9 +506,11 @@ function globalRulesChecks(
         check('ok', `managed block matches the current template at ${filePath}`);
         break;
       case 'managed-stale':
-        check('warn', inspection.legacySpan
-          ? `legacy repo-harness sections outside the markers at ${filePath}; run \`rh update\``
-          : `managed block is stale at ${filePath}; run \`rh update\``);
+        check('warn', inspection.synced?.status === 'kept-edited'
+          ? `${GLOBAL_RULES_EDITED}: ${filePath}`
+          : inspection.legacySpan
+            ? `legacy repo-harness sections outside the markers at ${filePath}; run \`rh update\``
+            : `managed block is stale at ${filePath}; run \`rh update\``);
         break;
       case 'managed-unrecorded':
         check('warn', `managed block has no recorded reporting language at ${filePath}; run ${flagCommand}`);

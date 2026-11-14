@@ -12,7 +12,7 @@ import { checkSeatRoutingModels, seatsRanges } from '../../effects/board/seats-c
 import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "fs";
 import { upsertManagedBlock } from "../../core/adoption/managed-block";
 import { assertConfigurationPath } from "../installer/configuration-ownership";
-import { runtimeStateIgnoreOperation, userExcludesFilePath } from "../../effects/adoption/gitignore-plan";
+import { ignoreBlockProof, runtimeStateIgnoreOperation, userExcludesFilePath } from "../../effects/adoption/gitignore-plan";
 import { sha256Hex } from "../../core/evidence/sha256";
 import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
@@ -1047,8 +1047,12 @@ function writeRuntimeIgnoreRules(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
   }
   try {
     const existing = existsSync(target.path) ? readFileSync(target.path, 'utf-8') : '';
-    const update = upsertManagedBlock(existing, runtimeStateIgnoreOperation(target.path));
+    const operation = runtimeStateIgnoreOperation(target.path);
+    const update = upsertManagedBlock(existing, operation, ignoreBlockProof(operation));
     if (!update.ok) return { step, status: 'failed', detail: `${target.path}: ${update.error}` };
+    if (update.kept !== undefined) {
+      return { step, status: 'ok', detail: `${target.path}: kept the edited block "${update.kept}"; it differs from every released block, so update does not change it. Delete the block, then run rh update again to get the current one` };
+    }
     if (!update.changed) return { step, status: 'ok', detail: `${target.path}: current` };
     mkdirSync(dirname(target.path), { recursive: true });
     writeFileSync(target.path, update.content!);

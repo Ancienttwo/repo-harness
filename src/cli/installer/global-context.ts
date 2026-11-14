@@ -5,14 +5,15 @@
  * Init writes the block, install and update refresh it, setup check compares
  * it, and uninstall removes it. All of them use the markers and the render
  * here. The block records its own reporting-language inputs, so install and
- * update can render it again without a prompt. Repo-harness rules are
- * overwritten; user rules are kept. Outside the markers, sync removes only
- * legacy copies of sections that repo-harness shipped.
+ * update can render it again without a prompt. Sync replaces a block or an
+ * unmarked section only when its text equals a released one
+ * (`assets/released-managed-values.v1.json`); every other text is kept.
  */
 
 import { accessSync, constants, lstatSync, mkdirSync, readFileSync, writeFileSync, type Stats } from 'fs';
 import { basename, dirname, join } from 'path';
 import { shellQuote } from '../../core/shell-quote';
+import { isReleasedGlobalRulesBlock, isReleasedGlobalRulesSection } from '../../effects/upgrade/released-values';
 import { assertConfigurationPath } from './configuration-ownership';
 
 export const GLOBAL_RULES_BEGIN = '<!-- BEGIN: repo-harness global-working-rules -->';
@@ -55,8 +56,8 @@ export const GLOBAL_RULES_UNBALANCED = 'unbalanced repo-harness markers; repair 
 /**
  * Every section title that repo-harness ever shipped in
  * `assets/reference-configs/global-working-rules.md`. Outside the markers, a
- * section with one of these exact titles is a legacy repo-harness copy and is
- * replaced on sync. Every other section is user content and is kept.
+ * section with one of these titles is replaced on sync only when its text
+ * equals a released section. Every other section is user content and is kept.
  */
 export const SHIPPED_GLOBAL_RULES_H1 = 'Global Working Rules';
 export const SHIPPED_GLOBAL_RULES_SECTIONS: readonly string[] = [
@@ -198,6 +199,8 @@ interface LegacyScan {
   readonly anchor: number | null;
   readonly replaced: readonly string[];
   readonly kept: readonly string[];
+  /** Shipped titles whose text differs from every released section; they are kept. */
+  readonly edited: readonly string[];
 }
 
 /**
@@ -210,8 +213,23 @@ function scanLegacySpan(lines: readonly string[]): LegacyScan {
   const removed = new Set<number>();
   const replaced: string[] = [];
   const kept: string[] = [];
+  const edited: string[] = [];
   let h1Anchor: number | null = null;
   let mode: 'keep' | 'h1-preamble' | 'section' = 'keep';
+  // A shipped section leaves only when its text equals a released section.
+  let section: { readonly heading: string; readonly title: string; readonly lines: number[] } | null = null;
+  const close = (): void => {
+    if (section === null) return;
+    const text = section.lines.map((index) => lines[index]!.replace(/\r?\n$/, '')).join('\n').replace(/\n+$/, '');
+    if (isReleasedGlobalRulesSection(section.heading, text)) {
+      for (const index of section.lines) removed.add(index);
+      if (section.heading.startsWith('# ')) h1Anchor ??= section.lines[0]!;
+      replaced.push(section.title);
+    } else {
+      edited.push(section.title);
+    }
+    section = null;
+  };
   // CommonMark: a fence closes only on the same character with at least the
   // opening length and nothing after it.
   let fence: { readonly char: string; readonly length: number } | null = null;
@@ -231,28 +249,31 @@ function scanLegacySpan(lines: readonly string[]): LegacyScan {
       const level = heading[1].length;
       const title = heading[2];
       if (level === 1 && title === SHIPPED_GLOBAL_RULES_H1) {
+        close();
         mode = 'h1-preamble';
-        h1Anchor ??= index;
-        replaced.push(title);
+        section = { heading: `# ${title}`, title, lines: [] };
       } else if (level === 2 && SHIPPED_GLOBAL_RULES_SECTIONS.includes(title)) {
+        close();
         mode = 'section';
-        replaced.push(title);
+        section = { heading: `## ${title}`, title, lines: [] };
       } else if (level <= 2 || mode === 'h1-preamble') {
+        close();
         mode = 'keep';
         if (level <= 2) kept.push(title);
       }
     }
-    if (mode !== 'keep') removed.add(index);
+    if (mode !== 'keep') section!.lines.push(index);
   });
+  close();
   const first = removed.size > 0 ? Math.min(...removed) : null;
-  return { removed, anchor: h1Anchor ?? first, replaced: [...new Set(replaced)], kept };
+  return { removed, anchor: h1Anchor ?? first, replaced: [...new Set(replaced)], kept, edited: [...new Set(edited)] };
 }
 
 function keptText(lines: readonly string[], scan: LegacyScan, from: number, to: number): string {
   return lines.slice(from, to).filter((_, offset) => !scan.removed.has(from + offset)).join('');
 }
 
-export type ManagedBlockStatus = 'written' | 'blocked-unbalanced';
+export type ManagedBlockStatus = 'written' | 'blocked-unbalanced' | 'kept-edited';
 
 export interface MergedManagedBlock {
   readonly content: string;
@@ -261,22 +282,41 @@ export interface MergedManagedBlock {
   readonly replaced: readonly string[];
   /** User section titles kept outside the markers. */
   readonly kept: readonly string[];
+  /** Shipped section titles kept outside the markers because their text differs from every released section. */
+  readonly edited: readonly string[];
 }
 
 /**
- * Repo-harness rules are overwritten; user rules are kept. The legacy span
- * outside the markers is removed. An existing block is refreshed in place;
- * otherwise the block goes where the legacy H1 was, or at the end of a file
- * without a legacy span. Every other line keeps its bytes and order.
+ * The marked block is repo-harness's only when its text equals a released
+ * block or the current rendering of its own recorded inputs.
  */
-export function mergeManagedBlock(current: string, renderedBlock: string): MergedManagedBlock {
+function managedBlockProved(block: string, sourceRoot: string): boolean {
+  const lines = block.split('\n');
+  const language = lines[1] === GLOBAL_RULES_SELF_NOTE ? decodeReportingLanguage(lines[2]) : null;
+  if (language !== null && block === renderGlobalRulesBlock(sourceRoot, language).trimEnd()) return true;
+  return isReleasedGlobalRulesBlock(block, language?.preset === 'custom' ? language.instruction : null);
+}
+
+/**
+ * Repo-harness rules are overwritten; user rules are kept. Outside the markers,
+ * a shipped section leaves only when its text equals a released section. An
+ * existing block is refreshed in place only when it is proved managed; an
+ * edited block keeps the whole file unchanged. Otherwise the block goes where
+ * the legacy H1 was, or at the end of a file without a legacy span. Every
+ * other line keeps its bytes and order.
+ */
+export function mergeManagedBlock(current: string, renderedBlock: string, sourceRoot: string): MergedManagedBlock {
   // A CRLF file keeps CRLF: the block is written in the file's line ending,
   // so the current/stale compare is byte-exact and a second sync is a no-op.
   const eol = current.includes('\r\n') ? '\r\n' : '\n';
   const block = eol === '\n' ? renderedBlock : renderedBlock.replace(/\r?\n/g, eol);
   const layout = markerLayout(current);
-  if (layout.kind === 'unbalanced') return { content: current, status: 'blocked-unbalanced', replaced: [], kept: [] };
+  if (layout.kind === 'unbalanced') return { content: current, status: 'blocked-unbalanced', replaced: [], kept: [], edited: [] };
   if (layout.kind === 'balanced') {
+    const existing = current.slice(layout.start, layout.end + GLOBAL_RULES_END.length).replace(/\r\n/g, '\n');
+    if (existing !== renderedBlock.trimEnd() && !managedBlockProved(existing, sourceRoot)) {
+      return { content: current, status: 'kept-edited', replaced: [], kept: [], edited: [] };
+    }
     const beforeLines = splitLines(current.slice(0, layout.start));
     const afterLines = splitLines(current.slice(layout.end + GLOBAL_RULES_END.length));
     const before = scanLegacySpan(beforeLines);
@@ -288,13 +328,14 @@ export function mergeManagedBlock(current: string, renderedBlock: string): Merge
       status: 'written',
       replaced: [...new Set([...before.replaced, ...after.replaced])],
       kept: [...before.kept, ...after.kept],
+      edited: [...new Set([...before.edited, ...after.edited])],
     };
   }
   const lines = splitLines(current);
   const scan = scanLegacySpan(lines);
   if (scan.anchor === null) {
     const trimmed = current.trimEnd();
-    return { content: `${trimmed}${trimmed ? eol + eol : ''}${block}`, status: 'written', replaced: [], kept: scan.kept };
+    return { content: `${trimmed}${trimmed ? eol + eol : ''}${block}`, status: 'written', replaced: [], kept: scan.kept, edited: scan.edited };
   }
   const before = keptText(lines, scan, 0, scan.anchor);
   const after = keptText(lines, scan, scan.anchor, lines.length);
@@ -303,6 +344,7 @@ export function mergeManagedBlock(current: string, renderedBlock: string): Merge
     status: 'written',
     replaced: scan.replaced,
     kept: scan.kept,
+    edited: scan.edited,
   };
 }
 
@@ -344,8 +386,9 @@ export function inspectGlobalContext(content: string | null, sourceRoot: string)
   const blockLines = content.slice(layout.start, layout.end).split(/\r?\n/);
   const language = blockLines[1] === GLOBAL_RULES_SELF_NOTE ? decodeReportingLanguage(blockLines[2]) : null;
   if (language === null) return unsynced('managed-unrecorded');
-  const synced = mergeManagedBlock(content, renderGlobalRulesBlock(sourceRoot, language));
-  return { state: synced.content === content ? 'managed-current' : 'managed-stale', language, legacySpan, synced };
+  const synced = mergeManagedBlock(content, renderGlobalRulesBlock(sourceRoot, language), sourceRoot);
+  const current = synced.status !== 'kept-edited' && synced.content === content;
+  return { state: current ? 'managed-current' : 'managed-stale', language, legacySpan, synced };
 }
 
 export interface GlobalContextFilePlan {
@@ -359,12 +402,20 @@ export interface GlobalContextFilePlan {
   readonly detail: string;
 }
 
-/** The per-file write detail. A removed legacy span is named with the kept user sections. */
+/**
+ * The per-file write detail. A removed legacy span is named with the kept user
+ * sections; a kept edited shipped section is named too.
+ */
 export function formatGlobalContextWrite(path: string, current: string | null, merged: MergedManagedBlock): string {
-  if (merged.replaced.length > 0) return formatMigratedLegacy(path, merged);
-  if (merged.content === current) return `unchanged:${path}`;
-  return `${current === null ? 'created' : current.includes(GLOBAL_RULES_BEGIN) ? 'updated' : 'appended'}:${path}`;
+  const edited = merged.edited.length > 0
+    ? ` (kept edited sections: ${merged.edited.join(', ')}; they differ from every released section, so sync does not change them)`
+    : '';
+  if (merged.replaced.length > 0) return `${formatMigratedLegacy(path, merged)}${edited}`;
+  if (merged.content === current) return `unchanged:${path}${edited}`;
+  return `${current === null ? 'created' : current.includes(GLOBAL_RULES_BEGIN) ? 'updated' : 'appended'}:${path}${edited}`;
 }
+
+export const GLOBAL_RULES_EDITED = 'the managed block differs from every released block, so sync keeps it; move personal rules outside the markers and delete the block to get the current one';
 
 /**
  * The instruction file must be reached without a symlink under HOME. The
@@ -463,11 +514,13 @@ export function planGlobalContextFile(
   const plan = (outcome: GlobalContextFilePlan['outcome'], detail: string, next: string | null = null): GlobalContextFilePlan => (
     { path, state: inspection.state, outcome, current, next, detail }
   );
-  const write = (merged: MergedManagedBlock): GlobalContextFilePlan => plan('write', formatGlobalContextWrite(path, current, merged), merged.content);
-  const withFlag = (): MergedManagedBlock => mergeManagedBlock(current ?? '', renderGlobalRulesBlock(sourceRoot, reportLanguageFromFlag(flag!)));
+  const write = (merged: MergedManagedBlock): GlobalContextFilePlan => merged.status === 'kept-edited'
+    ? plan('skipped', `skipped-edited:${path} (${GLOBAL_RULES_EDITED})`)
+    : plan('write', formatGlobalContextWrite(path, current, merged), merged.content);
+  const withFlag = (): MergedManagedBlock => mergeManagedBlock(current ?? '', renderGlobalRulesBlock(sourceRoot, reportLanguageFromFlag(flag!)), sourceRoot);
   switch (inspection.state) {
     case 'managed-current':
-      return plan('unchanged', `unchanged:${path}`);
+      return plan('unchanged', formatGlobalContextWrite(path, current, inspection.synced!));
     case 'managed-stale':
       return write(inspection.synced!);
     case 'unbalanced':
@@ -514,7 +567,7 @@ export function setReportingLanguage(
   if (refused) return { status: 'skipped', detail: refused.detail, changed_hosts: [] };
   const block = renderGlobalRulesBlock(sourceRoot, reportLanguageFromFlag(preset));
   const files = plan.files.map(file => {
-    const merged = mergeManagedBlock(file.current ?? '', block);
+    const merged = mergeManagedBlock(file.current ?? '', block, sourceRoot);
     return { ...file, next: merged.content, outcome: merged.content === file.current ? 'unchanged' as const : 'write' as const,
       detail: formatGlobalContextWrite(file.path, file.current, merged) };
   });

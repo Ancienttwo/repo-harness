@@ -855,8 +855,9 @@ describe('legacy workflow-state upgrade report', () => {
     expect(check.exitCode).toBe(1);
     RETIRED_CLI_LINES.calls.forEach((line, index) => expect(check.items[0]?.reason).toContain(`call:${index}: ${line} (the repo-harness command is now rh)`));
     RETIRED_CLI_LINES.excluded.forEach((_, index) => expect(check.items[0]?.reason).not.toContain(`excluded:${index}:`));
-    // init writes the managed keys on every run, so the inventory does not report them.
-    for (const managed of ['check:deploy-sql:', 'check:brain:', 'sync:brain:']) expect(check.items[0]?.reason).not.toContain(managed);
+    // init replaces a managed key only when its value is current or released, so the inventory reports an edited value.
+    for (const managed of ['check:brain:', 'sync:brain:']) expect(check.items[0]?.reason).not.toContain(managed);
+    expect(check.items[0]?.reason).toContain('check:deploy-sql: sudo repo-harness run check-deploy-sql-order --verbose (the repo-harness command is now rh)');
     for (const live of ['check:context-files', 'spec:new', 'test:']) expect(check.items[0]?.reason).not.toContain(live);
     expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: ['package.json'] }).rejected.map((rejection) => rejection.path)).toEqual(['package.json']);
     expect(runUpgrade({ ...opts, scope: 'project', apply: true }).keptPaths).toContain(path);

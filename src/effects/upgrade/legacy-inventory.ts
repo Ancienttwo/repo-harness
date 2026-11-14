@@ -9,6 +9,7 @@ import { isRepoHarnessSourceCheckout } from '../source-checkout';
 import { loadWorkflowContractAsset } from '../../core/adoption/workflow-contract-asset';
 import { CLI_NAME, namesRetiredCli, RETIRED_CLI_NAME } from '../../core/skill-surface/cli-name';
 import { MANAGED_PACKAGE_SCRIPTS } from '../../core/adoption/package-scripts';
+import { isReleasedPackageScript } from './released-values';
 import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../../core/skill-surface/catalog';
 
 export interface LeftoverItem {
@@ -514,8 +515,8 @@ function scanPackageScripts(root: string, add: AddItem): void {
   const resolves = (runner: string, target: string): boolean => Object.hasOwn(scripts, target)
     || (runner === 'bun' && (stat(join(root, target)) !== null || stat(join(root, 'node_modules/.bin', target)) !== null));
   const findings = Object.entries(scripts).flatMap(([key, command]) => {
-    // init writes the managed keys on every run, so their values are not the user's.
-    if (typeof command !== 'string' || Object.hasOwn(MANAGED_PACKAGE_SCRIPTS, key)) return [];
+    // init replaces a managed key whose value is current or released, so only an edited value is the user's.
+    if (typeof command !== 'string' || MANAGED_PACKAGE_SCRIPTS[key] === command || isReleasedPackageScript(key, command)) return [];
     const retired = [...command.matchAll(/(?<![\w./@-])(?:rh|repo-harness) run ([^\s;&|'"`)]+)/g)].some((match) => !runnable.has(match[1]!));
     const retiredCli = namesRetiredCli(command) ? [` (the ${RETIRED_CLI_NAME} command is now ${CLI_NAME})`] : [];
     const missing = [...command.matchAll(/\b(bun|npm) run(?=\s)/g)].flatMap((match) => {

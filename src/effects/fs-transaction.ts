@@ -29,6 +29,7 @@ import type {
 } from "../core/adoption/operations";
 import { resolveInsideRepo, resolveParentInsideRepo } from "./path-safety";
 import { upsertManagedBlock } from "../core/adoption/managed-block";
+import { ignoreBlockProof } from "./adoption/gitignore-plan";
 import { withExclusiveDirectoryLock } from "./locking/exclusive-directory-lock";
 import { runGit } from './git/run-git';
 
@@ -383,7 +384,7 @@ export function applyAppendManagedBlockOperation(
     const preconditionError = checkExpectedFileState(repoRoot, operation);
     if (preconditionError) return { kind: "refuse", error: preconditionError };
     const existing = existsSync(targetPath) ? readFileSync(targetPath, "utf-8") : "";
-    const update = upsertManagedBlock(existing, operation);
+    const update = upsertManagedBlock(existing, operation, ignoreBlockProof(operation));
     if (!update.ok) return { kind: "refuse", error: update.error ?? "failed to update managed block" };
     if (!update.changed) return { kind: "skip" };
     return { kind: "write", content: update.content ?? "" };

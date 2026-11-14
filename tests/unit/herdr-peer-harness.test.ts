@@ -7,7 +7,7 @@ const PEER_HARNESS_HEADING = "## Peer Harness Collaboration";
 
 function renderedManagedBlock(): string {
   const block = renderGlobalRulesBlock(ROOT, { preset: "en", instruction: "Use English to report to user." });
-  return mergeManagedBlock("", block).content;
+  return mergeManagedBlock("", block, ROOT).content;
 }
 
 describe("required herdr peer-harness guidance", () => {

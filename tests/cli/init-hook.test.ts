@@ -16,11 +16,14 @@ import { planAdoption } from '../../src/effects/adoption/plan';
 import { applyAdoptionPlan } from '../../src/effects/fs-transaction';
 import { readUpgradeFixture } from '../helpers/upgrade-fixtures';
 import { renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
+import { legacySections } from '../../scripts/check-released-managed-values';
 import { CLI_PORTS } from '../../src/cli/index';
 import { initGitRepo } from '../helpers/repo-fixture';
 import { HC_MIN_VERSION } from '../../src/core/terminal/herdr-pin';
 
 const ROOT = join(import.meta.dir, '..', '..');
+// The current template is a released template, so its sections are released legacy sections.
+const RELEASED_SECTIONS = new Map(legacySections(readFileSync(join(ROOT, 'assets/reference-configs/global-working-rules.md'), 'utf8').match(/```md\n([\s\S]*?)\n```/)![1]!));
 const CLI = join(ROOT, 'src/cli/index.ts');
 
 // Doctor readiness runs `hc --version`; a fake hc first on PATH keeps the developer's hc out of every test.
@@ -249,7 +252,8 @@ describe('init-hook command', () => {
     withTempHome((home, repo) => {
       const filePath = join(home, '.codex', 'AGENTS.md');
       mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(filePath, '# Global Working Rules\n\n- Existing user rule.\n');
+      const existing = `${RELEASED_SECTIONS.get('# Global Working Rules')}\n`;
+      writeFileSync(filePath, existing);
 
       const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
@@ -264,7 +268,7 @@ describe('init-hook command', () => {
       expect(globalRules?.status).toBe('warn');
       expect(globalRules?.detail).toContain('rh update --report-language <follow|zh-CN|en>');
       expect(report.agent_actions.find((entry) => entry.id === 'global-rules.insert')).toBeUndefined();
-      expect(readFileSync(filePath, 'utf-8')).toContain('Existing user rule.');
+      expect(readFileSync(filePath, 'utf-8')).toBe(existing);
     });
   });
 
@@ -312,10 +316,10 @@ describe('init-hook command', () => {
     const unrecorded = block.replace(/^<!-- repo-harness reporting-language: .*\n/m, '');
     const cases: Array<{ name: string; content: string; status: 'ok' | 'warn' | 'fail'; detail: string }> = [
       { name: 'current', content: `user notes\n\n${block}`, status: 'ok', detail: 'matches the current template' },
-      { name: 'stale', content: block.replace('Rule 0:', 'Old rule 0:'), status: 'warn', detail: 'stale' },
+      { name: 'edited', content: block.replace('Rule 0:', 'Old rule 0:'), status: 'warn', detail: 'differs from every released block' },
       {
         name: 'legacy span beside a recorded block',
-        content: `${block}\n## Reporting\n\n- Old copy.\n`,
+        content: `${block}\n${RELEASED_SECTIONS.get('## Reporting')}\n`,
         status: 'warn',
         detail: 'legacy repo-harness sections outside the markers',
       },
