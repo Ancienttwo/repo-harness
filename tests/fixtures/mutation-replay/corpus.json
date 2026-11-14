@@ -27,7 +27,10 @@
     "constructor x; touch _ops/env/x", "git constructor x; touch _ops/env/x", "touch --constructor _ops/env/x", "gh pr create -constructor x; touch _ops/env/x",
     "__proto__ x; touch _ops/env/x", "git __proto__ x; touch _ops/env/x", "touch --__proto__ _ops/env/x", "gh pr create -__proto__ x; touch _ops/env/x",
     "toString x; touch _ops/env/x", "git toString x; touch _ops/env/x", "touch --toString _ops/env/x", "gh pr create -toString x; touch _ops/env/x",
-    "hasOwnProperty x; touch _ops/env/x", "git hasOwnProperty x; touch _ops/env/x", "touch --hasOwnProperty _ops/env/x", "gh pr create -hasOwnProperty x; touch _ops/env/x"
+    "hasOwnProperty x; touch _ops/env/x", "git hasOwnProperty x; touch _ops/env/x", "touch --hasOwnProperty _ops/env/x", "gh pr create -hasOwnProperty x; touch _ops/env/x",
+    "gh release download --pattern -b --dir=\"$(cat <<'D'\n_ops/env\nD\n)\"", "git commit -- -m \"$(cat <<'D'\n_ops/env\nD\n)\"", "git commit -m -m \"$(cat <<'D'\n_ops/env\nD\n)\"",
+    "git commit --allow-empty -m \"$(cat <<'D'\n_ops/env\nD\n)\" | xargs rm -rf", "gh pr view 1 --json number -t \"$(cat <<'D'\n_ops/env\nD\n)\" | xargs rm -rf", "gh api repos/o/r -t \"$(cat <<'D'\n_ops/env\nD\n)\" | xargs rm -rf",
+    "git commit -m \"$(cat <<'D'\n_ops/env\nD\n)\" > out.txt; xargs rm < out.txt", "m=$(git commit -m \"$(cat <<'D'\n_ops/env\nD\n)\")", "(git commit -m \"$(cat <<'D'\n_ops/env\nD\n)\") | xargs rm -rf"
   ],
   "accepted": {
     "1": ["rm -rf ${X}ps", "rm -rf $(printf _o)ps", "rm -rf \"$P\"/env", "cd \"$(printf _o)ps\" && rm -rf env"],

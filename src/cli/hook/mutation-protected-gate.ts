@@ -643,22 +643,68 @@ function recursionFinding(args: readonly Word[], dirs: Dirs, resolver: Resolver)
 /** Programs whose operands are write targets; only their operands and redirect targets take the writable-directory exemption. */
 const WRITERS = new Set(['touch', 'mkdir', 'rm', 'rmdir', 'mv', 'tee', 'ln', 'truncate']);
 const MOVES_DIR = new Set(['cd', 'pushd', 'popd']);
-/** The option before a commit or tag message, or a PR or issue body or title: the values that A3 keeps as data. Own keys only. */
-const TEXT_OPTION = new Map([['git', /^-[A-Za-z]*m$|^--message$/], ['gh', /^-[bt]$|^--(?:body|title)$/]]);
-const TEXT_GLUED = new Map([['git', /^--message=/], ['gh', /^--(?:body|title)=/]]);
-const GIT_TEXT = new Set(['commit', 'tag']);
+/**
+ * Rule 3 closed grammar (round 4): the flags that may come before a data span, per command. `text` flags take the message,
+ * body or title; `value` flags take the next word; `flags` take none; `positionals` is the count of operands allowed.
+ */
+interface TextGrammar {
+  readonly text: ReadonlySet<string>;
+  readonly glued: RegExp;
+  readonly value: ReadonlySet<string>;
+  readonly flags: ReadonlySet<string>;
+  readonly positionals: number;
+}
+const GIT_COMMIT: TextGrammar = {
+  text: new Set(['-m', '-am', '--message']), glued: /^--message=/, value: new Set(),
+  flags: new Set(['-a', '--all', '--amend', '--allow-empty', '--no-edit', '-n', '--no-verify', '-s', '--signoff', '-q', '--quiet', '-v', '--verbose']),
+  positionals: 0,
+};
+const GIT_TAG: TextGrammar = {
+  text: new Set(['-m', '-am', '--message']), glued: /^--message=/, value: new Set(),
+  flags: new Set(['-a', '--annotate', '-s', '--sign', '-f', '--force']), positionals: 1,
+};
+const GH_TEXT = { text: new Set(['-b', '--body', '-t', '--title']), glued: /^--(?:body|title)=/ };
+const GH_VALUE = new Set(['-B', '--base', '-H', '--head', '-l', '--label', '-a', '--assignee', '-r', '--reviewer', '-m', '--milestone',
+  '-p', '--project', '-R', '--repo']);
+const GH_FLAGS = new Set(['-d', '--draft', '--fill']);
+const gh = (positionals: number): TextGrammar => ({ ...GH_TEXT, value: GH_VALUE, flags: GH_FLAGS, positionals });
+/** Keyed by `program subcommand` or `program group subcommand`. Own keys only. */
+const TEXT_GRAMMAR = new Map<string, TextGrammar>([
+  ['git commit', GIT_COMMIT], ['git tag', GIT_TAG],
+  ['gh pr create', gh(0)], ['gh pr edit', gh(1)], ['gh pr comment', gh(1)], ['gh pr review', gh(1)], ['gh pr merge', gh(1)],
+  ['gh issue create', gh(0)], ['gh issue edit', gh(1)], ['gh issue comment', gh(1)],
+  ['gh release create', gh(1)], ['gh release edit', gh(1)],
+]);
 
-/** A rule 3 span is data only as a `git commit`/`git tag` message value or a `gh` body or title value (joint decision, round 3). */
-function dataPosition(args: readonly Word[], n: number): boolean {
-  const program = args[0]!;
-  if (n === 0 || program.quoted || program.expand) return false;
-  const option = TEXT_OPTION.get(program.value), glued = TEXT_GLUED.get(program.value);
-  if (!option || !glued) return false;
-  if (program.value === 'git') {
-    const git = gitInvocation(args);
-    if (!git || n <= git.at || !GIT_TEXT.has(args[git.at]!.value)) return false;
+/**
+ * The word indexes of `cmd` whose rule 3 spans are data (round-4 rule). The command must be top level (not in a substitution
+ * body or a subshell), the only member of its pipeline and without a redirect, since a pipe, a redirect or a substitution
+ * carries the printed text (git commit prints the subject; gh -t is a Go template) to another command. The scan reads the
+ * words in order and stops at `--`, an unlisted word or a word that holds a span outside a text value.
+ */
+function dataWords(cmd: Command, topLevel: boolean): Set<number> {
+  const data = new Set<number>();
+  const args = cmd.words;
+  const plain = (n: number) => !!args[n] && !args[n]!.quoted && !args[n]!.expand && !args[n]!.glob && !args[n]!.spans;
+  if (!topLevel || cmd.size !== 1 || cmd.redirects.length) return data;
+  const head = args[0]?.value === 'git' ? 2 : 3;
+  if (![...Array(head).keys()].every(plain)) return data;
+  const grammar = TEXT_GRAMMAR.get(args.slice(0, head).map(word => word.value).join(' '));
+  if (!grammar) return data;
+  let positionals = 0;
+  for (let n = head; n < args.length; n++) {
+    const word = args[n]!, value = word.value;
+    if (word.spans) {
+      if (!grammar.glued.test(value) || word.expand) return data;
+      data.add(n);
+    } else if (grammar.text.has(value) && plain(n)) {
+      if (args[n + 1]?.spans && !args[n + 1]!.expand) data.add(++n); else n++;
+    } else if (grammar.value.has(value) && plain(n)) n++;
+    else if (grammar.flags.has(value) && plain(n)) continue;
+    else if (!value.startsWith('-') && !word.expand && !word.glob && positionals < grammar.positionals) positionals++;
+    else return data;
   }
-  return option.test(args[n - 1]!.value) || glued.test(args[n]!.value);
+  return data;
 }
 
 /** Replaces each span mark with DATA in a data position, else with the span body, which then counts for rules 2 and 7. */
@@ -723,11 +769,13 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
     const outer: Dirs[] = [];
     const steps = commands(tokens, violations);
     const list = steps.filter((step): step is Command => step.kind === 'command');
-    // Rule 3 spans: positions first, since a filled operand can change what gitInvocation reads.
-    for (const cmd of list) {
-      const data = cmd.words.map((_, n) => dataPosition(cmd.words, n));
-      cmd.words.forEach((word, n) => fillSpans(word, data[n]!));
-      for (const redirect of cmd.redirects) if (redirect.target) fillSpans(redirect.target, false);
+    // Rule 3 spans: positions first, since a filled operand can change what gitInvocation reads. Only stream 0 is top level.
+    let depth = 0;
+    for (const step of steps) {
+      if (step.kind !== 'command') { depth += step.kind === '(' ? 1 : -1; continue; }
+      const data = dataWords(step, index === 0 && depth === 0);
+      step.words.forEach((word, n) => fillSpans(word, data.has(n)));
+      for (const redirect of step.redirects) if (redirect.target) fillSpans(redirect.target, false);
     }
     // F1 (owner, 2026-11-14): the writable-directory exemption holds only for a write target with no earlier cd, pushd or popd.
     const moved = new Map<Command, boolean>();
