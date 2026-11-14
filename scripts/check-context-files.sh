@@ -31,7 +31,7 @@ scan_pattern() {
   local match
   local benign_negative='(never|do not|don'\''t|must not|should not)[^:;.!?]*(print|show|copy|upload|send|read|cat)'
 
-  match="$(printf '%s\n' "$files" | xargs grep -Eni "$regex" 2>/dev/null | grep -Eiv "$benign_negative" | head -1 || true)"
+  match="$(printf '%s\n' "$files" | xargs grep -Eni "$regex" 2>/dev/null | grep -Eiv "$benign_negative" | awk 'NR==1' || true)"
   if [[ -n "$match" ]]; then
     echo "[ContextScan] ${label}: ${match}"
     issues=$((issues + 1))

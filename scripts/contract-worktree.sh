@@ -118,7 +118,7 @@ normalize_slug() {
 read_metadata_branch() {
   local metadata_file="$1"
   [[ -f "$metadata_file" ]] || return 1
-  sed -nE 's/^.*"branch"[[:space:]]*:[[:space:]]*"([^"]*)".*$/\1/p' "$metadata_file" | head -1
+  sed -nE 's/^.*"branch"[[:space:]]*:[[:space:]]*"([^"]*)".*$/\1/p' "$metadata_file" | awk 'NR==1'
 }
 
 read_start_branch() {
@@ -211,7 +211,7 @@ write_start_metadata() {
   # A retry keeps the base recorded by the first start, but always refreshes the
   # branch and worktree fields so cleanup reads current start metadata.
   if [[ -f "$metadata_file" ]]; then
-    existing_base_commit="$(sed -nE 's/^.*"base_commit"[[:space:]]*:[[:space:]]*"([0-9a-f]{40,64})".*$/\1/p' "$metadata_file" | head -1)"
+    existing_base_commit="$(sed -nE 's/^.*"base_commit"[[:space:]]*:[[:space:]]*"([0-9a-f]{40,64})".*$/\1/p' "$metadata_file" | awk 'NR==1')"
   fi
   [[ -z "$existing_base_commit" ]] || base_commit="$existing_base_commit"
   cat > "$metadata_file" <<EOF_METADATA

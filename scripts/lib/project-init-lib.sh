@@ -872,7 +872,7 @@ pi_repo_harness_version_for_refs() {
   local version_file="$root_dir/assets/skill-version.json"
 
   if [[ -f "$version_file" ]]; then
-    sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$version_file" | head -n 1
+    sed -n 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$version_file" | awk 'NR==1'
     return 0
   fi
 
@@ -1120,7 +1120,7 @@ EOF_CAPABILITY
 
 pi_should_generate_directory_context() {
   local target_dir="$1"
-  [[ -n "$(pi_context_block_dirs "$target_dir" | head -n 1)" ]]
+  [[ -n "$(pi_context_block_dirs "$target_dir" | awk 'NR==1')" ]]
 }
 
 pi_context_map_discoverable_entries() {
