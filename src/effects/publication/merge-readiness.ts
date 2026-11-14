@@ -7,13 +7,7 @@ import {
   type RequiredCheckFailureEvidenceV1,
 } from '../../core/evidence/required-check-evidence';
 import type { RequiredCheckTestExecutionV1 } from '../../core/evidence/test-execution-evidence';
-import {
-  failuresOutsideNeeds,
-  parseWorkflowJobs,
-  resolveWorkflowJob,
-  workflowJobMatchesName,
-  type WorkflowJobV1,
-} from '../../core/evidence/workflow-needs';
+import { parseWorkflowGraph, placeFailedJobs } from '../../core/evidence/workflow-needs';
 import {
   readTestExecutionEvidence,
 } from './test-execution-evidence';
@@ -534,6 +528,10 @@ function annotationEvidence(value: unknown): AnnotationEvidence {
 
 const FAILED_ATTEMPT_CONCLUSIONS: ReadonlySet<AttemptConclusion> = new Set(['failure', 'timed_out', 'cancelled']);
 
+function jobFailed(job: AttemptJob): boolean {
+  return FAILED_ATTEMPT_CONCLUSIONS.has(job.conclusion) || job.steps.some(step => FAILED_ATTEMPT_CONCLUSIONS.has(step.conclusion));
+}
+
 const WORKFLOW_PATH = /^\.github\/workflows\/[A-Za-z0-9._-]+\.ya?ml$/u;
 
 /** The workflow file content at the run revision; null when it is unavailable or unreadable. */
@@ -611,35 +609,29 @@ function* checkEvidence(
   const childAssociations = new Map<string, 'declared_needs' | 'unknown'>();
   if (otherFailed.length > 0) {
     const contentsPath = WORKFLOW_PATH.test(run.path) ? run.path : null;
-    const definition = contentsPath === null ? null
-      : workflowDefinitionText(yield {
-        args: ['api', `repos/${identity.repo_name_with_owner}/contents/${contentsPath}?ref=${run.head_sha}`],
+    const definitions: (string | null)[] = [];
+    for (const ref of contentsPath === null ? [] : [run.head_sha, identity.base_sha]) {
+      definitions.push(workflowDefinitionText(yield {
+        args: ['api', `repos/${identity.repo_name_with_owner}/contents/${contentsPath}?ref=${ref}`],
         optional: true,
-      });
-    const workflow = definition === null ? null : parseWorkflowJobs(definition);
-    const checkSucceeded = attemptsJobs.every(job => job.conclusion === 'success'
-      && !job.steps.some(step => FAILED_ATTEMPT_CONCLUSIONS.has(step.conclusion)));
+      }));
+    }
+    // A pull_request run takes its jobs from the merge commit; the head copy
+    // is that graph only when the base copy is the same text.
+    const [head, base] = definitions;
+    const graph = head == null || head !== base ? null : parseWorkflowGraph(head);
+    const placement = graph === null ? null
+      : placeFailedJobs(graph, linked.name, otherFailed.map(job => job.name));
     // Old failures are not evidence for this check only when it succeeded in
     // every attempt and each failed job resolves outside its full needs graph.
-    if (checkSucceeded && workflow !== null
-      && failuresOutsideNeeds(workflow, linked.name, otherFailed.map(job => job.name))) return null;
-    const entry = workflow === null ? null : resolveWorkflowJob(workflow, linked.name);
-    if (entry !== null && entry.needs.length === 0) {
+    if (placement !== null && [...placement.failed.values()].every(where => where === 'outside')
+      && attemptsJobs.every(job => job.conclusion === 'success' && !jobFailed(job))) return null;
+    const needed = otherFailed.filter(job => placement?.failed.get(job.name) === 'needed');
+    if (placement?.direct) {
       association = 'direct';
-    } else if (workflow !== null && entry !== null) {
-      const needJobs = entry.needs
-        .map(id => workflow.jobs.find(job => job.id === id))
-        .filter((job): job is WorkflowJobV1 => job !== undefined);
-      const proven = needJobs.length === entry.needs.length
-        ? otherFailed.filter(job => needJobs.some(need => workflowJobMatchesName(need, job.name)))
-        : [];
-      if (proven.length > 0) {
-        association = 'declared_needs';
-        for (const job of proven) childAssociations.set(job.name, 'declared_needs');
-      } else {
-        association = 'unknown';
-        for (const job of otherFailed) childAssociations.set(job.name, 'unknown');
-      }
+    } else if (needed.length > 0) {
+      association = 'declared_needs';
+      for (const job of needed) childAssociations.set(job.name, 'declared_needs');
     } else {
       association = 'unknown';
       for (const job of otherFailed) childAssociations.set(job.name, 'unknown');
@@ -676,10 +668,8 @@ function* checkEvidence(
       return job === undefined ? [] : [attemptObservation(job, index + 1, runUrl, link, annotations.get(job.id))];
     }),
   }));
-  const hasFailure = attempts.some(attempt => FAILED_ATTEMPT_CONCLUSIONS.has(attempt.conclusion) || attempt.steps.length > 0)
-    || children.some(child => child.attempts.some(attempt =>
-      FAILED_ATTEMPT_CONCLUSIONS.has(attempt.conclusion) || attempt.steps.length > 0));
-  if (!hasFailure) return null;
+  // Each child name comes from a failed provider job.
+  if (!attemptsJobs.some(jobFailed) && children.length === 0) return null;
   if (attemptsJobs.length > 1 && attemptsJobs[attemptsJobs.length - 1]!.conclusion === 'success') {
     const latestTestExecution = (yield { test_execution: {
       repository: identity.repo_name_with_owner,
