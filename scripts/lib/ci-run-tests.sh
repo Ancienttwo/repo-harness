@@ -9,6 +9,7 @@ _ci_run_bun_tests_in_temporary_home() {
     const fs = require("node:fs");
     const { spawnSync } = require("node:child_process");
     const { createTemporaryTestEnvironment, temporaryPath } = require(process.argv[1]);
+    const { recordSuspect, survivingSuspects, survivorMessage } = require(require("node:path").join(require("node:path").dirname(process.argv[1]), "ci-worktree-suspects.mjs"));
     const args = process.argv.slice(2);
     const batch = args.indexOf("--harness-file-list");
     const divider = args.indexOf("--harness-options");
@@ -21,11 +22,15 @@ _ci_run_bun_tests_in_temporary_home() {
     for (const [index, baseArgs] of runs.entries()) {
       const { env, home, temp } = createTemporaryTestEnvironment(process.env);
       env.BUN_TEST_JUNIT_DIR = require("node:path").join(temp, "junit");
-      // The pool owns attribution; the test process must not inherit its directory.
-      const suspectDir = process.env.CI_WORKTREE_SUSPECT_DIR;
-      delete env.CI_WORKTREE_SUSPECT_DIR;
+      // The outermost run owns attribution. Nested and pooled runs inherit its directory and file name, record their new paths there and never judge them.
+      const inheritedSuspectDir = process.env.CI_WORKTREE_SUSPECT_DIR;
+      const suspectDir = inheritedSuspectDir || require("node:path").join(temp, "worktree-suspects");
+      if (!inheritedSuspectDir) fs.mkdirSync(suspectDir);
       // One report per Bun process, named by its test file so a rerun replaces the report. Options go first so the file stays last.
       const name = (batch >= 0 ? testFiles[index] : testFiles.length === 1 ? testFiles[0] : undefined) ?? "run-" + index;
+      const owner = process.env.CI_WORKTREE_SUSPECT_OWNER || name;
+      env.CI_WORKTREE_SUSPECT_DIR = suspectDir;
+      env.CI_WORKTREE_SUSPECT_OWNER = owner;
       const runArgs = junitDir
         ? ["--reporter=junit", "--reporter-outfile=" + require("node:path").join(junitDir, name.replace(/[\\/:]/g, "__") + ".xml"), ...baseArgs]
         : baseArgs;
@@ -65,12 +70,12 @@ _ci_run_bun_tests_in_temporary_home() {
           // Fallback: fixture-created roots are not all known to this runner.
           // Windows has no uid: stat.uid is 0 and process.getuid is undefined, so the age test alone decides there.
           if ((process.platform === "win32" || stat.uid === process.getuid()) &&(stat.birthtimeMs || stat.ctimeMs) >= started) {
-            // Under the pool, a concurrent file may own this path and remove it later. The pool rechecks after every file ends.
-            // The report is named by pid: an absolute test path holds ":" on Windows, which opens an alternate data stream, not a file.
-            if (suspectDir) { fs.appendFileSync(pathApi.join(suspectDir, process.pid + ".suspects"), path + "\t" + name + "\n"); continue; }
-            console.error("[ci] surviving new worktree path outside disposable roots (current uid; created during test): " + path);
-            fileStatus = 1;
+            // A concurrent file may own this path and remove it later, so the outermost run judges it when its children have ended.
+            recordSuspect(suspectDir, path, owner);
           }
+        }
+        if (!inheritedSuspectDir) {
+          for (const survivor of survivingSuspects(suspectDir)) { console.error(survivorMessage(survivor)); fileStatus = 1; }
         }
       } finally {
         const removeDisposableRoot = path => {
@@ -148,7 +153,12 @@ _ci_run_bun_test_pool() {
     return 1
   fi
 
-  mkdir -p "$tmpdir/suspects"
+  # Inside a larger run, that run's directory collects the reports and judges them.
+  local suspect_dir="${CI_WORKTREE_SUSPECT_DIR:-}"
+  if [[ -z "$suspect_dir" ]]; then
+    suspect_dir="$tmpdir/suspects"
+    mkdir -p "$suspect_dir"
+  fi
   local -a slot_pid slot_file slot_log slot_status
   local slot
   for ((slot = 0; slot < jobs; slot++)); do
@@ -176,7 +186,7 @@ _ci_run_bun_test_pool() {
       # abort the worker before that record exists.
       (
         status=0
-        CI_WORKTREE_SUSPECT_DIR="$tmpdir/suspects" run_bun_test_file "$file" >"$log" 2>&1 || status=$?
+        CI_WORKTREE_SUSPECT_DIR="$suspect_dir" run_bun_test_file "$file" >"$log" 2>&1 || status=$?
         printf '%s\n' "$status" >"$status_file.partial"
         mv "$status_file.partial" "$status_file"
       ) &
@@ -242,12 +252,20 @@ _ci_run_bun_test_pool() {
 
   # A worktree that one file created and removed is gone now. One that is still
   # here leaked, so every file that saw it appear fails.
-  local suspect_path suspect_file
-  while IFS=$'\t' read -r suspect_path suspect_file; do
-    [[ -e "$suspect_path" || -L "$suspect_path" ]] || continue
-    echo "[ci] surviving new worktree path outside disposable roots (current uid; created during test): $suspect_path ($suspect_file)" >&2
-    case "$unsorted" in *"  $suspect_file (exit "*) ;; *) unsorted+="  $suspect_file (exit 1)"$'\n' ;; esac
-  done < <(cat "$tmpdir"/suspects/*.suspects 2>/dev/null)
+  if [[ "$suspect_dir" == "$tmpdir/suspects" ]]; then
+    local suspect_module survivors suspect_path suspect_file
+    suspect_module="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ci-worktree-suspects.mjs"
+    # The read must fail closed: an unreadable report is an unknown result, not a pass.
+    if ! survivors="$(node -e 'const { survivingSuspects } = require(process.argv[1]); for (const s of survivingSuspects(process.argv[2])) console.log(s.path + "\t" + s.owner);' "$suspect_module" "$suspect_dir")"; then
+      echo "[ci] job pool could not read the worktree reports" >&2
+      pool_error=1
+    fi
+    while IFS=$'\t' read -r suspect_path suspect_file; do
+      [[ -n "$suspect_path" ]] || continue
+      echo "[ci] surviving new worktree path outside disposable roots (current uid; created during test): $suspect_path ($suspect_file)" >&2
+      case "$unsorted" in *"  $suspect_file (exit "*) ;; *) unsorted+="  $suspect_file (exit 1)"$'\n' ;; esac
+    done <<< "$survivors"
+  fi
 
   # Completion order is a race, so the summary is sorted by file path to keep
   # the gate's failure block reproducible across runs.

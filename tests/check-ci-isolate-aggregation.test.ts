@@ -179,7 +179,7 @@ describe("ci isolate-mode test loop", () => {
       // A value-taking option keeps its own value, even when that value has the
       // test file name form and no such file exists.
       const valued = run(false, existing, '-t', 'example.test.ts');
-      expect(valued.status).toBe(0);
+      expect(valued.status, `${valued.stdout}${valued.stderr}`).toBe(0);
       expect(valued.ran).toBe(true);
       // An equals-form option value is not a positional path either. The value
       // names a file that does not exist, and the fixture test of that name runs,
@@ -187,7 +187,7 @@ describe("ci isolate-mode test loop", () => {
       const missingValue = join(dir, 'ghost-does-not-exist.test.ts');
       const equals = run(false, fixture('equals.test.ts', missingValue), `--test-name-pattern=${missingValue}`);
       expect(equals.stderr).not.toContain('test file does not exist');
-      expect(equals.status).toBe(0);
+      expect(equals.status, `${equals.stdout}${equals.stderr}`).toBe(0);
       expect(equals.ran).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -409,6 +409,54 @@ describe("ci isolate-mode test loop", () => {
       expect(reports[0]).toContain("outer-nesting.test.ts");
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a nested gate defers a new worktree path to the outermost run, which fails only a path that survives", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ci-suspect-nest-"));
+    try {
+      const inner = join(dir, "inner.test.ts");
+      writeFileSync(inner, 'import { test } from "bun:test";\nimport { mkdirSync } from "node:fs";\ntest("makes a worktree path", () => mkdirSync(process.env.LEAK_PATH!));\n');
+      // The inner file stands in for a sibling's worktree. The outer file removes it after the nested gate ends, unless it is meant to leak.
+      const outer = join(dir, "outer.test.ts");
+      writeFileSync(outer, [
+        'import { expect, test } from "bun:test";',
+        'import { rmSync } from "node:fs";',
+        'import { spawnSync } from "node:child_process";',
+        'test("nested gate", () => {',
+        '  const result = spawnSync("bash", ["-c", "set -euo pipefail; source \\"$1\\"; run_bun_tests", "nested", process.env.LIB!], {',
+        '    encoding: "utf-8", env: { ...process.env, BUN_TEST_ISOLATE_FILES: "1", BUN_TEST_FILES: process.env.INNER },',
+        '  });',
+        '  expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);',
+        '  if (process.env.LEAK !== "1") rmSync(process.env.LEAK_PATH!, { recursive: true });',
+        '});',
+        '',
+      ].join("\n"));
+      for (const leak of ["0", "1"]) {
+        const leakPath = join("/tmp", `rh-suspect-${process.pid}-${leak}-wt-x`);
+        try {
+          const result = spawnSync("bash", ["-c", `set -euo pipefail; source ${JSON.stringify(LIB_PATH)}; run_bun_tests`], {
+            cwd: REPO_ROOT, encoding: "utf-8",
+            env: gateEnv({
+              BUN_TEST_ISOLATE_FILES: "1", BUN_TEST_FILES: outer, BUN_TEST_TIMEOUT_MS: "60000", BUN_TEST_MAX_CONCURRENCY: "1",
+              CI_WORKTREE_SUSPECT_DIR: "", CI_WORKTREE_SUSPECT_OWNER: "", // this gate is the outermost run
+              BUN_TEST_JUNIT_DIR: join(dir, `junit-${leak}`), LIB: LIB_PATH, INNER: inner, LEAK: leak, LEAK_PATH: leakPath,
+            }),
+          });
+          const output = `${result.stdout}${result.stderr}`;
+          if (leak === "0") {
+            // Another process may leave its own path at the end, so the case names this path, not the exit status.
+            expect(output).not.toContain(basename(leakPath));
+          } else {
+            expect(result.status, output).toBe(1);
+            expect(output).toContain(`[ci] surviving new worktree path outside disposable roots (current uid; created during test): ${realpathSync("/tmp")}/${basename(leakPath)} (${outer})`);
+          }
+        } finally {
+          rmSync(leakPath, { recursive: true, force: true });
+        }
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
