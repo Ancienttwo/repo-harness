@@ -24,25 +24,30 @@ export const unescapePattern = (pattern: string) => pattern.replace(/\\(.)/gs, '
 
 /** Shell pattern match of one path segment; a pattern that does not compile matches, so the guard fails closed. */
 export function segmentMatches(pattern: string, name: string): boolean {
-  let source = '';
+  // `loose` reads each bracket expression as any one character; it decides when a bracket does not compile, such as `[--x]`.
+  let source = '', loose = '';
+  const add = (strict: string, wide = strict) => { source += strict; loose += wide; };
   for (let i = 0; i < pattern.length; i++) {
     const ch = pattern[i]!;
     const negated = ch === '[' && (pattern[i + 1] === '!' || pattern[i + 1] === '^');
     // A `]` right after `[` or `[!` is a member of the bracket expression, not its end.
     const close = ch === '[' ? pattern.indexOf(']', i + (negated ? 3 : 2)) : -1;
-    if (ch === '\\') source += (pattern[++i] ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    else if (ch === '*') source += '.*';
-    else if (ch === '?') source += '.';
-    // A nested `[` (a POSIX class such as [[:lower:]]) is outside this grammar, so the pattern matches.
-    else if (close > 0 && pattern.slice(i + 1, close).includes('[')) return true;
+    if (ch === '\\') add((pattern[++i] ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    else if (ch === '*') add('.*');
+    else if (ch === '?') add('.');
+    // A POSIX class, equivalence class or collating symbol (`[[:lower:]]`) is outside this grammar, so the pattern matches.
+    else if (close > 0 && /\[[:=.]/.test(pattern.slice(i + 1, close))) return true;
     else if (close > 0) {
-      source += `[${negated ? '^' : ''}${unescapePattern(pattern.slice(i + (negated ? 2 : 1), close)).replace(/[\\\]]/g, '\\$&')}]`;
+      add(`[${negated ? '^' : ''}${unescapePattern(pattern.slice(i + (negated ? 2 : 1), close)).replace(/[\\\]]/g, '\\$&')}]`, '.');
       i = close;
-    } else source += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    } else add(ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   }
   // A match with or without case counts: the shell glob is case-sensitive, but `nocaseglob` and the filesystem are not.
   // `u` folds `ſ` to `s` as APFS does.
-  try { return new RegExp(`^${source}$`, 'u').test(name) || new RegExp(`^${source}$`, 'iu').test(name); } catch { return true; }
+  for (const text of [source, loose]) {
+    try { return new RegExp(`^${text}$`, 'u').test(name) || new RegExp(`^${text}$`, 'iu').test(name); } catch { /* try the loose form */ }
+  }
+  return true;
 }
 
 /** Index of the first unescaped glob character of a pattern, or -1. */
@@ -452,6 +457,7 @@ function lex(text: string): Lexed {
 interface Redirect { readonly op: string; readonly target: Word | null; readonly body?: string }
 
 interface Command {
+  readonly kind: 'command';
   readonly words: Word[];
   readonly redirects: Redirect[];
   /** The separator before the pipeline that holds this command; '' at the start. */
@@ -459,21 +465,20 @@ interface Command {
   readonly pipeline: number;
   readonly last: boolean;
   readonly size: number;
-  /** Subshell depth change: `(` before the command and `)` after it. */
-  readonly open: number;
-  readonly close: number;
 }
+
+/** A command, or the `(` or `)` of a subshell or group. */
+type Step = Command | { readonly kind: '(' | ')' };
 
 const LIST_SEPARATORS = new Set([';', '&&', '||', '&', '\n', ';;', ';&']);
 
-function commands(tokens: readonly Token[], violations: string[]): Command[] {
-  const result: Command[] = [];
-  let words: Word[] = [], redirects: Redirect[] = [], before = '', pipeline = 0, inPipeline: Command[] = [], open = 0;
-  const end = (separator: string, close = 0) => {
+function commands(tokens: readonly Token[], violations: string[]): Step[] {
+  const result: Step[] = [];
+  let words: Word[] = [], redirects: Redirect[] = [], before = '', pipeline = 0, inPipeline: Command[] = [];
+  const end = (separator: string) => {
     if (words.length || redirects.length) {
-      const command: Command = { words, redirects, before, pipeline, last: false, size: 0, open, close };
+      const command: Command = { kind: 'command', words, redirects, before, pipeline, last: false, size: 0 };
       result.push(command); inPipeline.push(command);
-      open = 0;
     } else if (separator !== '\n' && separator !== '(' && separator !== ')' && separator !== 'end') violations.push(`an empty command before ${separator}`);
     words = []; redirects = [];
     if (separator !== '|' && separator !== '|&') {
@@ -494,14 +499,7 @@ function commands(tokens: readonly Token[], violations: string[]): Command[] {
       redirects.push({ op: token.value, target, body: token.body });
       continue;
     }
-    if (token.value === '(') { end('('); open++; continue; }
-    if (token.value === ')') {
-      const last = result.at(-1);
-      end(')');
-      if (last && result.at(-1) === last) Object.assign(last, { close: last.close + 1 });
-      else if (result.at(-1)) Object.assign(result.at(-1)!, { close: result.at(-1)!.close + 1 });
-      continue;
-    }
+    if (token.value === '(' || token.value === ')') { end(token.value); result.push({ kind: token.value }); continue; }
     if (token.value === '|&') violations.push('the |& operator');
     if (token.value === ';;' || token.value === ';&') violations.push(`the ${token.value} operator`);
     end(token.value);
@@ -640,12 +638,17 @@ export function protectedNameGate(command: string, repoRoot: string, cwd: string
     // A substitution body runs where the walk cannot follow the directory.
     let dirs: Dirs = index === 0 ? [cwd] : null;
     const outer: Dirs[] = [];
-    const list = commands(tokens, violations);
+    const steps = commands(tokens, violations);
+    const list = steps.filter((step): step is Command => step.kind === 'command');
     const pipelineTrigger = new Map<number, boolean>();
     const wordNames = (word: Word, base: Dirs) => (namesProtected(word.value) && !(word.glob || word.expand ? false : resolver.writableLiteral(word.value, base)))
       || (word.glob && !word.expand && resolver.mayReachProtected(word.pattern, base));
-    for (const cmd of list) {
-      for (let n = 0; n < cmd.open; n++) outer.push(dirs);
+    for (const cmd of steps) {
+      // A subshell does not move the shell that started it.
+      if (cmd.kind !== 'command') {
+        if (cmd.kind === '(') outer.push(dirs); else dirs = outer.length ? outer.pop()! : null;
+        continue;
+      }
       if (!pipelineTrigger.has(cmd.pipeline)) {
         const members = list.filter(other => other.pipeline === cmd.pipeline);
         pipelineTrigger.set(cmd.pipeline, members.some(member => member.words.some(word => wordNames(word, dirs))
@@ -701,7 +704,6 @@ export function protectedNameGate(command: string, repoRoot: string, cwd: string
         else if (cmd.size === 1 && (cmd.before === '' || cmd.before === '&&')) dirs = next;
         else dirs = dirs && next && [...new Set([...dirs, ...next])];
       } else if (program && MOVES_SHELL.has(program.value)) dirs = null;
-      for (let n = 0; n < cmd.close; n++) dirs = outer.length ? outer.pop()! : null;
     }
   });
   if (!trigger && violations.length && /_(?:OPS|REF)/.test(command.replace(/['"\\]/g, '').toUpperCase())) trigger = true;

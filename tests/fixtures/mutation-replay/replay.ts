@@ -1,13 +1,18 @@
-// Differential replay for #2082 (JD-16 and the PR #2343 fix round; extends the JD-13 corpus of PR #2331): every corpus row runs through the Bash route decision
-// (runBashMutationGuard, the function the bash-mutation-guard handler calls) of <base> and of <head>.
-// Usage: bun /tmp/rh2082-replay/replay.ts <checkout> [base-ref=origin/main] [head-ref=HEAD]
-// No corpus command is executed; the hook only decides.
+// Differential replay of the Bash route decision (#2082, #2369): every row runs through runBashMutationGuard, the function the
+// bash-mutation-guard handler calls, of <base> and of <head>, from two directories. No row is executed; the hook only decides.
+// Usage: bun tests/fixtures/mutation-replay/replay.ts <checkout> [base-ref=origin/main] [head-ref=HEAD] [probe.json | --corpus]
+// --corpus skips the composed rows and runs only the hand rows, corpus.json and the command lines of the docs and skills.
+// Exit 1 when a row that the base denies is allowed by the head (A1), a head-only denial is not explained by a protected
+// name or rule 8 (A4), an in-scope catch row is allowed (A2) or an ordinary row gets a new denial (A3).
 import { execFileSync, spawnSync } from 'child_process';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { Glob } from 'bun';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-const [checkout = process.cwd(), baseRef = 'origin/main', headRef = 'HEAD', probe] = process.argv.slice(2);
+const [checkout = process.cwd(), baseRef = 'origin/main', headRef = 'HEAD', probeArg] = process.argv.slice(2);
+const corpusOnly = probeArg === '--corpus';
+const probe = corpusOnly ? undefined : probeArg;
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'rh2082-replay-')));
 
 function extract(ref: string, name: string): { dir: string; sha: string } {
@@ -93,12 +98,14 @@ FORMS.push(
 
 // PR #2343 round-2 reviewer rows: the Claude reviewer probe files (/tmp/rv2343-claude/probe*.json, r2/probe.json) and the
 // gatekeeper probe files (/tmp/gk2082r2/probe-*.json), copied into extra-rows.json next to this script.
-FORMS.push(...JSON.parse(readFileSync(join(import.meta.dir, 'extra-rows.json'), 'utf8')) as string[]);
+// 697 gatekeeper entries are [command, cwd] pairs for another fixture; only the command is replayed.
+FORMS.push(...(JSON.parse(readFileSync(join(import.meta.dir, 'extra-rows.json'), 'utf8')) as (string | [string, string])[])
+  .map(row => Array.isArray(row) ? row[0] : row));
 // Round 3: a substitution in the word of a descriptor redirect, and a cd after a leading assignment.
 for (const redirect of ['>&', '>& ', '2>&', '<&']) FORMS.push(`echo x ${redirect}$(rm -rf _ops)`, `echo x ${redirect}$(git worktree add ../x)`);
 
 const rows = new Set<string>(FORMS);
-for (const cd of CD) for (const body of BODY) {
+if (!corpusOnly) for (const cd of CD) for (const body of BODY) {
   rows.add(`${cd}${body}`);
   rows.add(`(${cd}${body})`);
 }
@@ -121,7 +128,7 @@ const WRITES = [
   'echo "$(rm -rf env)"', 'x=`echo x > _ops/x`', // write inside a substitution
   'echo x >&$(rm -rf env)', // substitution in a descriptor redirect
 ];
-const sequences: string[][] = SHAPES.map(shape => [shape]);
+const sequences: string[][] = corpusOnly ? [] : SHAPES.map(shape => [shape]);
 for (let n = 1; n < 3; n++) for (const prefix of sequences.filter(seq => seq.length === n)) for (const shape of SHAPES) sequences.push([...prefix, shape]);
 let composed = 0;
 for (const seq of sequences) {
@@ -134,33 +141,79 @@ for (const seq of sequences) {
   }
 }
 // Round 3: one cd after a leading assignment, for each operand and write form.
-for (const assign of ['CDPATH=..', 'CDPATH=_ops', 'X=1', 'X=1 CDPATH=..']) for (const shape of [...SHAPES, 'repo', 'env']) {
+if (!corpusOnly) for (const assign of ['CDPATH=..', 'CDPATH=_ops', 'X=1', 'X=1 CDPATH=..']) for (const shape of [...SHAPES, 'repo', 'env']) {
   for (const join of [' && ', '; ']) for (const write of WRITES) {
     for (const row of [`${assign} cd ${shape}${join}${write}`, `(${assign} cd ${shape}${join}${write})`]) { rows.add(row); composed++; }
   }
 }
 console.log(`composed=${composed} sequences=${sequences.length}`);
 
+// #2369 corpora. Catch rows (A2) must be denied; accepted-class rows are counted; ordinary rows (A3) get no new denial.
+const corpus = JSON.parse(readFileSync(join(import.meta.dir, 'corpus.json'), 'utf8')) as {
+  catch: string[]; accepted: Record<string, string[]>; ordinary: string[];
+};
+const fill = (row: string) => row.replaceAll('${MANAGED}', managed);
+const docLines = new Set<string>();
+for (const pattern of ['docs/**/*.md', 'assets/skills/**/*.md', 'assets/reference-configs/**/*.md', '*.md']) {
+  for (const file of new Glob(pattern).scanSync(checkout)) {
+    let inBlock = false;
+    for (const line of readFileSync(join(checkout, file), 'utf8').split('\n')) {
+      const fence = /^\s*```(\w*)/.exec(line);
+      if (fence) { inBlock = !inBlock && ['bash', 'sh', 'shell', 'zsh', 'console'].includes(fence[1]!); continue; }
+      if (inBlock && line.trim() && !line.trim().startsWith('#')) docLines.add(line.trim().replace(/^\$ /, ''));
+    }
+  }
+}
+const ordinary = new Set([...corpus.ordinary.map(fill), ...docLines]);
+const catchRows = new Set(corpus.catch);
+const accepted = new Map(Object.entries(corpus.accepted).flatMap(([cls, list]) => list.map(row => [row, cls] as const)));
+for (const row of [...ordinary, ...catchRows, ...accepted.keys()]) rows.add(row);
+
+// A4: a head-only denial must come from a protected name (text, glob or directory) or from rule 8. This predicate reads the row text
+// only, independently of the gate code.
+const A4 = (row: string, cwd: string) => /(^|[^\w.-])_(ops|ref)(?![\w.-])/i.test(row.replace(/['"\\]/g, '')) || /[*?[{]/.test(row)
+  || cwd.split('/').some(part => /^_(ops|ref)$/i.test(part))
+  || /\bgit\b[^;&|\n]*\bclean\b[^;&|\n]*-\w*[xX]/.test(row) || /\bfind\b/.test(row) || /\brm\b[^;&|\n]*(-\w*[rR]|--recursive)/.test(row);
+
 // Optional 4th argument: a JSON array of commands; each one prints its base and head decision instead of the corpus.
 if (probe) { rows.clear(); for (const row of JSON.parse(await Bun.file(probe).text()) as string[]) rows.add(row); }
 const base = extract(baseRef, 'base');
 const head = extract(headRef, 'head');
 const load = async (dir: string) => (await import(join(dir, 'src/cli/hook/mutation-bash.ts'))).runBashMutationGuard as
-  (opts: unknown) => { exitCode: number };
+  (opts: unknown) => { exitCode: number; stderr: string };
 const decide = { base: await load(base.dir), head: await load(head.dir) };
 const identity = { host: 'claude', sessionId: null, runId: null, turnId: null };
-const loosened: string[] = [];
+const loosened: string[] = [], unexplained: string[] = [], caught: string[] = [], newOrdinary: string[] = [];
+const guards = new Map<string, number>();
+const acceptedAllowed = new Map<string, number>();
 let total = 0, baseDeny = 0, headDeny = 0, stricter = 0;
+const started = performance.now();
 for (const command of rows) for (const cwd of [repo, join(repo, 'src')]) {
-  const run = (fn: typeof decide.base) => fn({ repoRoot: repo, payload: { tool_input: { command }, cwd }, identity }).exitCode !== 0;
-  const b = run(decide.base), h = run(decide.head);
+  const run = (fn: typeof decide.base) => fn({ repoRoot: repo, payload: { tool_input: { command }, cwd }, identity });
+  const b = run(decide.base).exitCode !== 0, result = run(decide.head), h = result.exitCode !== 0;
+  const where = `${JSON.stringify(command)} cwd=${cwd === repo ? 'repo' : 'repo/src'}`;
   total++; if (b) baseDeny++; if (h) headDeny++;
-  if (b && !h) loosened.push(`${JSON.stringify(command)} cwd=${cwd === repo ? 'repo' : 'repo/src'}`);
-  if (!b && h) stricter++;
+  if (b && !h) loosened.push(where);
+  if (!b && h) {
+    stricter++;
+    const guard = /^\[(\w+)\]/.exec(result.stderr)?.[1] ?? '?';
+    guards.set(guard, (guards.get(guard) ?? 0) + 1);
+    if (!A4(command, cwd)) unexplained.push(`${where} ${guard}`);
+    if (ordinary.has(command)) newOrdinary.push(where);
+  }
+  if (cwd === repo && catchRows.has(command) && !h) caught.push(where);
+  if (cwd === repo && accepted.has(command) && !h) acceptedAllowed.set(accepted.get(command)!, (acceptedAllowed.get(accepted.get(command)!) ?? 0) + 1);
   if (probe) console.log(`${b ? 'deny ' : 'allow'} -> ${h ? 'deny ' : 'allow'} cwd=${cwd === repo ? 'repo' : 'src'} ${JSON.stringify(command)}`);
 }
+const seconds = (performance.now() - started) / 1000;
 console.log(`base ${baseRef} ${base.sha}\nhead ${headRef} ${head.sha}`);
-console.log(`rows=${total} base_deny=${baseDeny} head_deny=${headDeny} head_only_deny=${stricter} main_deny_head_allow=${loosened.length}`);
+console.log(`rows=${total} base_deny=${baseDeny} head_deny=${headDeny} head_only_deny=${stricter} main_deny_head_allow=${loosened.length} seconds=${seconds.toFixed(0)}`);
+console.log(`A2 catch=${catchRows.size} catch_allowed=${caught.length} accepted=${JSON.stringify(Object.fromEntries(Object.entries(corpus.accepted).map(([c, l]) => [c, `${acceptedAllowed.get(c) ?? 0}/${l.length} allowed`])))}`);
+console.log(`A3 ordinary=${ordinary.size} (docs ${docLines.size}, hand ${corpus.ordinary.length}) new_denials=${newOrdinary.length}`);
+console.log(`A4 head_only_guards=${JSON.stringify(Object.fromEntries(guards))} unexplained=${unexplained.length}`);
 for (const row of loosened) console.log(`LOOSENED ${row}`);
+for (const row of unexplained) console.log(`UNEXPLAINED ${row}`);
+for (const row of caught) console.log(`CATCH-ALLOWED ${row}`);
+for (const row of newOrdinary) console.log(`ORDINARY-DENIED ${row}`);
 rmSync(scratch, { recursive: true, force: true });
-process.exit(loosened.length ? 1 : 0);
+process.exit(loosened.length || unexplained.length || caught.length || newOrdinary.length ? 1 : 0);
