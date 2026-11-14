@@ -449,10 +449,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("acceptance-receipt.ts");
     expect(contract.helpers.scripts).toContain("contract-worktree.sh");
     expect(contract.helpers.scripts).toContain("summarize-failures.sh");
-    expect(sharedLib).toContain("check:context-files");
-    expect(sharedLib).toContain("check:deploy-sql");
-    expect(sharedLib).toContain('"check:brain": "rh brain check"');
-    expect(sharedLib).toContain('"sync:brain": "rh brain sync"');
+    // rh init is the only writer of package scripts, the .gitignore block and the reference stubs.
+    for (const writer of ["pi_ensure_task_sync", "pi_default_runtime_block", "pi_write_reference_config_stub"]) expect(sharedLib).not.toContain(writer);
     expect(sharedLib).toContain("pi_print_external_tooling_report");
     expect(contract.helpers.scripts).toContain("check-deploy-sql-order.sh");
     expect(content).toContain("mkdir -p .ai/context");
@@ -495,12 +493,11 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain("pi_install_workflow_contract");
     expect(sharedLib).not.toContain("check:task-sync");
     expect(sharedLib).not.toContain('pkg.scripts["check:architecture-sync"] = ');
-    expect(sharedLib).toContain('"check:task-workflow"');
     expect(sharedLib).not.toContain("contract.template.md");
     expect(sharedLib).not.toContain("implementation-notes.template.md");
     expect(sharedLib).not.toContain("PI_TEMPLATE_PLAN");
     expect(sharedLib).toContain("docs/prds/prd.template.md");
-    expect(content).toContain("pi_install_reference_configs");
+    expect(content).not.toContain("pi_install_reference_configs");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/document-generation.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/global-working-rules.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/heartbeat-triage.md");
@@ -601,8 +598,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).toContain("pi_install_helpers requires contract helper inventory");
     expect(contract.helpers.scripts).toContain("verify-sprint.sh");
     expect(contract.helpers.scripts).toContain("summarize-failures.sh");
-    expect(sharedLib).toContain("check:context-files");
-    expect(sharedLib).toContain("check:deploy-sql");
+    for (const writer of ["pi_ensure_task_sync", "pi_default_runtime_block", "pi_write_reference_config_stub"]) expect(sharedLib).not.toContain(writer);
     expect(sharedLib).toContain("pi_print_external_tooling_report");
     expect(contract.helpers.scripts).toContain("check-deploy-sql-order.sh");
     expect(contract.helpers.scripts).toContain("check-context-files.sh");
@@ -645,8 +641,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).toContain("pi_workflow_contract_query_lines");
     expect(sharedLib).not.toContain("check:task-sync");
     expect(sharedLib).not.toContain('pkg.scripts["check:architecture-sync"] = ');
-    expect(sharedLib).toContain('"check:task-workflow"');
-    expect(content).toContain("pi_install_reference_configs");
+    expect(content).not.toContain("pi_install_reference_configs");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/document-generation.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/global-working-rules.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/heartbeat-triage.md");
@@ -668,7 +663,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/notes");
     expect(content).not.toContain("# Deferred Goal Ledger");
     expect(content).not.toContain(".*/");
-    expect(content).toContain("ensure_runtime_gitignore_block");
+    expect(content).not.toContain("ensure_runtime_gitignore_block");
     expect(content).toContain("install_hook_settings_template");
     expect(content).not.toContain("\"$TOOL_INPUT\"");
     expect(content).not.toContain("\"$PROMPT\"");
