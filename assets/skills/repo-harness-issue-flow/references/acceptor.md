@@ -214,6 +214,16 @@ The review brief states that limit. On every seat, Codex and Pi included,
 the one-write limit is a brief rule only. On a Codex seat the sandbox
 limits files only.
 
+A Pi seat without the edit and write tools cannot write a receipt file. It
+ends its reply with a `RECEIPT-JSON` marker and the receipt as one JSON
+object. After the pane status is `done`, the coordinator runs
+`rh review collect --seat <terminal> --pr <n> [--owner-record <url>] [--json]`.
+The command reads the newest session record of that seat's worktree under
+`~/.pi/agent/sessions`, takes the last `RECEIPT-JSON` block, validates it
+with the `review publish` validator and publishes it the same way. It
+fails closed when the record, the block, the JSON, the receipt or the PR
+head subject is missing or wrong, and it does not read pane text.
+
 `review publish` accepts rounds 1 to 5. Round 5 is the hard stop (§2.2),
 so every review round publishes its claim and record with this command.
 Do not post a claim or a record by hand, and do not write the verdict in

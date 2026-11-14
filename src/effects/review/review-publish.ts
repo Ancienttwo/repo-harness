@@ -54,7 +54,6 @@ export type ReviewPublishGhRunner = (args: readonly string[], input?: string) =>
 export interface ReviewPublishInput {
   readonly repoRoot: string;
   readonly prNumber: number;
-  readonly receiptPath: string;
   /** Rule 1 stops a review at round 5; a later round needs this owner decision comment. */
   readonly ownerRecord?: string;
   readonly ghBin?: string;
@@ -88,6 +87,11 @@ function readReceipt(path: string): ReviewPublishReceipt {
   } catch (error) {
     throw new ReviewPublishError('review_receipt_invalid', 'review receipt is not valid JSON: ' + errorMessage(error), 2);
   }
+  return parseReceipt(value);
+}
+
+/** The one receipt validator; `review publish` and `review collect` both end here. */
+export function parseReceipt(value: unknown): ReviewPublishReceipt {
   try {
     return validateReviewPublishReceipt(value);
   } catch (error) {
@@ -323,11 +327,14 @@ function unknownOutcome(message: string, posted: readonly string[], cause?: unkn
   });
 }
 
-export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
+export function publishReview(input: ReviewPublishInput & { readonly receiptPath: string }): ReviewPublishResult {
+  return publishReceipt(input, readReceipt(input.receiptPath));
+}
+
+export function publishReceipt(input: ReviewPublishInput, receipt: ReviewPublishReceipt): ReviewPublishResult {
   if (!Number.isSafeInteger(input.prNumber) || input.prNumber < 1) {
     throw new ReviewPublishError('review_receipt_invalid', 'review publish requires a positive PR number', 2);
   }
-  const receipt = readReceipt(input.receiptPath);
   const run = input.ghRunner ?? createGhRunner(input.repoRoot, input.ghBin);
   let pr: PullRequestHead;
   try {
