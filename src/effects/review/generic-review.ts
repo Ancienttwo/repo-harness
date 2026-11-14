@@ -199,16 +199,17 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     ensureSessionDirectory(reviewerRepo, outbox);
     let runtimeHome: string | undefined;
     let piLoopbackPorts: readonly number[] = [];
+    const credentialWindowMs = timeout * REVIEW_MAX_ROUNDS + 120_000;
     if (session.actual_harness === 'codex') {
       authOutput = outbox;
       const marker = join(dir, 'auth-copy.json');
-      const prepared = prepareCodexHome(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir, timeout * REVIEW_MAX_ROUNDS + 120_000, existsSync(marker));
+      const prepared = prepareCodexHome(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir, credentialWindowMs, existsSync(marker));
       runtimeHome = prepared.home;
       if (!existsSync(marker)) writeSessionArtifact(marker, { auth_copied: true, mode: prepared.mode });
     }
     if (session.actual_harness === 'pi') {
       piOutput = outbox;
-      const prepared = preparePiAgentDirectory(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir);
+      const prepared = preparePiAgentDirectory(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir, credentialWindowMs);
       runtimeHome = prepared.directory; piLoopbackPorts = prepared.loopbackPorts;
     }
     // Isolation admission precedes any SDK/native Session creation.

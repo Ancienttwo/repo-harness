@@ -37,8 +37,11 @@ function piModelLoopbackPorts(bytes: Buffer): readonly number[] {
   return [...ports];
 }
 
-/** Credentials stay at their source. Only the native model defaults are projected into private settings. */
-export function preparePiAgentDirectory(output: string, sourceHome: string, env: Readonly<Record<string, string | undefined>> = process.env): PiAgentDirectory {
+/**
+ * Credentials stay at their source. Only the native model defaults are projected into private settings.
+ * The credentials the run uses must outlive `runWindowMs`: the sandbox denies an OAuth refresh.
+ */
+export function preparePiAgentDirectory(output: string, sourceHome: string, runWindowMs: number, env: Readonly<Record<string, string | undefined>> = process.env): PiAgentDirectory {
   const directory = join(ownedOutput(output), '.pi-agent');
   try { mkdirSync(directory, { mode: 0o700 }); } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -58,10 +61,11 @@ export function preparePiAgentDirectory(output: string, sourceHome: string, env:
     if (!existsSync(destination)) symlinkSync(models, destination);
     if (!lstatSync(destination).isSymbolicLink() || readlinkSync(destination) !== models) throw new Error('review_pi_models_changed');
   } else if (existsSync(destination)) throw new Error('review_pi_models_changed');
-  preparePiSettings(directory, source);
+  const settings = preparePiSettings(directory, source);
   const auth = join(source, 'auth.json'), link = join(directory, 'auth.json');
   if (existsSync(auth)) {
-    const bytes = readAuthBytes(auth); bytes.fill(0);
+    const bytes = readAuthBytes(auth);
+    try { assertAccessWindow(piAuthExpiries(bytes, settings.defaultProvider), runWindowMs); } finally { bytes.fill(0); }
     if (!existsSync(link)) symlinkSync(auth, link);
     if (!lstatSync(link).isSymbolicLink() || readlinkSync(link) !== auth) throw new Error('review_pi_auth_changed');
   } else {
@@ -71,7 +75,7 @@ export function preparePiAgentDirectory(output: string, sourceHome: string, env:
   return { directory, loopbackPorts };
 }
 
-function preparePiSettings(directory: string, source: string): void {
+function preparePiSettings(directory: string, source: string): Readonly<Record<string, unknown>> {
   const native = join(source, 'settings.json'), destination = join(directory, 'settings.json');
   let settings: Record<string, unknown> = {};
   if (existsSync(native)) {
@@ -90,6 +94,7 @@ function preparePiSettings(directory: string, source: string): void {
   const stat = lstatSync(destination);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o600
     || readFileSync(destination, 'utf8') !== content) throw new Error('review_pi_settings_changed');
+  return projection;
 }
 
 /** Unlink only output-local configuration references and the empty auth placeholder. Never follow links. */
@@ -121,16 +126,43 @@ function ownedOutput(output: string): string {
   if (!isAbsolute(output) || lstatSync(output).isSymbolicLink() || !lstatSync(output).isDirectory()) throw new Error('review_codex_home_unsafe');
   return realpathSync(output);
 }
-function assertAccessWindow(bytes: Buffer, runWindowMs: number): void {
+/** A credential expiry in epoch milliseconds, or 'none' for a credential that does not expire (an API key). */
+type CredentialExpiry = number | 'none';
+
+/** The one run-window rule: a sandboxed run cannot refresh a credential, so each one must outlive the run. */
+function assertAccessWindow(expiries: readonly CredentialExpiry[], runWindowMs: number): void {
   if (!Number.isSafeInteger(runWindowMs) || runWindowMs < 1) throw new Error('review_auth_window_invalid');
+  if (expiries.some(expiry => expiry !== 'none' && expiry <= Date.now() + runWindowMs)) throw new Error('review_access_expires_within_run');
+}
+/** Codex auth.json: the access token JWT carries the expiry in seconds. */
+function codexAuthExpiry(bytes: Buffer): CredentialExpiry[] {
   let exp: unknown;
   try {
-    const value = JSON.parse(bytes.toString('utf8'));
-    const token = value.tokens?.access_token;
+    const token = JSON.parse(bytes.toString('utf8')).tokens?.access_token;
     if (typeof token !== 'string') throw new Error();
     exp = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString('utf8')).exp;
   } catch { throw new Error('review_access_exp_unverified'); }
-  if (typeof exp !== 'number' || !Number.isFinite(exp) || exp * 1000 <= Date.now() + runWindowMs) throw new Error('review_access_expires_within_run');
+  if (typeof exp !== 'number' || !Number.isFinite(exp)) throw new Error('review_access_exp_unverified');
+  return [exp * 1000];
+}
+/**
+ * pi auth.json: a provider map of `api_key` entries (no expiry) and `oauth`
+ * entries (`expires` in epoch milliseconds). The run uses the provider that the
+ * native settings name; without one, pi may select any entry. Another shape fails closed.
+ */
+function piAuthExpiries(bytes: Buffer, defaultProvider: unknown): CredentialExpiry[] {
+  let entries: unknown;
+  try { entries = JSON.parse(bytes.toString('utf8')); } catch { throw new Error('review_pi_auth_shape_unknown'); }
+  if (!entries || typeof entries !== 'object' || Array.isArray(entries)) throw new Error('review_pi_auth_shape_unknown');
+  const map = entries as Record<string, unknown>;
+  if (defaultProvider !== undefined && typeof defaultProvider !== 'string') throw new Error('review_pi_settings_source_invalid');
+  const used = defaultProvider === undefined ? Object.keys(map) : Object.hasOwn(map, defaultProvider) ? [defaultProvider] : [];
+  return used.map(provider => {
+    const entry = map[provider] as { type?: unknown; expires?: unknown } | null;
+    if (entry?.type === 'api_key') return 'none';
+    if (entry?.type === 'oauth' && typeof entry.expires === 'number' && Number.isFinite(entry.expires)) return entry.expires;
+    throw new Error(`review_pi_auth_shape_unknown: provider ${JSON.stringify(provider)}`);
+  });
 }
 function readAuthBytes(path: string): Buffer {
   let fd: number;
@@ -155,7 +187,7 @@ export function prepareCodexHome(output: string, sourceHome: string, runWindowMs
       const stat = lstatSync(destination);
       if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o600) throw new Error('review_auth_copy_unsafe');
       const bytes = readAuthBytes(destination);
-      try { assertAccessWindow(bytes, runWindowMs); } finally { bytes.fill(0); }
+      try { assertAccessWindow(codexAuthExpiry(bytes), runWindowMs); } finally { bytes.fill(0); }
       return { home, auth_copied: true, mode: '0600' };
     }
     const sourceDirectory = join(realpathSync(sourceHome), '.codex');
@@ -163,7 +195,7 @@ export function prepareCodexHome(output: string, sourceHome: string, runWindowMs
     const bytes = readAuthBytes(join(sourceDirectory, 'auth.json'));
     let fd: number | undefined; let created = false;
     try {
-      assertAccessWindow(bytes, runWindowMs);
+      assertAccessWindow(codexAuthExpiry(bytes), runWindowMs);
       fd = openSync(destination, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600); created = true;
       writeFileSync(fd, bytes); fsyncSync(fd);
     } catch (error) {
@@ -202,6 +234,23 @@ export function removeCopiedAuth(output: string): { status: 'removed' | 'absent'
  */
 export type CleanupReviewIsolationPaths = ReviewIsolationPaths & { readonly cleanup?: { readonly readDenied: readonly string[] } };
 
+// Seatbelt has no operation name for utimes, so the allow covers every write
+// to a directory at the lock path and these operations are denied again.
+const PI_AUTH_LOCK_DENIED = 'file-write-acl file-write-data file-write-finderinfo file-write-flags file-write-mode file-write-owner file-write-setugid file-write-xattr';
+
+/**
+ * pi locks the resolved auth.json (pi #11655): proper-lockfile creates, touches
+ * and removes the directory `<native auth.json>.lock` beside the native file.
+ * The rule opens only those three operations on that literal directory path. A
+ * placeholder auth.json lies in the output, so its lock needs no rule.
+ */
+function piAuthLockPolicy(directory: string): string {
+  const auth = join(directory, 'auth.json');
+  if (!lstatSync(auth).isSymbolicLink()) return '';
+  const lock = JSON.stringify(`${realpathSync(auth)}.lock`);
+  return `(allow file-write* (require-all (literal ${lock}) (vnode-type DIRECTORY)))\n(deny ${PI_AUTH_LOCK_DENIED} (literal ${lock}))\n`;
+}
+
 /** Seatbelt owns enforcement. This emits OS policy, never vendor CLI arguments. */
 export function reviewIsolationPolicy(paths: CleanupReviewIsolationPaths, platform = process.platform): string {
   if (!isAbsolute(paths.output) || lstatSync(paths.output).isSymbolicLink() || !lstatSync(paths.output).isDirectory()) {
@@ -214,7 +263,7 @@ export function reviewIsolationPolicy(paths: CleanupReviewIsolationPaths, platfo
     const stat = lstatSync(directory);
     if (directory !== join(output, '.pi-agent') || stat.isSymbolicLink() || !stat.isDirectory()
       || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o700) throw new Error('review_pi_agent_directory_unsafe');
-    piPolicy = `(deny file-write* (literal ${JSON.stringify(join(directory, 'models.json'))}))\n`;
+    piPolicy = `(deny file-write* (literal ${JSON.stringify(join(directory, 'models.json'))}))\n${piAuthLockPolicy(directory)}`;
   }
   const readDenied = paths.cleanup?.readDenied ?? [];
   const protectedEntries = [paths.primary, paths.ownerRecord, paths.journal, paths.gitCommonDir, ...readDenied];
@@ -238,7 +287,9 @@ export function reviewIsolationPolicy(paths: CleanupReviewIsolationPaths, platfo
   if (platform !== 'darwin') throw new Error('OAR_REVIEW_ISOLATION_UNSUPPORTED_PLATFORM');
   // Output alone is writable; every real CODEX_HOME state grant is retired.
   // Definitions, trust, settings/hooks and credentials stay denied even inside
-  // an otherwise writable tree. This never opens HOME or native config roots.
+  // an otherwise writable tree. The one native path that opens is pi's
+  // auth.json lock directory (piAuthLockPolicy); nothing else in HOME or a
+  // native config root opens.
   const forbiddenFiles = '/(CLAUDE\\.md|AGENTS\\.md|settings[^/]*\\.json|\\.claude\\.json|config\\.toml|auth\\.json|\\.?credentials\\.json|secrets\\.json|token\\.json)$';
   const forbiddenDirectories = '/(\\.?hooks|\\.?agents|\\.?skills|\\.?rules|\\.?plugins)(/|$)';
   const exceptions = `(require-not (subpath ${JSON.stringify(output)}))`;

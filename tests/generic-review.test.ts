@@ -401,7 +401,7 @@ test('Pi isolation fixture links native configuration without storing credential
     packages: ['fixture-package'], extensions: ['fixture-extension'], httpProxy: 'http://fixture.invalid', defaultProjectTrust: 'always' }));
   writeFileSync(join(agent, 'models.json'), '{"providers":{"fixture":{"apiKey":"sk-PROBE-LITERAL"}}}');
   writeFileSync(join(agent, 'auth.json'), '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
-  const { directory } = preparePiAgentDirectory(output, source);
+  const { directory } = preparePiAgentDirectory(output, source, 60000);
   expect(lstatSync(directory).mode & 0o777).toBe(0o700);
   expect(readdirSync(directory).sort()).toEqual(['auth.json', 'models.json', 'settings.json']);
   expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
@@ -411,25 +411,39 @@ test('Pi isolation fixture links native configuration without storing credential
   expect(lstatSync(join(directory, 'settings.json')).mode & 0o777).toBe(0o600);
   expect(JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8'))).toEqual({ defaultProvider: 'fixture-provider', defaultModel: 'fixture-model', defaultThinkingLevel: 'high' });
   expectNoStoredPiProbe(output);
-  expect(preparePiAgentDirectory(output, source).directory).toBe(directory);
+  expect(preparePiAgentDirectory(output, source, 60000).directory).toBe(directory);
   const projectedSettings = readFileSync(join(directory, 'settings.json'), 'utf8');
   const nativeSettings = JSON.parse(readFileSync(join(agent, 'settings.json'), 'utf8'));
   writeFileSync(join(agent, 'settings.json'), JSON.stringify({ ...nativeSettings, packages: ['other-package'], httpProxy: 'http://other.invalid' }));
-  expect(preparePiAgentDirectory(output, source).directory).toBe(directory);
+  expect(preparePiAgentDirectory(output, source, 60000).directory).toBe(directory);
   expect(readFileSync(join(directory, 'settings.json'), 'utf8')).toBe(projectedSettings);
   writeFileSync(join(directory, 'settings.json'), projectedSettings + ' ');
-  expect(() => preparePiAgentDirectory(output, source)).toThrow('settings_changed');
+  expect(() => preparePiAgentDirectory(output, source, 60000)).toThrow('settings_changed');
   writeFileSync(join(directory, 'settings.json'), projectedSettings);
   writeFileSync(join(agent, 'settings.json'), JSON.stringify({ ...nativeSettings, defaultModel: 'changed-model' }));
-  expect(() => preparePiAgentDirectory(output, source)).toThrow('settings_changed');
+  expect(() => preparePiAgentDirectory(output, source, 60000)).toThrow('settings_changed');
   writeFileSync(join(agent, 'settings.json'), JSON.stringify(nativeSettings));
   unlinkSync(join(directory, 'models.json'));
   symlinkSync(join(agent, 'settings.json'), join(directory, 'models.json'));
-  expect(() => preparePiAgentDirectory(output, source)).toThrow('models_changed');
+  expect(() => preparePiAgentDirectory(output, source, 60000)).toThrow('models_changed');
   chmodSync(directory, 0o755);
-  expect(() => preparePiAgentDirectory(output, source)).toThrow('directory_unsafe');
+  expect(() => preparePiAgentDirectory(output, source, 60000)).toThrow('directory_unsafe');
   const otherOutput = join(root, 'other'); mkdirSync(otherOutput); symlinkSync(agent, join(otherOutput, '.pi-agent'));
-  expect(() => preparePiAgentDirectory(otherOutput, source)).toThrow('directory_unsafe');
+  expect(() => preparePiAgentDirectory(otherOutput, source, 60000)).toThrow('directory_unsafe');
+  const prepareWith = (auth: Record<string, unknown>, defaultProvider?: string) => {
+    writeFileSync(join(agent, 'auth.json'), JSON.stringify(auth));
+    writeFileSync(join(agent, 'settings.json'), JSON.stringify(defaultProvider === undefined ? {} : { defaultProvider }));
+    const windowOutput = join(root, `window-${randomUUID()}`); mkdirSync(windowOutput);
+    return () => preparePiAgentDirectory(windowOutput, source, 60000);
+  };
+  const oauth = (expires: number) => ({ type: 'oauth', access: '[fixture]', refresh: '[fixture]', expires });
+  const apiKey = { type: 'api_key', key: 'sk-PROBE-LITERAL' }, soon = Date.now() + 1000;
+  expect(prepareWith({ fixture: apiKey }, 'fixture')).not.toThrow();
+  expect(prepareWith({ fixture: oauth(Date.now() + 3_600_000) }, 'fixture')).not.toThrow();
+  expect(prepareWith({ fixture: oauth(soon) }, 'fixture')).toThrow('review_access_expires_within_run');
+  expect(prepareWith({ fixture: apiKey, unused: oauth(soon) }, 'fixture')).not.toThrow();
+  expect(prepareWith({ fixture: apiKey, other: oauth(soon) })).toThrow('review_access_expires_within_run');
+  expect(prepareWith({ fixture: { type: 'session_token' } }, 'fixture')).toThrow('review_pi_auth_shape_unknown');
 });
 
 test('Pi review source fixture uses custom agent directories and rejects relative overrides', async () => {
@@ -448,7 +462,7 @@ test('Pi review source fixture uses custom agent directories and rejects relativ
     writeFileSync(join(source.directory, 'models.json'), '{"providers":{"fixture":{"apiKey":"sk-PROBE-LITERAL"}}}');
     writeFileSync(join(source.directory, 'auth.json'), '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
     const output = join(root, `output-${index}`); mkdirSync(output);
-    const { directory } = preparePiAgentDirectory(output, home, { PI_CODING_AGENT_DIR: source.configured });
+    const { directory } = preparePiAgentDirectory(output, home, 60000, { PI_CODING_AGENT_DIR: source.configured });
     for (const name of ['models.json', 'auth.json']) expect(readlinkSync(join(directory, name))).toBe(join(source.directory, name));
     expect(JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8'))).toEqual({});
     expectNoStoredPiProbe(output);
@@ -456,7 +470,7 @@ test('Pi review source fixture uses custom agent directories and rejects relativ
     expect(readdirSync(directory)).toEqual([]);
   }
   const output = join(root, 'relative-output'); mkdirSync(output);
-  expect(() => preparePiAgentDirectory(output, home, { PI_CODING_AGENT_DIR: 'relative-agent' })).toThrow('PI_CODING_AGENT_DIR must be an absolute path or use ~/');
+  expect(() => preparePiAgentDirectory(output, home, 60000, { PI_CODING_AGENT_DIR: 'relative-agent' })).toThrow('PI_CODING_AGENT_DIR must be an absolute path or use ~/');
 });
 
 test('Pi credential cleanup fixture removes links and empty auth without following directory links', async () => {
@@ -466,21 +480,21 @@ test('Pi credential cleanup fixture removes links and empty auth without followi
   const home = join(root, 'home'), source = join(home, '.pi/agent'); mkdirSync(source, { recursive: true });
   for (const hasCredentials of [false, true]) {
     const output = join(root, hasCredentials ? 'linked' : 'empty'); mkdirSync(output);
-    if (hasCredentials) for (const name of ['models.json', 'settings.json', 'auth.json']) writeFileSync(join(source, name), '{"probe":"sk-PROBE-LITERAL"}');
-    const { directory } = preparePiAgentDirectory(output, home);
+    if (hasCredentials) for (const name of ['models.json', 'settings.json', 'auth.json']) writeFileSync(join(source, name), '{"probe":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
+    const { directory } = preparePiAgentDirectory(output, home, 60000);
     expectNoStoredPiProbe(output);
     expect(removePiCredentialReferences(output).status).toBe('removed');
     expect(readdirSync(directory)).toEqual([]);
     expect(removePiCredentialReferences(output).status).toBe('absent');
   }
   const output = join(root, 'refused'); mkdirSync(output);
-  const { directory } = preparePiAgentDirectory(output, home);
+  const { directory } = preparePiAgentDirectory(output, home, 60000);
   unlinkSync(join(directory, 'models.json')); mkdirSync(join(directory, 'models.json'));
   expect(removePiCredentialReferences(output).status).toBe('cleanup_pending');
   expect(readdirSync(directory)).toEqual(['models.json']);
   const escape = join(root, 'escape'); mkdirSync(escape); symlinkSync(source, join(escape, '.pi-agent'));
   expect(removePiCredentialReferences(escape).status).toBe('cleanup_pending');
-  for (const name of ['models.json', 'settings.json', 'auth.json']) expect(readFileSync(join(source, name), 'utf8')).toBe('{"probe":"sk-PROBE-LITERAL"}');
+  for (const name of ['models.json', 'settings.json', 'auth.json']) expect(readFileSync(join(source, name), 'utf8')).toBe('{"probe":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
 });
 
 darwinTest('Pi isolation fixture: OAR flags, native extension, actual model and paired denials', async () => {
@@ -496,7 +510,7 @@ darwinTest('Pi isolation fixture: OAR flags, native extension, actual model and 
   writeFileSync(join(agent, 'models.json'), '{"providers":{}}');
   writeFileSync(join(agent, 'settings.json'), '{"defaultProvider":"openai","defaultModel":"gpt-4o"}');
   mkdirSync(join(agent, 'extensions')); writeFileSync(join(agent, 'extensions', 'unexpected.ts'), 'throw new Error("ambient fixture extension loaded");');
-  const { directory } = preparePiAgentDirectory(output, home);
+  const { directory } = preparePiAgentDirectory(output, home, 60000);
   expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
   const targets = [join(source, 'protected.txt'), credential, join(agent, 'protected.txt'), join(directory, 'auth.json'), join(directory, 'models.json'), join(agent, 'models.json'), join(directory, 'settings.json'), join(agent, 'settings.json')];
   for (const target of [targets[0]!, targets[2]!]) writeFileSync(target, 'KEEP');
@@ -505,7 +519,7 @@ darwinTest('Pi isolation fixture: OAR flags, native extension, actual model and 
   const profile = join(owner, 'isolation.sb'); writeFileSync(profile, reviewIsolationPolicy(paths), { mode: 0o600 });
   const node = resolveNode24(), fixture = join(root, 'fixture-pi.cjs'), capture = join(output, 'argv.jsonl');
   const piCli = realpathSync(join(fileURLToPath(import.meta.resolve('@earendil-works/pi-coding-agent')), '..', 'cli.js'));
-  const probe = `()=>{const fs=require('node:fs');const denied=${JSON.stringify(targets)}.map(path=>{try{fs.writeFileSync(path,'CHANGED');return false}catch(e){return ['EPERM','EACCES'].includes(e.code)}});let signal=false;try{process.kill(${process.pid},'SIGCONT')}catch(e){signal=e.code==='EPERM'};return {denied,signal};}`;
+  const probe = `()=>{const fs=require('node:fs');const denied=${JSON.stringify(targets)}.map(path=>{try{fs.writeFileSync(path,'CHANGED');return false}catch(e){return ['EPERM','EACCES'].includes(e.code)}});let signal=false;try{process.kill(${process.pid},'SIGCONT')}catch(e){signal=e.code==='EPERM'};const lock=${JSON.stringify(realpathSync(credential) + '.lock')},refused=f=>{try{f();return false}catch(e){return ['EPERM','EACCES'].includes(e.code)}};fs.mkdirSync(lock);fs.utimesSync(lock,new Date(),new Date());const lockOnly=[refused(()=>fs.writeFileSync(lock+'/inner','CHANGED')),refused(()=>fs.chmodSync(lock,0o777)),refused(()=>fs.mkdirSync(lock+'x'))];fs.rmdirSync(lock);lockOnly.push(refused(()=>fs.writeFileSync(lock,'CHANGED')));return {denied,signal,lockOnly};}`;
   writeFileSync(fixture, `#!${node}\nconst fs=require('node:fs'),cp=require('node:child_process');
 const argv=process.argv.slice(2);
 const check=${probe};
@@ -541,7 +555,7 @@ console.log(JSON.stringify({session_id:id,model:'openai/gpt-4o',extension_ready:
   for (const flag of ['--no-extensions', '--no-skills', '--no-context-files', '--no-prompt-templates', '--no-mcp', '--no-approve', '--offline']) expect(run.argv).toContain(flag);
   expect(run.argv[run.argv.indexOf('--mode') + 1]).toBe('rpc'); expect(run.argv).toContain('-e');
   expect(run.env.PI_CODING_AGENT_DIR).toBe(directory); expect(run.env.OAR_PI_AGENT_DIR).toBe(directory);
-  for (const row of captures) for (const evidence of [row.own, row.descendant]) { expect(evidence.denied).toEqual(targets.map(() => true)); expect(evidence.signal).toBe(true); }
+  for (const row of captures) for (const evidence of [row.own, row.descendant]) { expect(evidence.denied).toEqual(targets.map(() => true)); expect(evidence.signal).toBe(true); expect(evidence.lockOnly).toEqual([true, true, true, true]); }
   expect(targets.map(path => readFileSync(path, 'utf8'))).toEqual(initial);
 }, 60000);
 
@@ -911,7 +925,7 @@ test('preparePiAgentDirectory reads each loopback port from the provider baseUrl
     const root = tmpWorkspace('pi-loopback-ports'); roots.push(root);
     const output = join(root, 'output'), agent = join(root, 'home/.pi/agent');
     mkdirSync(output); mkdirSync(agent, { recursive: true }); writeFileSync(join(agent, 'models.json'), models);
-    return preparePiAgentDirectory(output, join(root, 'home'));
+    return preparePiAgentDirectory(output, join(root, 'home'), 60000);
   };
   const baseUrl = (value: unknown) => JSON.stringify({ providers: { fixture: { baseUrl: value } } });
   const urls = ['http://127.0.0.1:3425/v1', 'http://LOCALHOST:8080', 'http://[::1]:9000/v1', 'http://127.0.0.1:3425/v2', 'http://localhost/v1', 'https://127.0.0.1/v1',
