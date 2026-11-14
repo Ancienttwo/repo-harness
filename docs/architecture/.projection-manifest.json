@@ -5,7 +5,7 @@
   "layoutVersion": "archcontext.docs-layout/v1",
   "generatedFrom": {"codeGraphPackage":"@colbymchenry/codegraph","codeGraphVersion":"1.6.2"},
   "semanticBaseline": {
-    "modelDigest": "sha256:3104a952ef062e99be97b1c5de88a64b2ec495d3b33c83901b08d20a7e9e6baf",
+    "modelDigest": "sha256:98fe5de7d6165a72337ee326fa49bd1aa7d32461ef08ee3b43c042523e9f87eb",
     "capabilities": [
       {
         "capabilityId": "capability.organization.board",
@@ -16,7 +16,7 @@
           "component.board.core",
           "component.board.effects"
         ],
-        "semanticFingerprint": "sha256:a9b7b13c694ebd036afa2be726af702ac4d0db84039963ab27675a805bbab81a",
+        "semanticFingerprint": "sha256:b8146099ab87bd6280d83d8c780676206098cbefe96fa7963e849171d16e3bc3",
         "flowProofFingerprint": "sha256:3bd3654a1c61acc2fbb32cd5b6da954ea22c2d6e9a8290f1e70d59b033e22a9e",
         "proofStatus": {
           "p1": "proven",
@@ -31,7 +31,7 @@
           "ownership": "sha256:d6d845bbc1b726b943f16df231cee2d586e213ef747d254fcf921f8219a94e93",
           "placement": "sha256:223f03cb06f1641dafad07bcbc990c821db9efc2a24f042168721e738d28a5bb",
           "relations": "sha256:0cce694eb2e68c194a406f1c91a55e9f9c3762b7457910430c69b3be08fab502",
-          "responsibilities": "sha256:9ce7aa0baeaaf9f8315f0690471cefbd707a7ca1f95c626d567a7db34ae4eedc",
+          "responsibilities": "sha256:eb1dbd2793ae44edf29f3bb6011da3f6367796a8169c9ff9c3ce67c5b2d41256",
           "riskBoundaries": "sha256:4fe5a1d61658c55f313801458cb0ce5e14d20f2f0e64d0e54e3b28fef91a4d45"
         },
         "selectorEvidenceDigest": "sha256:05bc31b2dea75530c95548d8ef59e94307ed7b973c3adffc5c0685849dfc264f"
@@ -326,7 +326,7 @@
           "component.hook-adapters.session-lifecycle",
           "component.hook-adapters.session-lifecycle-effects"
         ],
-        "semanticFingerprint": "sha256:2fd179f3a4a55bd3bccdee91f5cf7bc7f485549f42d383f7732d2de12aa5a316",
+        "semanticFingerprint": "sha256:6751763c1a4065d45ffc1dea938f0da2e6e58901d1919eb1a5c7742fe81a4581",
         "flowProofFingerprint": "sha256:02a58db8bba1c061b7647f3b5f5b97e8f48cee7963e0047720fd7ef92cb3bcf8",
         "proofStatus": {
           "p1": "proven",
@@ -338,7 +338,7 @@
           "interfaces": "sha256:f75f08d7bf3d59812f50e91db3ae62a8b85cc32bb6632f0c34f43d503741fa47",
           "lifecycle": "sha256:beca28696cc84ade95e3a29a322d9eb31a4d851e386f94d58c101d31c515985c",
           "names": "sha256:c1239dddc6d0b4230e63693700b594abf3434cfd20cea0434950232ca12fd31c",
-          "ownership": "sha256:9a7976c5e0bb3e4e3b7769833b98038c40636e91231c28104451e36290842072",
+          "ownership": "sha256:74b183f432fd0520089e901f66e1039210b6c540dbe33db082b32d662c20f712",
           "placement": "sha256:5036c5170f41f04e2e2393bae0223cb87405c3bec3ee7052bbb7c9f8a94f2435",
           "relations": "sha256:d7f671cfd92bc262db7c5cb1dd08d10fedf620ca4784c043eb06c8927c68773c",
           "responsibilities": "sha256:c909d7a789c006a8a2924e70e86437db42fc7b95e78ff7e5a73a57f460b3dd76",
@@ -394,7 +394,7 @@
           "component.operator.view-projections",
           "component.operator.web-console"
         ],
-        "semanticFingerprint": "sha256:d88806fe954da780d2b7f15929b4812285ebe4055b0eadf82b443564fd72d92e",
+        "semanticFingerprint": "sha256:92bd3e926a0b3b4b96f6e2d49eb178f856f587aae292feef4abb1e57cf884c56",
         "flowProofFingerprint": "sha256:dde33b19abcf9b8e13bfc62585346a5af87cb91e9247a2d2a988403a4988fc45",
         "proofStatus": {
           "p1": "proven",
@@ -409,7 +409,7 @@
           "ownership": "sha256:3fc23173b7a1707d1417b603adb560c6fbc1204e3ab74263f6729066860d8496",
           "placement": "sha256:31ac3d747343fe906a9939c3b292cdced11b41d1569079106decca7d209d1591",
           "relations": "sha256:043716b79d748d09e98cfcdf90716be3d38def346d5f5784be03b41f57ec7d80",
-          "responsibilities": "sha256:1f0d24f43e8e2a5ed4addb89aefd59b8ee214b84d1d54e82c04fb15db20388f2",
+          "responsibilities": "sha256:069ca8a3c712aec73dab4e9ab86dce43a472822a7c18299b1df51da9ec98f817",
           "riskBoundaries": "sha256:d259a096c4b2b4d2c51162d519504404224ffa9dee6996869e7571b03fc1495b"
         },
         "selectorEvidenceDigest": "sha256:ae05c347ac33396cf86e2ef9a1074b81706d2b0313c3b00af91f715a5db39c0b"
@@ -617,8 +617,8 @@
           "component.contract-assets.tool-catalog",
           "component.contract-assets.worktree-runtime-root"
         ],
-        "semanticFingerprint": "sha256:023ed7fc07e10045234fb07875688132ad144641d33925159f13dd07f17d7534",
-        "flowProofFingerprint": "sha256:5313655fc2df8e4426d8751fa488f20c449edbc96d3992e89b53459a120f0109",
+        "semanticFingerprint": "sha256:dc0a250142538038943e6fdad39580f2b1582cf99244b855a859e67a38627144",
+        "flowProofFingerprint": "sha256:f175356d00f897ce3f79c625994c21b422a8d4b6b69d428811a356ac8f48ec47",
         "proofStatus": {
           "p1": "proven",
           "p2": "proven"
@@ -629,10 +629,10 @@
           "interfaces": "sha256:a8c7c10e651e7dd4c666898bf1a2a5277333fcd6a2f783c9836eb8f692f9ff87",
           "lifecycle": "sha256:74d89f30e782933c5fa7e5825a9ddb172038b7be1938b3c9ebf0c0995e64d03f",
           "names": "sha256:a7c4344e701cb7181bf738ffd933837918641d7fad80e72551ba500b7982894b",
-          "ownership": "sha256:9f34438f95c95546616a8609a57e61d4058724354682f14ecea229d608cc815a",
+          "ownership": "sha256:40ed18465e9a12a1effa34416e3bd5ac3dd488a623ff64973458fbcfc0bc20e2",
           "placement": "sha256:bf7ef22f775d7aad07c2d8de0feaa5436f19901adf3f86b186b2fb83f4ed718c",
-          "relations": "sha256:10ad3c556e007abb1a30824cbb5d32edc46da15dcf9e2b905463cc9e23fb62ca",
-          "responsibilities": "sha256:37ba3f52d4bd59b285d425eb68b251b5d55f30e141ded24cc186c088d592fda3",
+          "relations": "sha256:fd0a09b355a271aecc473d6f54444e7e1a4a51c5180e2d96a18029d3c611ff2f",
+          "responsibilities": "sha256:40d5c4eb65960d3f15e65583d40c78741776ee677baf69002a89f9bba6112ceb",
           "riskBoundaries": "sha256:0acd2a02ec93eb0bdbb8c2156ca03c58c952e70c7ef0d36bad186e61d48bfd13"
         },
         "selectorEvidenceDigest": "sha256:a10b94f1997ffc39fa2da7fd2e925abd597fd3118bf6ecc9cb9032f0af19e506"
@@ -741,13 +741,13 @@
     "projection_target.agent-context.agents.capability-runtime-harness-hook-adapters":
       {"type":"agent-context","scope":{"kind":"entity","id":"capability.runtime-harness.hook-adapters","entityKind":"capability"},"path":"src/cli/hook/AGENTS.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:25bec8b15f2493f6111eb6a99b0c7c16b4dcc820e009b572ccaa4cce70298c76"},
     "projection_target.agent-context.agents.capability-workflow-engine-contract-assets":
-      {"type":"agent-context","scope":{"kind":"entity","id":"capability.workflow-engine.contract-assets","entityKind":"capability"},"path":"assets/AGENTS.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:90c741e172d323849052c9de68df15df33ba25a4b3e1fe7b4148abd7810ac102"},
+      {"type":"agent-context","scope":{"kind":"entity","id":"capability.workflow-engine.contract-assets","entityKind":"capability"},"path":"assets/AGENTS.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:55cd45b976b421bdfefa6e0babffb827eeb67834a2237ed2fa5e24757536047a"},
     "projection_target.agent-context.agents.capability-workflow-engine-inspection-migration":
       {"type":"agent-context","scope":{"kind":"entity","id":"capability.workflow-engine.inspection-migration","entityKind":"capability"},"path":"scripts/AGENTS.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:95b04dad6fbd53ec488e56d39defcbfff0203183f82f4d467d874023a666ec14"},
     "projection_target.agent-context.claude.capability-runtime-harness-hook-adapters":
       {"type":"agent-context","scope":{"kind":"entity","id":"capability.runtime-harness.hook-adapters","entityKind":"capability"},"path":"src/cli/hook/CLAUDE.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:25bec8b15f2493f6111eb6a99b0c7c16b4dcc820e009b572ccaa4cce70298c76"},
     "projection_target.agent-context.claude.capability-workflow-engine-contract-assets":
-      {"type":"agent-context","scope":{"kind":"entity","id":"capability.workflow-engine.contract-assets","entityKind":"capability"},"path":"assets/CLAUDE.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:90c741e172d323849052c9de68df15df33ba25a4b3e1fe7b4148abd7810ac102"},
+      {"type":"agent-context","scope":{"kind":"entity","id":"capability.workflow-engine.contract-assets","entityKind":"capability"},"path":"assets/CLAUDE.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:55cd45b976b421bdfefa6e0babffb827eeb67834a2237ed2fa5e24757536047a"},
     "projection_target.agent-context.claude.capability-workflow-engine-inspection-migration":
       {"type":"agent-context","scope":{"kind":"entity","id":"capability.workflow-engine.inspection-migration","entityKind":"capability"},"path":"scripts/CLAUDE.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:95b04dad6fbd53ec488e56d39defcbfff0203183f82f4d467d874023a666ec14"},
     "projection_target.architecture.history":
@@ -761,9 +761,9 @@
     "projection_target.entity.capability-organization-task-fleet":
       {"type":"entity-summary","scope":{"kind":"entity","id":"capability.organization.task-fleet","entityKind":"capability"},"path":"docs/architecture/modules/organization/task-fleet.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:3541270294bd976fc8247f4cb2c05c04b1d8d8a0d3cf8bd30a699d7e187933fa"},
     "projection_target.entity.capability-public-surface-action-commands":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.action-commands","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/action-commands.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:21e67b061612821bdccb1b25c1159fb6b8e403caac2850dcd7faab7d63f76f2d"},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.action-commands","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/action-commands.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:79622bcfde529a0558fed45033ff8113295ffdaedeb98b801a9d48f6b7739a1b"},
     "projection_target.entity.capability-public-surface-adoption":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.adoption","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/adoption.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:084b5cb6741d34d83689202d689c33d89fb82c783f559c7e1829edb56fefe921"},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.adoption","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/adoption.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:9d3add263eaf252dd79aaa8d650d5f0e510714e6c87844f3298d4117041b2e85"},
     "projection_target.entity.capability-public-surface-root-router":
       {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.root-router","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/root-router.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:8539bfbc9197ee3c546b05f3681f46d49151f22148c707f5e7ec5e4ce821bb0e"},
     "projection_target.entity.capability-public-surface-strategy-reflection":
@@ -775,7 +775,7 @@
     "projection_target.entity.capability-runtime-harness-global-runtime-reconciliation":
       {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.global-runtime-reconciliation","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:eb3aaf70581b1c6b33d43690fab74787348d9c7f2ac3b840d452e3fe48035877"},
     "projection_target.entity.capability-runtime-harness-hook-adapters":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.hook-adapters","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/hook-adapters.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:966521e547e13850ec5b87b170d2117be647e54393aedd8f72564a6056012451"},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.hook-adapters","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/hook-adapters.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:cc6cf62c6cab938b11a4f9d07af292792b474000f90696f05c73381a27e6aa86"},
     "projection_target.entity.capability-runtime-harness-mcp-sidecar":
       {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.mcp-sidecar","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/mcp-sidecar.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:72f5b90f8589b1957a4263356747853f7cc94234bd5c8ab943c6698d26f4dc78"},
     "projection_target.entity.capability-runtime-harness-operator":
@@ -793,7 +793,7 @@
     "projection_target.entity.capability-verification-evals-checks":
       {"type":"entity-summary","scope":{"kind":"entity","id":"capability.verification.evals-checks","entityKind":"capability"},"path":"docs/architecture/modules/verification/evals-checks.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:50e02e788aa32c2f380dddfb520094c237af7d4de21bf1ca4cb7603864c3f541"},
     "projection_target.entity.capability-workflow-engine-contract-assets":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.contract-assets","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/contract-assets.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:807d795419c11e754f15102ba699cb29f914041a87ba188f27eb77454d90f26f"},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.contract-assets","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/contract-assets.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:4b0fd5e6bb28b8c58ff06b2a80b03d5966e7b1f508c284142f6bce6e1d707138"},
     "projection_target.entity.capability-workflow-engine-execution-primitives":
       {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.execution-primitives","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/execution-primitives.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:0070273973d0e2267ae38316953b0941ca782177f90efbfa5e4f4726f1b41fb7"},
     "projection_target.entity.capability-workflow-engine-inspection-migration":

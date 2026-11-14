@@ -1,5 +1,5 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:21e67b061612821bdccb1b25c1159fb6b8e403caac2850dcd7faab7d63f76f2d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:79622bcfde529a0558fed45033ff8113295ffdaedeb98b801a9d48f6b7739a1b" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`、`assets/skills/**`、`assets/skill-version.json`、`.claude/.skill-version`、`src/core/skill-surface/**`、`scripts/skill-surface-select.ts`、`scripts/run-skill-routing-eval.ts`、`scripts/check-skill-version.ts`
@@ -84,7 +84,7 @@ flowchart LR
 | `component.action-commands.bundled-skills` | Bundled Skill Packages | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.action-commands.primary` | Command Facades and Manifest | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.action-commands.skill-surface-catalog` | Skill Surface Catalog | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.action-commands.selection-projection` |
-| `component.action-commands.skill-surface-catalog-core` | Skill Surface Catalog (core) | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.action-commands.skill-surface-catalog-core` | Skill Surface Catalog (core) | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
