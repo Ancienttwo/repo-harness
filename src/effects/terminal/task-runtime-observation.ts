@@ -40,7 +40,12 @@ export function oarObservationFile(round: number): string { return `oar-observat
 /** The one actual-model rule for every OAR host turn, reviewer or task agent.
  * Claude system/init is requested/init metadata, not the actual gateway model. */
 export function oarActualModel(kind: string, session: Pick<Session, 'model'>): string | null {
-  return kind === 'claude' ? null : session.model().value;
+  if (kind === 'claude') return null;
+  const model = session.model().value;
+  // Pi reports pi-agent-core's placeholder (provider "unknown") when it resolved
+  // no model, for example when it cannot read its credentials. It names no model.
+  if (kind === 'pi' && model?.startsWith('unknown/')) throw new Error(`pi_actual_model_unresolved: pi reported its placeholder ${model}, not a configured model`);
+  return model;
 }
 
 function object(value: unknown): Record<string, unknown> {

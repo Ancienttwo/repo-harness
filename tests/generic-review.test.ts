@@ -550,6 +550,10 @@ test('Pi review options use native configuration; an unobserved model is null fo
   const { validateDomainReview } = await import('../src/core/review/acceptance-receipt');
   const { decodeAgentsConfig } = await import('../src/core/board/agents-settings');
   expect(isReviewRuntimeId('pi')).toBe(true);
+  const { oarActualModel } = await import('../src/effects/terminal/task-runtime-observation');
+  const reported = (value: string | null) => ({ model: () => ({ value }) }) as unknown as Parameters<typeof oarActualModel>[1];
+  expect(() => oarActualModel('pi', reported('unknown/unknown'))).toThrow('pi_actual_model_unresolved');
+  expect(oarActualModel('pi', reported(null))).toBeNull();
   expect(decodeAgentsConfig({ enabled: ['pi'], uses: { docs: [], review: ['pi'] }, default_docs: null }).uses.review).toEqual(['pi']);
   expect(() => reviewSessionOptions('pi', '/fixture')).toThrow('agent_directory_required');
   const options = reviewSessionOptions('pi', '/fixture', '/fixture/.pi-agent');
