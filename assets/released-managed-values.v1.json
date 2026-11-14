@@ -2105,25 +2105,27 @@
       "sha256:fb98704f781d77b1d7bd1e2a65abbb991ba17f313476d800062220a8785714b3",
       "sha256:fcd904f6c13a7a2632049b6cda54ccd949db280ee00502fb8df2994eff522406"
     ],
-    "retiredSection": {
-      "header": "# Retired runtime state that still exists; repo-harness upgrade lists these files",
-      "rules": [
-        ".claude/.session-id",
-        ".claude/.trace.jsonl",
-        ".ai/harness/active-plan",
-        ".ai/harness/sprint/",
-        ".ai/harness/handoff/current.md",
-        ".ai/harness/handoff/resume.md",
-        ".claude/.active-plan",
-        ".claude/.plan-state/",
-        "tasks/current.md",
-        "tasks/.current.md.tmp.*"
-      ],
-      "bases": [
-        "sha256:4793891a665e73fa7dfae0c5e017ce606ed34e21eb2568fc2312f69a520395e8",
-        "sha256:ea5fbaf3b84fd08d90e3c30c76b64e63f19c8cfebfb285a87a94707427204bde"
-      ]
-    }
+    "retiredSections": [
+      {
+        "header": "# Retired runtime state that still exists; repo-harness upgrade lists these files",
+        "rules": [
+          ".claude/.session-id",
+          ".claude/.trace.jsonl",
+          ".ai/harness/active-plan",
+          ".ai/harness/sprint/",
+          ".ai/harness/handoff/current.md",
+          ".ai/harness/handoff/resume.md",
+          ".claude/.active-plan",
+          ".claude/.plan-state/",
+          "tasks/current.md",
+          "tasks/.current.md.tmp.*"
+        ],
+        "bases": [
+          "sha256:4793891a665e73fa7dfae0c5e017ce606ed34e21eb2568fc2312f69a520395e8",
+          "sha256:ea5fbaf3b84fd08d90e3c30c76b64e63f19c8cfebfb285a87a94707427204bde"
+        ]
+      }
+    ]
   },
   "userExcludesBlock": {
     "blocks": [

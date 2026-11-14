@@ -23,8 +23,13 @@ describe("released managed values", () => {
   }, 180_000);
 
   test("the extractor reads the writers of the current tree as a release", async () => {
-    const head = await buildReleasedManagedValues(REPO_ROOT, ["HEAD"]);
-    for (const [key, value] of Object.entries(MANAGED_PACKAGE_SCRIPTS)) expect(head.packageScripts[key]).toEqual([value]);
+    // v0.32.0 and HEAD render the retired section under different headers.
+    const head = await buildReleasedManagedValues(REPO_ROOT, ["v0.32.0", "HEAD"]);
+    for (const [key, value] of Object.entries(MANAGED_PACKAGE_SCRIPTS)) expect(head.packageScripts[key]).toContain(value);
+    expect(head.projectGitignoreBlock.retiredSections.map((section) => section.header)).toEqual([
+      "# Retired runtime state that still exists; repo-harness upgrade lists these files",
+      "# Retired runtime state that still exists; rh upgrade lists these files",
+    ]);
   }, 60_000);
 
   test("a missing or malformed released values file fails closed", () => {

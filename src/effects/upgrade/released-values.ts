@@ -20,7 +20,7 @@ interface ReleasedManagedValues {
   readonly referenceConfigs: Readonly<Record<string, Fingerprints>>;
   readonly projectGitignoreBlock: {
     readonly blocks: Fingerprints;
-    readonly retiredSection: { readonly header: string; readonly rules: readonly string[]; readonly bases: Fingerprints } | null;
+    readonly retiredSections: ReadonlyArray<{ readonly header: string; readonly rules: readonly string[]; readonly bases: Fingerprints }>;
   };
   readonly userExcludesBlock: { readonly blocks: Fingerprints };
   readonly globalRulesBlock: {
@@ -51,18 +51,22 @@ export function readReleasedManagedValues(file: string): ReleasedManagedValues {
   if (root.schema !== SCHEMA) fail("$.schema", JSON.stringify(SCHEMA));
   strings(root.releases, "$.releases");
   const project = object(root.projectGitignoreBlock, "$.projectGitignoreBlock");
-  const retired = project.retiredSection === null ? null : object(project.retiredSection, "$.projectGitignoreBlock.retiredSection");
+  const sections = Array.isArray(project.retiredSections) ? project.retiredSections : fail("$.projectGitignoreBlock.retiredSections", "an array");
   const rules = object(root.globalRulesBlock, "$.globalRulesBlock");
   return {
     packageScripts: lists(root.packageScripts, "$.packageScripts"),
     referenceConfigs: lists(root.referenceConfigs, "$.referenceConfigs", FINGERPRINT),
     projectGitignoreBlock: {
       blocks: strings(project.blocks, "$.projectGitignoreBlock.blocks", FINGERPRINT),
-      retiredSection: retired && {
-        header: string(retired.header, "$.projectGitignoreBlock.retiredSection.header"),
-        rules: strings(retired.rules, "$.projectGitignoreBlock.retiredSection.rules"),
-        bases: strings(retired.bases, "$.projectGitignoreBlock.retiredSection.bases", FINGERPRINT),
-      },
+      retiredSections: sections.map((value, index) => {
+        const path = `$.projectGitignoreBlock.retiredSections[${index}]`;
+        const section = object(value, path);
+        return {
+          header: string(section.header, `${path}.header`),
+          rules: strings(section.rules, `${path}.rules`),
+          bases: strings(section.bases, `${path}.bases`, FINGERPRINT),
+        };
+      }),
     },
     userExcludesBlock: { blocks: strings(object(root.userExcludesBlock, "$.userExcludesBlock").blocks, "$.userExcludesBlock.blocks", FINGERPRINT) },
     globalRulesBlock: {
@@ -120,14 +124,14 @@ export function isRetiredRuleSection(section: string, header: string, rules: rea
 export function isReleasedProjectIgnoreBlock(block: string): boolean {
   const values = released().projectGitignoreBlock;
   if (has(values.blocks, sha256Prefixed(block))) return true;
-  const retired = values.retiredSection;
-  if (!retired) return false;
   const lines = block.split("\n");
   const end = lines.pop()!;
   const content = lines.join("\n");
-  const at = content.lastIndexOf(`\n\n${retired.header}\n`);
-  return at !== -1 && isRetiredRuleSection(content.slice(at), retired.header, retired.rules)
-    && has(retired.bases, sha256Prefixed(`${content.slice(0, at)}\n${end}`));
+  return values.retiredSections.some((retired) => {
+    const at = content.lastIndexOf(`\n\n${retired.header}\n`);
+    return at !== -1 && isRetiredRuleSection(content.slice(at), retired.header, retired.rules)
+      && has(retired.bases, sha256Prefixed(`${content.slice(0, at)}\n${end}`));
+  });
 }
 
 /** A released user-level Git excludes block, from its BEGIN line to its END line joined by `\n`. */

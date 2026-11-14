@@ -319,12 +319,14 @@ const releasedValues = (file) => {
   lists(root.referenceConfigs, "$.referenceConfigs", FINGERPRINT);
   const project = object(root.projectGitignoreBlock, "$.projectGitignoreBlock");
   strings(project.blocks, "$.projectGitignoreBlock.blocks", FINGERPRINT);
-  if (project.retiredSection !== null) {
-    const retired = object(project.retiredSection, "$.projectGitignoreBlock.retiredSection");
-    string(retired.header, "$.projectGitignoreBlock.retiredSection.header");
-    strings(retired.rules, "$.projectGitignoreBlock.retiredSection.rules");
-    strings(retired.bases, "$.projectGitignoreBlock.retiredSection.bases", FINGERPRINT);
-  }
+  if (!Array.isArray(project.retiredSections)) fail("$.projectGitignoreBlock.retiredSections", "an array");
+  project.retiredSections.forEach((value, index) => {
+    const path = `$.projectGitignoreBlock.retiredSections[${index}]`;
+    const retired = object(value, path);
+    string(retired.header, `${path}.header`);
+    strings(retired.rules, `${path}.rules`);
+    strings(retired.bases, `${path}.bases`, FINGERPRINT);
+  });
   strings(object(root.userExcludesBlock, "$.userExcludesBlock").blocks, "$.userExcludesBlock.blocks", FINGERPRINT);
   const rules = object(root.globalRulesBlock, "$.globalRulesBlock");
   strings(rules.blocks, "$.globalRulesBlock.blocks", FINGERPRINT);
@@ -364,20 +366,18 @@ try {
   } else if (check === "project-ignore-block") {
     const block = fs.readFileSync(0, "utf8");
     const group = values.projectGitignoreBlock;
-    released = group.blocks.includes(sha256(block));
-    const retired = group.retiredSection;
-    if (!released && retired) {
-      const lines = block.split("\n");
-      const end = lines.pop();
-      const content = lines.join("\n");
+    const lines = block.split("\n");
+    const end = lines.pop();
+    const content = lines.join("\n");
+    released = group.blocks.includes(sha256(block)) || group.retiredSections.some((retired) => {
       const at = content.lastIndexOf(`\n\n${retired.header}\n`);
       let next = 0;
-      released = at !== -1 && content.slice(at + retired.header.length + 3).split("\n").every((rule) => {
+      return at !== -1 && content.slice(at + retired.header.length + 3).split("\n").every((rule) => {
         const index = retired.rules.indexOf(rule, next);
         next = index + 1;
         return index !== -1;
       }) && retired.bases.includes(sha256(`${content.slice(0, at)}\n${end}`));
-    }
+    });
   } else {
     throw new Error(`unknown check ${check}`);
   }

@@ -48,10 +48,11 @@ export interface ReleasedManagedValues {
   readonly projectGitignoreBlock: {
     readonly blocks: readonly string[];
     /**
-     * A block whose content ends with "\n\n" + header + "\n" + a non-empty, in-order
-     * subset of `rules` is managed when the block without that section is in `bases`.
+     * One entry per released section header, sorted by header. A block whose content ends with
+     * "\n\n" + header + "\n" + a non-empty, in-order subset of `rules` is managed when the block
+     * without that section is in the `bases` of the same entry.
      */
-    readonly retiredSection: { readonly header: string; readonly rules: readonly string[]; readonly bases: readonly string[] } | null;
+    readonly retiredSections: ReadonlyArray<{ readonly header: string; readonly rules: readonly string[]; readonly bases: readonly string[] }>;
   };
   readonly userExcludesBlock: { readonly blocks: readonly string[] };
   readonly globalRulesBlock: {
@@ -539,8 +540,7 @@ export async function buildReleasedManagedValues(repoRoot: string, refs: readonl
   const packageScripts = new Map<string, Set<string>>();
   const referenceConfigs = new Map<string, Set<string>>();
   const gitignoreBlocks = new Set<string>();
-  const retiredBases = new Set<string>();
-  let retiredSection: { header: string; rules: readonly string[] } | null = null;
+  const retiredSections = new Map<string, { readonly rules: readonly string[]; readonly bases: Set<string> }>();
   const userExcludesBlocks = new Set<string>();
   const rulesBlocks = new Set<string>();
   const customRulesBlocks = new Set<string>();
@@ -571,15 +571,14 @@ export async function buildReleasedManagedValues(repoRoot: string, refs: readonl
       }
 
       const ts = tsGitignore(tree);
-      for (const block of ts?.blocks ?? []) {
-        gitignoreBlocks.add(blockFingerprint(block));
-        if (ts?.retired) retiredBases.add(blockFingerprint(block));
-      }
+      for (const block of ts?.blocks ?? []) gitignoreBlocks.add(blockFingerprint(block));
       if (ts?.retired) {
-        if (retiredSection && JSON.stringify(retiredSection) !== JSON.stringify(ts.retired)) {
-          throw new Error(`${tag}: the retired runtime section changed; record one retired section per base`);
+        const section = retiredSections.get(ts.retired.header) ?? { rules: ts.retired.rules, bases: new Set<string>() };
+        if (JSON.stringify(section.rules) !== JSON.stringify(ts.retired.rules)) {
+          throw new Error(`${tag}: the retired rules under "${ts.retired.header}" changed; record the rules per header and release`);
         }
-        retiredSection = ts.retired;
+        for (const block of ts.blocks) section.bases.add(blockFingerprint(block));
+        retiredSections.set(ts.retired.header, section);
       }
       if (ts?.userExcludesBlock) userExcludesBlocks.add(blockFingerprint(ts.userExcludesBlock));
 
@@ -600,7 +599,10 @@ export async function buildReleasedManagedValues(repoRoot: string, refs: readonl
     referenceConfigs: record(referenceConfigs),
     projectGitignoreBlock: {
       blocks: sorted(gitignoreBlocks),
-      retiredSection: retiredSection ? { ...retiredSection, bases: sorted(retiredBases) } : null,
+      retiredSections: [...retiredSections.keys()].sort().map((header) => {
+        const section = retiredSections.get(header)!;
+        return { header, rules: section.rules, bases: sorted(section.bases) };
+      }),
     },
     userExcludesBlock: { blocks: sorted(userExcludesBlocks) },
     globalRulesBlock: {
