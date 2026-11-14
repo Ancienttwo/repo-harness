@@ -172,9 +172,11 @@ function requirePinned(tag: string, what: string, source: string, pins: Readonly
 // Package scripts
 // ---------------------------------------------------------------------------
 
+const BASH_INIT_LIB = 'scripts/lib/project-init-lib.sh';
+
 /** The init code that writes package.json `scripts`: a bash function, or a TS function. */
 const PACKAGE_SCRIPT_RENDERERS = [
-  { path: 'scripts/lib/project-init-lib.sh', region: (source: string) => bashFunctionSource(source, 'pi_ensure_task_sync') },
+  { path: BASH_INIT_LIB, region: (source: string) => bashFunctionSource(source, 'pi_ensure_task_sync') },
   { path: 'src/core/adoption/standard-plan.ts', region: (source: string) => functionSource(source, 'addPackageOperation') },
   { path: 'src/effects/adoption/standard-plan.ts', region: (source: string) => functionSource(source, 'addPackageOperation') },
 ] as const;
@@ -202,6 +204,18 @@ function bashFunctionSource(source: string, name: string): string | null {
   return next < 0 ? source.slice(start) : source.slice(start, body + next);
 }
 
+const BASH_WRITERS = ['pi_ensure_task_sync', 'pi_default_runtime_block', 'pi_write_reference_config_stub'] as const;
+
+/**
+ * Since #2734 the bash scaffold writes no managed value: `rh init` is the only writer. A tag
+ * qualifies only when every bash writer is gone; a partial removal fails closed in the readers.
+ */
+function bashWritesNoManagedValue(tree: TagTree): boolean {
+  if (!tree.has(BASH_INIT_LIB)) return true;
+  const lib = tree.read(BASH_INIT_LIB);
+  return BASH_WRITERS.every((name) => bashFunctionSource(lib, name) === null);
+}
+
 /**
  * Every key that the tag's init writes or deletes, with each value it writes or deletes. The keys
  * come from the tag, so a retired key keeps its released values. A line that names `scripts[` in a
@@ -210,6 +224,7 @@ function bashFunctionSource(source: string, name: string): string | null {
 function packageScriptValues(tree: TagTree, into: Map<string, Set<string>>): void {
   for (const renderer of PACKAGE_SCRIPT_RENDERERS) {
     if (!tree.has(renderer.path)) continue;
+    if (renderer.path === BASH_INIT_LIB && bashWritesNoManagedValue(tree)) continue;
     const region = requireValue(renderer.region(tree.read(renderer.path)), tree.tag, `package script writer in ${renderer.path}`);
     let found = 0;
     if (region.includes('MANAGED_PACKAGE_SCRIPTS')) {
@@ -298,6 +313,8 @@ function runBash(dir: string): Promise<{ readonly status: number | null; readonl
 }
 
 async function runBashRenderers(tree: TagTree, scratch: string): Promise<BashRenders> {
+  // An empty stub map, not null: null means the tag copied whole reference configs.
+  if (bashWritesNoManagedValue(tree)) return { gitignoreBlocks: [], stubs: new Map() };
   const dir = join(scratch, tree.tag);
   mkdirSync(dir, { recursive: true });
   tree.materialize(dir, BASH_PATHS);
