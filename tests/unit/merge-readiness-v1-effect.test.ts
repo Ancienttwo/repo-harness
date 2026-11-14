@@ -668,26 +668,59 @@ const SHARD_STEP = 'Run the shard tests';
 const PROJECTION_JOB = 'Projection provider (windows-latest)';
 
 /** The real ci.yml shape: a summary required job and the matrix shards it needs. */
-const WORKFLOW_DEFINITION = [
-  'name: CI',
-  'on:',
-  '  pull_request:',
-  'jobs:',
-  '  selection:',
-  '    name: Select test coverage',
-  '  verify:',
-  '    name: Affected tests (shard ${{ matrix.shard }}/3)',
-  '    needs: selection',
-  '  projection:',
-  '    name: Projection provider (${{ matrix.os }})',
-  '  required:',
-  '    name: Required / CI',
-  '    needs: [selection, verify]',
-].join('\n');
+function workflowDefinition(selectionNeeds = '', requiredNeeds = '[selection, verify]', extraJob: readonly string[] = []): string {
+  return [
+    'name: CI',
+    'on:',
+    '  pull_request:',
+    'jobs:',
+    '  selection:',
+    '    name: Select test coverage',
+    ...selectionNeeds === '' ? [] : [`    needs: ${selectionNeeds}`],
+    '  verify:',
+    '    name: Affected tests (shard ${{ matrix.shard }}/3)',
+    '    needs: selection',
+    '    strategy:',
+    '      matrix:',
+    '        shard: [1, 2, 3]',
+    '  projection:',
+    '    name: Projection provider (${{ matrix.os }})',
+    '    strategy:',
+    '      matrix:',
+    '        os: [windows-latest]',
+    ...extraJob,
+    '  required:',
+    '    name: Required / CI',
+    `    needs: ${requiredNeeds}`,
+  ].join('\n');
+}
+
+const SETUP_JOB = ['  setup:', '    name: Setup'];
+const LINT_MATRIX = ['    strategy:', '      matrix:', '        os: [ubuntu-latest]'];
+
+/** Attempt 1 fails one job beside the summary; attempt 2 passes. */
+interface OtherFailure {
+  readonly summary: 'success' | 'failure' | 'skipped';
+  readonly job: string;
+  readonly workflow: string;
+}
+
+const OTHER_FAILURES = {
+  // Run 43571531818: only a job outside the summary's needs failed.
+  'unneeded-failure': { summary: 'success', job: PROJECTION_JOB, workflow: workflowDefinition() },
+  'unneeded-failure-summary-failed': { summary: 'failure', job: PROJECTION_JOB, workflow: workflowDefinition() },
+  'transitive-need': { summary: 'success', job: 'Setup', workflow: workflowDefinition('setup', undefined, SETUP_JOB) },
+  'missing-nested-need': { summary: 'success', job: PROJECTION_JOB, workflow: workflowDefinition('ghost') },
+  'default-matrix-name': { summary: 'success', job: 'lint (ubuntu-latest)',
+    workflow: workflowDefinition('', '[selection, verify, lint]', ['  lint:', ...LINT_MATRIX]) },
+  'skipped-static-matrix-need': { summary: 'skipped', job: 'Lint (ubuntu-latest)',
+    workflow: workflowDefinition('', '[selection, verify, lint]', ['  lint:', '    name: Lint', ...LINT_MATRIX]) },
+  'skipped-transitive-need': { summary: 'skipped', job: 'Setup', workflow: workflowDefinition('setup', undefined, SETUP_JOB) },
+} satisfies Record<string, OtherFailure>;
 
 type EvidenceScenario = 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'association-unknown'
   | 'evidence-unavailable' | 'original-test-skipped' | 'original-test-not-executed' | 'no-annotations'
-  | 'unneeded-failure' | 'unneeded-failure-summary-failed';
+  | keyof typeof OTHER_FAILURES;
 
 function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadinessInput['gh_runner']> {
   const source = fakeGh();
@@ -703,8 +736,7 @@ function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadines
     steps: [{ name: step, number: 1, status: 'completed', conclusion }],
     check_run_url: checkRun,
   });
-  // Run 43571531818: attempt 1 failed only a job outside the summary's needs.
-  const unneeded = scenario === 'unneeded-failure' || scenario === 'unneeded-failure-summary-failed';
+  const other: OtherFailure | null = scenario in OTHER_FAILURES ? OTHER_FAILURES[scenario as keyof typeof OTHER_FAILURES] : null;
   const annotationRun = scenario === 'no-annotations' ? null
     : 'https://api.github.com/repos/example/repo-harness/check-runs/77';
   return (args) => {
@@ -717,12 +749,12 @@ function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadines
     }
     if (path === 'repos/example/repo-harness/actions/runs/123') return { status: 0, stdout: JSON.stringify(run) };
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/1/jobs?per_page=100') {
-      return { status: 0, stdout: JSON.stringify({ total_count: unneeded ? 4 : 3, jobs: [
+      return { status: 0, stdout: JSON.stringify({ total_count: other ? 4 : 3, jobs: [
         job(456, scenario === 'missing-previous-job' ? 'renamed summary job' : SUMMARY_JOB,
-          scenario === 'unneeded-failure' ? 'success' : 'failure', SUMMARY_STEP),
-        job(460, SHARD_ONE, unneeded ? 'success' : 'failure', SHARD_STEP, annotationRun),
+          other?.summary ?? 'failure', SUMMARY_STEP),
+        job(460, SHARD_ONE, other ? 'success' : 'failure', SHARD_STEP, annotationRun),
         job(461, SHARD_TWO, 'success', SHARD_STEP),
-        ...unneeded ? [job(462, PROJECTION_JOB, 'failure', 'Run projection tests')] : [],
+        ...other ? [job(462, other.job, 'failure', 'Run job tests')] : [],
       ] }) };
     }
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/2/jobs?per_page=100') {
@@ -739,7 +771,7 @@ function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadines
     if (path === `repos/example/repo-harness/contents/.github/workflows/ci.yml?ref=${HEAD}`) {
       if (scenario === 'association-unknown') return { status: 1, stdout: JSON.stringify({ status: '404', message: 'Not Found' }) };
       return { status: 0, stdout: JSON.stringify({ type: 'file', path: '.github/workflows/ci.yml',
-        encoding: 'base64', content: Buffer.from(WORKFLOW_DEFINITION).toString('base64') }) };
+        encoding: 'base64', content: Buffer.from(other?.workflow ?? workflowDefinition()).toString('base64') }) };
     }
     return source(args);
   };
@@ -842,6 +874,19 @@ test('a failed job outside the needs is failure evidence only beside a failed at
   expect(evidence!.failed_children).toEqual([expect.objectContaining({
     association: 'unknown', failure: expect.objectContaining({ job_id: 462, job_name: PROJECTION_JOB }) })]);
 });
+
+test.each(['transitive-need', 'missing-nested-need', 'skipped-transitive-need'] as const)(
+  'an old failure that may sit in the needs graph stays on the fail-closed path: %s', (scenario) => {
+    expect(() => evidenceVerdict(scenario)).toThrow('RequiredCheckObservation has no failed attempt');
+  });
+
+test.each(['default-matrix-name', 'skipped-static-matrix-need'] as const)(
+  'a matrix instance name maps to its declared need: %s', (scenario) => {
+    const [evidence] = evidenceVerdict(scenario).check_failures;
+    expect(evidence!.association).toBe('declared_needs');
+    expect(evidence!.failed_children).toEqual([expect.objectContaining({ association: 'declared_needs',
+      failure: expect.objectContaining({ job_id: 462, job_name: OTHER_FAILURES[scenario].job }) })]);
+  });
 
 test('a passing rerun without test execution evidence is not revalidated', () => {
   const verdict = evidenceVerdict('evidence-unavailable');

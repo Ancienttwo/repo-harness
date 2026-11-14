@@ -8,6 +8,7 @@ import {
 } from '../../core/evidence/required-check-evidence';
 import type { RequiredCheckTestExecutionV1 } from '../../core/evidence/test-execution-evidence';
 import {
+  failuresOutsideNeeds,
   parseWorkflowJobs,
   resolveWorkflowJob,
   workflowJobMatchesName,
@@ -533,11 +534,6 @@ function annotationEvidence(value: unknown): AnnotationEvidence {
 
 const FAILED_ATTEMPT_CONCLUSIONS: ReadonlySet<AttemptConclusion> = new Set(['failure', 'timed_out', 'cancelled']);
 
-/** A job failed when its conclusion or one of its steps failed. */
-function jobFailed(job: AttemptJob): boolean {
-  return FAILED_ATTEMPT_CONCLUSIONS.has(job.conclusion) || job.steps.some(step => FAILED_ATTEMPT_CONCLUSIONS.has(step.conclusion));
-}
-
 const WORKFLOW_PATH = /^\.github\/workflows\/[A-Za-z0-9._-]+\.ya?ml$/u;
 
 /** The workflow file content at the run revision; null when it is unavailable or unreadable. */
@@ -621,6 +617,12 @@ function* checkEvidence(
         optional: true,
       });
     const workflow = definition === null ? null : parseWorkflowJobs(definition);
+    const checkSucceeded = attemptsJobs.every(job => job.conclusion === 'success'
+      && !job.steps.some(step => FAILED_ATTEMPT_CONCLUSIONS.has(step.conclusion)));
+    // Old failures are not evidence for this check only when it succeeded in
+    // every attempt and each failed job resolves outside its full needs graph.
+    if (checkSucceeded && workflow !== null
+      && failuresOutsideNeeds(workflow, linked.name, otherFailed.map(job => job.name))) return null;
     const entry = workflow === null ? null : resolveWorkflowJob(workflow, linked.name);
     if (entry !== null && entry.needs.length === 0) {
       association = 'direct';
@@ -628,17 +630,12 @@ function* checkEvidence(
       const needJobs = entry.needs
         .map(id => workflow.jobs.find(job => job.id === id))
         .filter((job): job is WorkflowJobV1 => job !== undefined);
-      const needsResolved = needJobs.length === entry.needs.length;
-      const proven = needsResolved
+      const proven = needJobs.length === entry.needs.length
         ? otherFailed.filter(job => needJobs.some(need => workflowJobMatchesName(need, job.name)))
         : [];
       if (proven.length > 0) {
         association = 'declared_needs';
         for (const job of proven) childAssociations.set(job.name, 'declared_needs');
-      } else if (needsResolved && !attemptsJobs.some(jobFailed)) {
-        // Every failed job is outside the resolved needs and the check passed in
-        // each attempt: those failures are not evidence for this check.
-        association = 'direct';
       } else {
         association = 'unknown';
         for (const job of otherFailed) childAssociations.set(job.name, 'unknown');
@@ -668,22 +665,9 @@ function* checkEvidence(
   }
 
   const runUrl = `https://github.com/${identity.repo_name_with_owner}/actions/runs/${link.run_id}`;
-  const latestJob = attemptsJobs[attemptsJobs.length - 1]!;
-  let latestTestExecution: RequiredCheckTestExecutionV1 | null = null;
-  if (attemptsJobs.length > 1 && latestJob.conclusion === 'success') {
-    latestTestExecution = (yield { test_execution: {
-      repository: identity.repo_name_with_owner,
-      run_id: link.run_id,
-      attempt: run.run_attempt,
-    } }) as RequiredCheckTestExecutionV1;
-  }
   const attempts = attemptsJobs.map((job, index) => attemptObservation(
     job, index + 1, runUrl, link, annotations.get(job.id),
   ));
-  if (latestTestExecution !== null) {
-    const last = attempts[attempts.length - 1]!;
-    attempts[attempts.length - 1] = Object.freeze({ ...last, test_execution: latestTestExecution });
-  }
   const children: RequiredCheckChildObservationV1[] = [...childAssociations.entries()].map(([name, childAssociation]) => ({
     job_name: name,
     association: childAssociation,
@@ -692,10 +676,19 @@ function* checkEvidence(
       return job === undefined ? [] : [attemptObservation(job, index + 1, runUrl, link, annotations.get(job.id))];
     }),
   }));
-  const hasFailure = attemptsJobs.some(jobFailed)
+  const hasFailure = attempts.some(attempt => FAILED_ATTEMPT_CONCLUSIONS.has(attempt.conclusion) || attempt.steps.length > 0)
     || children.some(child => child.attempts.some(attempt =>
       FAILED_ATTEMPT_CONCLUSIONS.has(attempt.conclusion) || attempt.steps.length > 0));
   if (!hasFailure) return null;
+  if (attemptsJobs.length > 1 && attemptsJobs[attemptsJobs.length - 1]!.conclusion === 'success') {
+    const latestTestExecution = (yield { test_execution: {
+      repository: identity.repo_name_with_owner,
+      run_id: link.run_id,
+      attempt: run.run_attempt,
+    } }) as RequiredCheckTestExecutionV1;
+    const last = attempts[attempts.length - 1]!;
+    attempts[attempts.length - 1] = Object.freeze({ ...last, test_execution: latestTestExecution });
+  }
   return assessRequiredCheckFailure({
     check_name: check.name,
     head_sha: identity.head_sha,
