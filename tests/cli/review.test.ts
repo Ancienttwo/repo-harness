@@ -594,6 +594,15 @@ test('collect finds the session directory from the realpath of the seat cwd and 
   }
 });
 
+test('collect decodes the seat form RECEIPT-JSON: with a fenced block and takes the last receipt', async () => {
+  const earlier = publishReceipt({ summary: 'Evidence: RECEIPT-JSON: followed by fenced JSON.' });
+  const last = publishReceipt();
+  const seatForm = (receipt: unknown) => 'RECEIPT-JSON:\n```json\n' + JSON.stringify(receipt, null, 2) + '\n```\n';
+  const result = await runCollect(seatFixture([seatForm(earlier), seatForm(last)]));
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, head_sha: PUBLISH_HEAD });
+});
+
 test('collect skips a RECEIPT-JSON marker inside a string and takes the last receipt object', async () => {
   const quoted = publishReceipt({ summary: 'See RECEIPT-JSON { "kind": "x" } for the format.' });
   const fixture = seatFixture([receiptBlock(quoted), 'The block is below.\nRECEIPT-JSON is the marker.']);

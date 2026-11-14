@@ -50,7 +50,7 @@ function assistantTexts(path: string): string[] {
 
 /** The JSON value that starts right after a marker (past an optional code fence); the decoder, not a fence regex, finds where it ends. */
 function decodeAfterMarker(text: string, markerEnd: number): unknown {
-  const rest = text.slice(markerEnd).replace(/^\s*(```[a-z]*)?\s*/, '');
+  const rest = text.slice(markerEnd).replace(/^:?\s*(```[a-z]*)?\s*/, '');
   if (!rest.startsWith('{') && !rest.startsWith('[')) return undefined;
   for (let end = 0; end < rest.length; end++) {
     if (rest[end] !== '}' && rest[end] !== ']') continue;
