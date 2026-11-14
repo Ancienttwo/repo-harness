@@ -6,7 +6,7 @@ import { join } from 'path';
 import { execFileSync, spawnSync } from 'child_process';
 import { runBashMutationGuard } from '../src/cli/hook/mutation-bash';
 import { runMutationGuard } from '../src/cli/hook/mutation-guard';
-import { GIT_READ, READ_ONLY, protectedNameGate } from '../src/cli/hook/mutation-protected-gate';
+import { GIT_READ, GIT_RUNS, READ_ONLY, protectedNameGate } from '../src/cli/hook/mutation-protected-gate';
 import { getRoute } from '../src/cli/hook/route-registry';
 import { buildHookCommand } from '../src/cli/installer/managed-entries';
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
@@ -202,18 +202,20 @@ describe('Bash write tripwire host route', () => {
       const signed = formats.flatMap(([sub, option]) => ['', 'format:', 'tformat:'].flatMap(kind => ['', '+', '-', ' '].flatMap(modifier =>
         ['G?', 'GS', 'GK', 'GF', 'GP', 'GT', 'GG'].map(placeholder => `git ${sub} '${option}${kind}%${modifier}${placeholder}' -- _ops/env`))));
       expect(signed.filter(command => !protectedNameGate(command, cwd, cwd).denial)).toEqual([]);
-      // R1-F3, R2-F1: each replacement that a denial emits for a prefix, bare or with a value, is admitted (a <value> placeholder
-      // filled in); a prefix with no complete replacement, or of a forbidden option, is told to remove it.
-      const gitRuns = ['--textconv', '--ext-diff', '--output', '--filters', '--show-signature'];
-      const unadmitted = [...GIT_READ].flatMap(([sub, read]) => [...read.options, ...gitRuns]
+      // R1-F3, R2-F1, R3-F1: each replacement that a denial emits for a prefix, bare or with a value (signature values included),
+      // is admitted (a <value> placeholder filled in); a prefix with no admitted replacement, or of a forbidden option, is told to
+      // remove it.
+      const values = ['always', '%G?', '%+GS', '%-GK', '% GF', '%(signature:grade)'];
+      const unadmitted = [...GIT_READ].flatMap(([sub, read]) => [...read.options, ...GIT_RUNS.keys()]
         .filter(option => option.startsWith('--')).flatMap(option => {
           const name = option.replace(/=$/, '');
-          return Array.from({ length: name.length - 2 }, (_, n) => name.slice(0, n + 3)).flatMap(prefix => [prefix, `${prefix}=always`]).flatMap(word => {
+          const prefixes = Array.from({ length: name.length - 2 }, (_, n) => name.slice(0, n + 3));
+          return prefixes.flatMap(prefix => [prefix, ...values.map(value => `'${prefix}=${value}'`)]).flatMap(word => {
             const denial = protectedNameGate(`git ${sub} ${word} -- _ops/env`, cwd, cwd).denial;
             if (!denial) return [];
             const suggested = /^Write (?:the full option name|the value after =) \(([^)]*)\)/.exec(denial.fix)?.[1]?.split(' or ') ?? [];
             if (!suggested.length) return denial.fix.startsWith('Remove ') ? [] : [`${sub} ${word}: ${denial.fix}`];
-            return suggested.filter(full => protectedNameGate(`git ${sub} ${full.replace('<value>', '1')} -- _ops/env`, cwd, cwd).denial)
+            return suggested.filter(full => protectedNameGate(`git ${sub} '${full.replace('<value>', '1')}' -- _ops/env`, cwd, cwd).denial)
               .map(full => `${sub} ${word} -> ${full}`);
           });
         }));

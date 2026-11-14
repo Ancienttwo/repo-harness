@@ -574,7 +574,7 @@ export const GIT_READ = new Map<string, GitRead>([
     + '--match= --exclude= --candidates=') }],
 ]);
 /** Options that run a configured program or write a file; a prefix of one is an abbreviation even where the option is not listed. */
-const GIT_RUNS = new Map([['--textconv', 'runs a configured program'], ['--ext-diff', 'runs a configured program'],
+export const GIT_RUNS = new Map([['--textconv', 'runs a configured program'], ['--ext-diff', 'runs a configured program'],
   ['--output', 'writes a file'], ['--show-signature', 'runs a configured program'], ['--filters', 'runs a configured program']]);
 /**
  * Format placeholders that run the configured signature verifier (`gpg.program`), also with a `+`, `-` or space modifier after `%`.
@@ -687,11 +687,14 @@ const finding = (reason: string, fix = STRICT): Finding => ({ reason, fix });
 /**
  * The first word after a git read subcommand that is not one of its listed options, or null. A shell-expanded word before `--`
  * may become an option, and a `%G` or `%(signature` format runs the signature verifier. `unlisted` is the fix for an unlisted option.
+ * With `suggest`, a denied long option gets a replacement only when this decision admits the whole command with it; the candidate
+ * check runs with `suggest` off, so it does not recurse and an admitted command does not pay for it.
  */
-function gitOptionFinding(args: readonly Word[], at: number, unlisted: string): Finding | null {
+function gitOptionFinding(args: readonly Word[], at: number, unlisted: string, suggest = true): Finding | null {
   const sub = args[at]!.value;
   const read = GIT_READ.get(sub)!;
-  for (const word of args.slice(at + 1)) {
+  for (let i = at + 1; i < args.length; i++) {
+    const word = args[i]!;
     const value = word.value;
     if (value === '--') break;
     if (GIT_FORMAT.test(value) && GIT_SIGNATURE.test(value)) {
@@ -704,23 +707,23 @@ function gitOptionFinding(args: readonly Word[], at: number, unlisted: string): 
     const equals = value.indexOf('=');
     if (read.options.has(value) || (equals > 0 && read.options.has(value.slice(0, equals + 1))) || read.glued?.test(value)) continue;
     const name = equals > 0 ? value.slice(0, equals) : value;
-    if (name.startsWith('--')) {
-      const replacements = completions(read.options, name, equals > 0 ? value.slice(equals + 1) : null);
-      if (replacements.length) {
-        if (read.options.has(`${name}=`)) {
-          return finding(`passes ${value} to git ${sub}, an option that the gate reads only with its value after =`,
-            `Write the value after = (${replacements[0]}).`);
-        }
-        return finding(`passes ${value} to git ${sub}, an abbreviation of ${replacements.join(' or ')}`,
-          `Write the full option name (${replacements.join(' or ')}): git takes a unique prefix of a long option, and the gate reads only full names.`);
+    const remove = (reason: string) => finding(`passes ${value} to git ${sub}, ${reason}`, `Remove ${value} from the git ${sub} command.`);
+    if (!suggest || !name.startsWith('--')) return finding(`passes ${value} to git ${sub}, an option outside the read list`, unlisted);
+    if (name === '--') return remove('an option with no name');
+    const { kind, spellings } = completions(read.options, name, equals > 0 ? value.slice(equals + 1) : null);
+    const admitted = spellings.filter(spelling => !gitOptionFinding(
+      args.map((arg, n) => n === i ? { ...arg, value: spelling.replace('<value>', '1') } : arg), at, unlisted, false));
+    if (admitted.length) {
+      if (kind === 'value') {
+        return finding(`passes ${value} to git ${sub}, an option that the gate reads only with its value after =`, `Write the value after = (${admitted[0]}).`);
       }
-      const runs = [...GIT_RUNS].find(([option]) => option.startsWith(name));
-      const listed = [...read.options].some(option => option.startsWith(name));
-      if (runs || listed) {
-        const reason = !runs ? `and no listed option completes ${value}`
-          : runs[0] === name ? `which ${runs[1]}` : `an abbreviation of ${runs[0]}, which ${runs[1]}`;
-        return finding(`passes ${value} to git ${sub}, ${reason}`, `Remove ${value} from the git ${sub} command.`);
-      }
+      return finding(`passes ${value} to git ${sub}, an abbreviation of ${admitted.join(' or ')}`,
+        `Write the full option name (${admitted.join(' or ')}): git takes a unique prefix of a long option, and the gate reads only full names.`);
+    }
+    const runs = [...GIT_RUNS].find(([option]) => option.startsWith(name));
+    if (runs) return remove(runs[0] === name ? `which ${runs[1]}` : `an abbreviation of ${runs[0]}, which ${runs[1]}`);
+    if (spellings.length || [...read.options].some(option => option.startsWith(name))) {
+      return remove(`and no admitted command completes ${value}`);
     }
     return finding(`passes ${value} to git ${sub}, an option outside the read list`, unlisted);
   }
@@ -728,17 +731,19 @@ function gitOptionFinding(args: readonly Word[], at: number, unlisted: string): 
 }
 
 /**
- * The admitted spellings that replace the long option `name` (with `value` after `=`, or null), in the list entry syntax: a bare
+ * The listed spellings that replace the long option `name` (with `value` after `=`, or null), in the list entry syntax: a bare
  * entry only without a value, and an equals-only entry (`--color=`) as `--color=<value>` or with the given value. A name that is an
- * equals-only entry itself (`--date iso`) gets only that entry.
+ * equals-only entry itself (`--date iso`) gets only that entry, of kind `value`; every other completion is an abbreviation.
  */
-function completions(listed: ReadonlySet<string>, name: string, value: string | null): string[] {
-  const entries = listed.has(`${name}=`) ? [`${name}=`] : [...listed].filter(option => option.startsWith(name));
-  return entries.flatMap(option => {
+function completions(listed: ReadonlySet<string>, name: string, value: string | null): { kind: 'value' | 'name'; spellings: string[] } {
+  const kind = listed.has(`${name}=`) ? 'value' : 'name';
+  const entries = kind === 'value' ? [`${name}=`] : [...listed].filter(option => option.startsWith(name));
+  const spellings = entries.flatMap(option => {
     if (!option.endsWith('=')) return value === null ? [option] : [];
     if (value === null && listed.has(option.slice(0, -1))) return [];
     return [`${option}${value ?? '<value>'}`];
   });
+  return { kind, spellings };
 }
 
 /** The values of one option in its three spellings: `--title x` or `-t x`, `--title=x`, `-tx`. */
