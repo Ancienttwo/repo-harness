@@ -155,7 +155,7 @@ find_worktree_for_branch() {
   local branch="$1"
   git worktree list --porcelain | awk -v branch_ref="refs/heads/${branch}" '
     $1 == "worktree" { path = $2; next }
-    $1 == "branch" && $2 == branch_ref { print path; exit }
+    $1 == "branch" && $2 == branch_ref && !found { print path; found = 1 }
   '
 }
 

@@ -485,6 +485,12 @@ closeout_journal_list() {
   done < <(find "$root/$operation" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
 }
 
+# First unfinished journal of this worktree. awk reads to the end, so the
+# producer never gets SIGPIPE under pipefail.
+closeout_journal_first_conflict() {
+  closeout_journal_list "$1" "in_progress" | awk 'NR == 1'
+}
+
 # Early re-entry guard. A crashed closeout can leave the repo unable to resolve
 # its own contract/plan (the lifecycle step already archived them), so the
 # operator must hit this message rather than a confusing downstream failure.
@@ -493,7 +499,7 @@ closeout_journal_list() {
 # committed can never reproduce its own key.
 closeout_journal_guard_reentry() {
   local operation="$1" conflict
-  conflict="$(closeout_journal_list "$operation" "in_progress" | awk 'NR==1')"
+  conflict="$(closeout_journal_first_conflict "$operation")"
   [[ -n "$conflict" ]] || return 0
   closeout_journal_conflict_dir="$conflict"
   return 1
@@ -534,7 +540,7 @@ closeout_journal_begin() {
   # never reproduce its own key on retry -- scoping the guard to the worktree is
   # what makes it cover the interrupt it exists for. Journals belonging to other
   # worktrees are ignored.
-  conflict="$(closeout_journal_list "$operation" "in_progress" | awk 'NR==1')"
+  conflict="$(closeout_journal_first_conflict "$operation")"
   if [[ -n "$conflict" ]]; then
     closeout_journal_conflict_dir="$conflict"
     return 3
@@ -1001,7 +1007,7 @@ recover_ship() {
 
   if [[ "$action" == "abort" && -z "$key" ]]; then
     claim="$(closeout_claim_path "ship")" || fail "cannot resolve ship ownership claim"
-    if [[ -d "$claim" && -z "$(closeout_journal_list "ship" "in_progress" | awk 'NR==1')" ]]; then
+    if [[ -d "$claim" && -z "$(closeout_journal_first_conflict "ship")" ]]; then
       closeout_claim_abort_orphan "ship" || claim_result=$?
       [[ "$claim_result" -eq 0 ]] \
         || closeout_claim_takeover_fail "$claim_result" "ship ownership claim is not an abortable pre-journal orphan"
