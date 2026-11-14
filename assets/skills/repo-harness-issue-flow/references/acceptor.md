@@ -104,6 +104,7 @@ The table rules govern how the row combines with the review.
 4. **After round 3.** A fix loop continues after round 3 without the owner
    while each round has fewer blocking findings (P0-P2) than the round
    before and the scope does not grow. A grown scope is a joint decision.
+   When the count does not drop but every open blocking finding fails closed (no fail-open and no credential or data effect; availability only), the loop continues by joint decision under one rule, also in the safety net and the hooks.
    A new P0 finding, or a new P1 finding about security, secrets, data or
    authentication, goes to the owner as a notice. The loop continues
    without an owner word when the fix closes the finding. It stops at the
