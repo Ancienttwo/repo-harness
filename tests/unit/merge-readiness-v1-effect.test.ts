@@ -527,7 +527,7 @@ test('ordinary provider collector blocks decision changes after normalized empty
 
 // Provider commit responses come from real Git objects, including root and merge commits.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -698,17 +698,41 @@ function workflowDefinition(selectionNeeds = '', requiredNeeds = '[selection, ve
 const SETUP_JOB = ['  setup:', '    name: Setup'];
 const LINT_MATRIX = ['    strategy:', '      matrix:', '        os: [ubuntu-latest]'];
 
+const MAIN_CI = readFileSync(join(import.meta.dir, '../../.github/workflows/ci.yml'), 'utf8');
+
 /** Attempt 1 fails one job beside the summary; attempt 2 passes. */
 interface OtherFailure {
   readonly summary: 'success' | 'failure' | 'skipped';
   readonly job: string;
   readonly workflow: string;
+  /** The workflow text at the base; the head text when absent. */
+  readonly base?: string;
 }
 
 const OTHER_FAILURES = {
-  // Run 43571531818: only a job outside the summary's needs failed.
-  'unneeded-failure': { summary: 'success', job: PROJECTION_JOB, workflow: workflowDefinition() },
+  // Run 43571531818 on the main ci.yml: only a job outside the summary's needs failed.
+  'unneeded-failure': { summary: 'success', job: PROJECTION_JOB, workflow: MAIN_CI },
   'unneeded-failure-summary-failed': { summary: 'failure', job: PROJECTION_JOB, workflow: workflowDefinition() },
+  'workflow-changed-on-base': { summary: 'success', job: PROJECTION_JOB, workflow: workflowDefinition(),
+    base: workflowDefinition('', '[selection, verify, projection]') },
+  'quoted-block-need': { summary: 'success', job: PROJECTION_JOB,
+    workflow: workflowDefinition("\n      - 'projection'") },
+  'scalar-need-next-line': { summary: 'success', job: PROJECTION_JOB,
+    workflow: workflowDefinition('\n      projection') },
+  'format-name-collision': { summary: 'success', job: 'Build ubuntu-latest', workflow: workflowDefinition('lint', undefined, [
+    '  lint:', "    name: ${{ format('Build {0}', matrix.os) }}", ...LINT_MATRIX,
+    '  build:', '    name: Build ${{ matrix.os }}', '    strategy:', '      matrix:', '        os: [windows-latest]']) },
+  'reusable-name-collision': { summary: 'success', job: 'verify / Build', workflow: workflowDefinition('lib', undefined, [
+    '  lib:', '    name: verify', '    uses: ./.github/workflows/lib.yml',
+    '  other:', '    name: verify / ${{ matrix.label }}', '    strategy:', '      matrix:', '        label: [Unrelated]']) },
+  'reusable-callee-template': { summary: 'success', job: 'Lint / eslint', workflow: workflowDefinition('lint', undefined, [
+    '  lint:', '    name: Lint', '    uses: ./.github/workflows/lint.yml',
+    '  lintx:', '    name: Lint ${{ inputs.target }}']) },
+  'deep-indent-body': { summary: 'success', job: 'Setup', workflow: workflowDefinition('gate', undefined, [
+    '  gate:', '      needs: setup', ...SETUP_JOB]) },
+  'deep-indent-matrix': { summary: 'success', job: 'Build (a)', workflow: workflowDefinition('build', undefined, [
+    '  build:', '    name: Build', '    strategy:', '        matrix:', '          k: [a]',
+    '  buildx:', '    name: Build ${{ inputs.k }}']) },
   'transitive-need': { summary: 'success', job: 'Setup', workflow: workflowDefinition('setup', undefined, SETUP_JOB) },
   'missing-nested-need': { summary: 'success', job: PROJECTION_JOB, workflow: workflowDefinition('ghost') },
   'default-matrix-name': { summary: 'success', job: 'lint (ubuntu-latest)',
@@ -768,10 +792,11 @@ function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadines
       return { status: 0, stdout: JSON.stringify([{ title: 'session-runtime > chunk boundary',
         message: 'AssertionError: expected 200 but received 500' }]) };
     }
-    if (path === `repos/example/repo-harness/contents/.github/workflows/ci.yml?ref=${HEAD}`) {
+    for (const [ref, text] of [[HEAD, other?.workflow], [BASE, other?.base ?? other?.workflow]] as const) {
+      if (path !== `repos/example/repo-harness/contents/.github/workflows/ci.yml?ref=${ref}`) continue;
       if (scenario === 'association-unknown') return { status: 1, stdout: JSON.stringify({ status: '404', message: 'Not Found' }) };
       return { status: 0, stdout: JSON.stringify({ type: 'file', path: '.github/workflows/ci.yml',
-        encoding: 'base64', content: Buffer.from(other?.workflow ?? workflowDefinition()).toString('base64') }) };
+        encoding: 'base64', content: Buffer.from(text ?? workflowDefinition()).toString('base64') }) };
     }
     return source(args);
   };
@@ -875,7 +900,9 @@ test('a failed job outside the needs is failure evidence only beside a failed at
     association: 'unknown', failure: expect.objectContaining({ job_id: 462, job_name: PROJECTION_JOB }) })]);
 });
 
-test.each(['transitive-need', 'missing-nested-need', 'skipped-transitive-need'] as const)(
+test.each(['transitive-need', 'missing-nested-need', 'skipped-transitive-need', 'workflow-changed-on-base',
+  'quoted-block-need', 'scalar-need-next-line', 'format-name-collision', 'reusable-name-collision',
+  'reusable-callee-template', 'deep-indent-body', 'deep-indent-matrix'] as const)(
   'an old failure that may sit in the needs graph stays on the fail-closed path: %s', (scenario) => {
     expect(() => evidenceVerdict(scenario)).toThrow('RequiredCheckObservation has no failed attempt');
   });
