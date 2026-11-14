@@ -707,13 +707,15 @@ function r4Probes(values: readonly (readonly [string, string])[]): Record<`r4-${
 
 const MAIN_CI = readFileSync(join(import.meta.dir, '../../.github/workflows/ci.yml'), 'utf8');
 
-/** Attempt 1 fails one job beside the summary; attempt 2 passes. */
+/** Attempt 1 fails one job beside the summary, or none when `job` is null; attempt 2 passes. */
 interface OtherFailure {
-  readonly summary: 'success' | 'failure' | 'skipped';
-  readonly job: string;
+  readonly summary: 'success' | 'failure' | 'skipped' | 'neutral';
+  readonly job: string | null;
   readonly workflow: string;
   /** The workflow text at the base; the head text when absent. */
   readonly base?: string;
+  /** Attempt 2 of the summary is still running or was skipped; attempt 2 passes when absent. */
+  readonly rerun?: 'pending' | 'skipped';
 }
 
 const OTHER_FAILURES = {
@@ -756,50 +758,64 @@ const OTHER_FAILURES = {
   'skipped-static-matrix-need': { summary: 'skipped', job: 'Lint (ubuntu-latest)',
     workflow: workflowDefinition('', '[selection, verify, lint]', ['  lint:', '    name: Lint', ...LINT_MATRIX]) },
   'skipped-transitive-need': { summary: 'skipped', job: 'Setup', workflow: workflowDefinition('setup', undefined, SETUP_JOB) },
+  'no-needs-unmapped-failure': { summary: 'success', job: 'Unmapped job', workflow: workflowDefinition('', '[]') },
+  'no-needs-skipped-unmapped-failure': { summary: 'skipped', job: 'Unmapped job', workflow: workflowDefinition('', '[]') },
+  'skipped-attempt': { summary: 'skipped', job: null, workflow: workflowDefinition() },
+  'neutral-attempt': { summary: 'neutral', job: null, workflow: workflowDefinition() },
+  'no-needs-skipped-attempt': { summary: 'skipped', job: null, workflow: workflowDefinition('', '[]') },
+  'no-needs-neutral-attempt': { summary: 'neutral', job: null, workflow: workflowDefinition('', '[]') },
+  'no-needs-sibling-failure-rerun-pending': { summary: 'success', job: PROJECTION_JOB,
+    workflow: workflowDefinition('', '[]'), rerun: 'pending' },
+  'no-needs-sibling-failure-rerun-skipped': { summary: 'success', job: PROJECTION_JOB,
+    workflow: workflowDefinition('', '[]'), rerun: 'skipped' },
 } satisfies Record<string, OtherFailure>;
 
 type EvidenceScenario = 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'association-unknown'
   | 'evidence-unavailable' | 'original-test-skipped' | 'original-test-not-executed' | 'no-annotations'
-  | keyof typeof OTHER_FAILURES | `r4-${string}`;
+  | 'single-attempt-skipping' | 'rerun-in-progress' | keyof typeof OTHER_FAILURES | `r4-${string}`;
 
 function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadinessInput['gh_runner']> {
   const source = fakeGh();
   const failing = scenario === 'failed-check';
+  const other: OtherFailure | null = scenario in OTHER_FAILURES ? OTHER_FAILURES[scenario as keyof typeof OTHER_FAILURES] : null;
+  const skipping = scenario === 'single-attempt-skipping';
+  const skippedRerun = other?.rerun === 'skipped';
+  const rerunning = scenario === 'rerun-in-progress' || other?.rerun === 'pending';
+  const firstAttempt = failing || skipping;
   const run = {
     path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD,
-    status: 'completed', conclusion: failing ? 'failure' : 'success',
-    run_attempt: failing ? 1 : 2, workflow_id: 99,
+    status: rerunning ? 'in_progress' : 'completed', conclusion: failing ? 'failure' : rerunning ? null : 'success',
+    run_attempt: firstAttempt ? 1 : 2, workflow_id: 99,
     pull_requests: [{ number: receipt.pr_number, head: { sha: HEAD }, base: { sha: BASE } }],
   };
-  const job = (id: number, name: string, conclusion: string, step: string, checkRun: string | null = null) => ({
-    id, name, status: 'completed', conclusion,
+  const job = (id: number, name: string, conclusion: string | null, step: string, checkRun: string | null = null) => ({
+    id, name, status: conclusion === null ? 'in_progress' : 'completed', conclusion,
     steps: [{ name: step, number: 1, status: 'completed', conclusion }],
     check_run_url: checkRun,
   });
-  const other: OtherFailure | null = scenario in OTHER_FAILURES ? OTHER_FAILURES[scenario as keyof typeof OTHER_FAILURES] : null;
   const annotationRun = scenario === 'no-annotations' ? null
     : 'https://api.github.com/repos/example/repo-harness/check-runs/77';
   return (args) => {
     const path = args[1] ?? '';
     if (args[0] === 'pr' && args[1] === 'checks') {
       return { status: failing ? 1 : 0, stdout: JSON.stringify([{
-        name: SUMMARY_JOB, bucket: failing ? 'fail' : 'pass',
-        link: `https://github.com/example/repo-harness/actions/runs/123/job/${failing ? 456 : 789}`,
+        name: SUMMARY_JOB, bucket: failing ? 'fail' : skipping || skippedRerun ? 'skipping' : rerunning ? 'pending' : 'pass',
+        link: `https://github.com/example/repo-harness/actions/runs/123/job/${firstAttempt ? 456 : 789}`,
       }]) };
     }
     if (path === 'repos/example/repo-harness/actions/runs/123') return { status: 0, stdout: JSON.stringify(run) };
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/1/jobs?per_page=100') {
-      return { status: 0, stdout: JSON.stringify({ total_count: other ? 4 : 3, jobs: [
+      return { status: 0, stdout: JSON.stringify({ total_count: other?.job ? 4 : 3, jobs: [
         job(456, scenario === 'missing-previous-job' ? 'renamed summary job' : SUMMARY_JOB,
-          other?.summary ?? 'failure', SUMMARY_STEP),
-        job(460, SHARD_ONE, other ? 'success' : 'failure', SHARD_STEP, annotationRun),
+          other?.summary ?? (skipping ? 'skipped' : rerunning ? 'success' : 'failure'), SUMMARY_STEP),
+        job(460, SHARD_ONE, other || skipping || rerunning ? 'success' : 'failure', SHARD_STEP, annotationRun),
         job(461, SHARD_TWO, 'success', SHARD_STEP),
-        ...other ? [job(462, other.job, 'failure', 'Run job tests')] : [],
+        ...other?.job ? [job(462, other.job, 'failure', 'Run job tests')] : [],
       ] }) };
     }
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/2/jobs?per_page=100') {
       return { status: 0, stdout: JSON.stringify({ total_count: 3, jobs: [
-        job(789, SUMMARY_JOB, 'success', SUMMARY_STEP),
+        job(789, SUMMARY_JOB, rerunning ? null : skippedRerun ? 'skipped' : 'success', SUMMARY_STEP),
         job(760, SHARD_ONE, 'success', SHARD_STEP),
         job(761, SHARD_TWO, 'success', SHARD_STEP),
       ] }) };
@@ -919,9 +935,21 @@ test('a failed job outside the needs is failure evidence only beside a failed at
 test.each(['transitive-need', 'missing-nested-need', 'skipped-transitive-need', 'workflow-changed-on-base',
   'quoted-block-need', 'scalar-need-next-line', 'format-name-collision', 'reusable-name-collision',
   'reusable-callee-template', 'deep-indent-body', 'deep-indent-matrix', 'static-starts-with-prefix',
-  'prefix-starts-with-static', 'name-outside-domain', ...Object.keys(OTHER_FAILURES).filter(key => key.startsWith('r4-')) as `r4-${string}`[]])(
-  'an old failure that may sit in the needs graph stays on the fail-closed path: %s', (scenario) => {
+  'prefix-starts-with-static', 'name-outside-domain', 'no-needs-unmapped-failure', 'no-needs-skipped-unmapped-failure',
+  'skipped-attempt', 'neutral-attempt', 'no-needs-skipped-attempt', 'no-needs-neutral-attempt',
+  ...Object.keys(OTHER_FAILURES).filter(key => key.startsWith('r4-')) as `r4-${string}`[]])(
+  'a green check without success in every attempt and no proven evidence stays fail-closed: %s', (scenario) => {
     expect(() => evidenceVerdict(scenario)).toThrow('RequiredCheckObservation has no failed attempt');
+  });
+
+test.each([['single-attempt-skipping', 'checks_failed'], ['rerun-in-progress', 'checks_pending'],
+  ['no-needs-sibling-failure-rerun-pending', 'checks_pending'],
+  ['no-needs-sibling-failure-rerun-skipped', 'checks_failed']] as const)(
+  'a required check that is not green and has no failure evidence stays blocked by its bucket: %s', (scenario, blocker) => {
+    const verdict = evidenceVerdict(scenario);
+    expect(verdict.ready).toBe(false);
+    expect(verdict.blockers.map(entry => entry.code)).toContain(blocker);
+    expect(verdict.check_failures).toEqual([]);
   });
 
 test.each(['default-matrix-name', 'skipped-static-matrix-need'] as const)(
