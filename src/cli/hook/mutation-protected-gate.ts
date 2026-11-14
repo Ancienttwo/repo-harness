@@ -593,6 +593,9 @@ const MOVES_SHELL = new Set(['pushd', 'popd', 'source', '.', 'eval', 'builtin', 
 const FIND_WRITES = /^-(?:delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/;
 const FIND_RUNS = /^-(?:exec|execdir|ok|okdir)$/;
 
+/** A substitution, a parameter, a glob or a brace can turn the word into an option, so the gate does not read it as an operand. */
+const expands = (word: Word): boolean => word.expand || word.glob;
+
 /** Global git options before the subcommand, the `-C` directories in order, and the subcommand index; null for an option not listed. */
 function gitInvocation(args: readonly Word[]): { dirs: Word[]; at: number } | null {
   const dirs: Word[] = [];
@@ -643,7 +646,7 @@ function recursionFinding(args: readonly Word[], dirs: Dirs, resolver: Resolver)
     if (!ignored) return null;
     let base: Dirs = dirs;
     for (const dir of git?.dirs ?? []) {
-      base = dir.expand || dir.glob ? null : isAbsolute(dir.value) ? [resolve(dir.value)] : base && base.map(d => resolve(d, dir.value));
+      base = expands(dir) ? null : isAbsolute(dir.value) ? [resolve(dir.value)] : base && base.map(d => resolve(d, dir.value));
     }
     if (!git) base = null;
     const pathspecs: Word[] = [];
@@ -700,7 +703,7 @@ function gitOptionFinding(args: readonly Word[], at: number, unlisted: string, s
     if (GIT_FORMAT.test(value) && GIT_SIGNATURE.test(value)) {
       return finding(`passes ${value} to git ${sub}, a format that runs the signature verifier`, 'Remove the %G and %(signature) placeholders: they run gpg.program.');
     }
-    if (word.expand || word.glob) {
+    if (expands(word)) {
       return finding(`passes ${value} to git ${sub}, a word that the shell expands before --`, `Write each git ${sub} option as literal text, and put paths after --.`);
     }
     if (!value.startsWith('-') || value === '-') continue;
@@ -757,6 +760,8 @@ function optionValues(words: readonly Word[], long: string, short: string): stri
 
 const MESSAGE_FILE = 'Write the message to a file on its own command line, then pass it with git commit -F <file> or git tag -F <file>.';
 
+const GIT_LITERAL_DIR = 'Write the git -C directory as a literal path (git -C <path>).';
+
 const GIT_GLOBAL = 'Remove the git global option: only -C <dir>, --no-pager, -P, --no-optional-locks and the pathspec flags pass.';
 
 /** Rule 6 for git: null for a listed read subcommand with listed options. */
@@ -764,6 +769,8 @@ function gitFinding(args: readonly Word[], split: boolean, commands: number): Fi
   const git = gitInvocation(args);
   if (git && GIT_READ.has(args[git.at]!.value)) {
     const sub = args[git.at]!.value;
+    const dir = git.dirs.find(expands);
+    if (dir) return finding(`passes -C ${dir.value} to git, a directory that the shell expands`, GIT_LITERAL_DIR);
     return gitOptionFinding(args, git.at, split ? SPLIT : `Pass git ${sub} only options of its read list, or read with rg, cat or ls.`);
   }
   const sub = git ? args[git.at]!.value : null;
@@ -900,7 +907,8 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
         const known = decision === null;
         const cp = program.value === 'cp' && !program.quoted;
         const operands = args.slice(1);
-        if (!known && operands.some(word => word.expand)) violations.push(`an expanded word for ${program.value}`);
+        // The expanded git -C directory has its own finding, whose fix names a literal path (#2757).
+        if (!known && decision!.fix !== GIT_LITERAL_DIR && operands.some(word => word.expand)) violations.push(`an expanded word for ${program.value}`);
         if (cp) {
           if (operands.some(word => /^-[^-]*t|^--target-directory/.test(word.value))) findings.push(finding('cp with a target-directory option'));
           const destination = operands.filter(word => !word.value.startsWith('-')).at(-1);

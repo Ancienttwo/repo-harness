@@ -50,6 +50,8 @@
     "git log --pretty=format:%GS -- _ops/env", "git for-each-ref --count=1 --format='_ops %(signature:grade)'",
     "\"git\" log -1 -- _ops; echo _ops/env > out.txt; xargs rm -rf < out.txt", "\\git log -1 -- _ops; echo _ops/env > out.txt; xargs rm -rf < out.txt",
     "g\"it\" log -- _ops; perl -e 'unlink \"_ops/x\"'", "'git' log -- _ops; sh -c 'rm -rf env'",
+    "git -C {.,-clog.showSignature=true} log -1 --format=%h -- _ops", "git -C $D log -1 -- _ops", "git -C \"$D\" log -- _ops",
+    "git -C . -C ${D} log -- _ops", "git -C $(printf .) log -- _ops", "git -C * log -1 -- _ops",
     "git log -1 --format=\"_ops %+G?\"", "git log --format=\"% GK\" -- _ops/env", "git show -s --pretty='format:%-GS' HEAD -- _ops", "git shortlog --format=\"%+G?\" -- _ops"
   ],
   "accepted": {
@@ -64,6 +66,7 @@
     "find _ref -name '*.md'", "find _ref -name x -print", "stat _ops", "du -sh _ref", "diff _ref/a _ref/b > /tmp/d.txt",
     "jq . _ops/x.json", "realpath _ref", "test -d _ops && echo yes", "echo \"_ops is ignored\"", "printf '%s\\n' _ops",
     "git -C _ref/proj log --oneline -5", "git -C _ref/proj show HEAD:README.md", "git -C _ref/proj diff HEAD~1", "git log --oneline -- _ops",
+    "git -C . log -1 --format=%h -- _ops", "git -C src log -- ../_ops",
     "git ls-files _ref", "git status --short", "cat _ops/x > report.txt", "cat _ref/a > docs/a.md", "cp _ref/x /tmp/x",
     "cp _ref/tpl.md docs/tpl.md", "cd src && cat ../_ops/x", "cd _ref && ls", "cd _ref/proj && git log -3", "cd src && bun test",
     "bun test 2>&1 | tee /tmp/x.log", "bun run check:type", "gh pr view 1 --json body", "git diff main...HEAD -- src",
