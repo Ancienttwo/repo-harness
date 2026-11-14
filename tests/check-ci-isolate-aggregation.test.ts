@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, delimiter, join, resolve, sep } from "node:path";
@@ -45,8 +45,16 @@ function writeTestFile(dir: string, name: string, passing: boolean): string {
 // CI exports BUN_TEST_JOBS to the whole Test job, so an inherited value would
 // silently decide which loop each case exercises. Every case states the job
 // count it means to test, and the absence of the variable is itself a case.
+//
+// A nested non-pool gate fails when any /tmp/*-wt-* path appears during its run.
+// In the CI pool, other test files create such worktrees at the same time, so an
+// unattributed nested gate fails at random. A suspect directory makes the gate
+// record those paths, as the pool does, and this file never reads them.
+const suspectDir = mkdtempSync(join(tmpdir(), "ci-suspects-"));
+afterAll(() => rmSync(suspectDir, { recursive: true, force: true }));
+
 function gateEnv(overrides: Record<string, string>): Record<string, string | undefined> {
-  const env: Record<string, string | undefined> = { ...process.env };
+  const env: Record<string, string | undefined> = { ...process.env, CI_WORKTREE_SUSPECT_DIR: suspectDir };
   delete env.BUN_TEST_JOBS;
   // Bun hides pass lines in agent environments, even with onlyFailures=false.
   for (const key of ["CLAUDECODE", "REPL_ID", "AGENT"]) delete env[key];
@@ -179,7 +187,7 @@ describe("ci isolate-mode test loop", () => {
       // A value-taking option keeps its own value, even when that value has the
       // test file name form and no such file exists.
       const valued = run(false, existing, '-t', 'example.test.ts');
-      expect(valued.status).toBe(0);
+      expect(valued.status, `${valued.stdout}${valued.stderr}`).toBe(0);
       expect(valued.ran).toBe(true);
       // An equals-form option value is not a positional path either. The value
       // names a file that does not exist, and the fixture test of that name runs,
@@ -187,7 +195,7 @@ describe("ci isolate-mode test loop", () => {
       const missingValue = join(dir, 'ghost-does-not-exist.test.ts');
       const equals = run(false, fixture('equals.test.ts', missingValue), `--test-name-pattern=${missingValue}`);
       expect(equals.stderr).not.toContain('test file does not exist');
-      expect(equals.status).toBe(0);
+      expect(equals.status, `${equals.stdout}${equals.stderr}`).toBe(0);
       expect(equals.ran).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
