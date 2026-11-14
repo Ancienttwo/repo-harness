@@ -43,7 +43,14 @@
     "echo _ops/env > out.txt; xargs rm -rf < out.txt",
     "cat <<'EOF' > out.txt\n_ops/env\nEOF\nsh -c 'rm -rf $(cat out.txt)'",
     "git grep -O'rm -rf' -l x _ops/env",
-    "git grep --open-files-in-pager=rm -l x _ops/env"
+    "git grep --open-files-in-pager=rm -l x _ops/env",
+    "git cat-file --textc --path=_ops/env/x HEAD:src/a.ts", "git cat-file --te HEAD:_ops/env/x", "git cat-file --batch --textc <<< HEAD:_ops/env/x",
+    "git blame --textc -- _ops/env/x", "git log --ext -p -- _ops/env", "git log --onel --ext-d -- _ops/env", "git log {--ext-diff,-p} -- _ops/env",
+    "git log -1 --format='_ops %G?'", "git show --no-patch --format='_ops %G?' HEAD", "git show -s --format=%G? HEAD -- _ops/env",
+    "git log --pretty=format:%GS -- _ops/env", "git for-each-ref --count=1 --format='_ops %(signature:grade)'",
+    "\"git\" log -1 -- _ops; echo _ops/env > out.txt; xargs rm -rf < out.txt", "\\git log -1 -- _ops; echo _ops/env > out.txt; xargs rm -rf < out.txt",
+    "g\"it\" log -- _ops; perl -e 'unlink \"_ops/x\"'", "'git' log -- _ops; sh -c 'rm -rf env'",
+    "git log -1 --format=\"_ops %+G?\"", "git log --format=\"% GK\" -- _ops/env", "git show -s --pretty='format:%-GS' HEAD -- _ops", "git shortlog --format=\"%+G?\" -- _ops"
   ],
   "accepted": {
     "1": ["rm -rf ${X}ps", "rm -rf $(printf _o)ps", "rm -rf \"$P\"/env", "cd \"$(printf _o)ps\" && rm -rf env"],
@@ -62,6 +69,7 @@
     "bun test 2>&1 | tee /tmp/x.log", "bun run check:type", "gh pr view 1 --json body", "git diff main...HEAD -- src",
     "cat <<'EOF' > /tmp/plan.md\nThe plan reads _ops/notes.\nEOF", "git worktree add ${MANAGED}/repo-wt-x", "ls *", "rm -rf node_modules/*",
     "cd src && git clean -fdx", "find src -name '*.tmp' -delete",
-    "cat <<'EOF' > /tmp/msg.txt\nfix(hook): deny Bash writes under _ops\nEOF", "git commit -F /tmp/msg.txt", "gh pr create --title \"fix(hook): gate\" --body-file /tmp/msg.txt"
+    "cat <<'EOF' > /tmp/msg.txt\nfix(hook): deny Bash writes under _ops\nEOF", "git commit -F /tmp/msg.txt", "gh pr create --title \"fix(hook): gate\" --body-file /tmp/msg.txt",
+    "git log -- _ops", "git show HEAD:_ops/x", "git log -5 --stat --format=%h%x20%s -- _ops", "rg x _ops", "git log -1 --date=format:%G-W%V --format=%ad -- _ops"
   ]
 }

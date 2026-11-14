@@ -6,7 +6,7 @@ import { join } from 'path';
 import { execFileSync, spawnSync } from 'child_process';
 import { runBashMutationGuard } from '../src/cli/hook/mutation-bash';
 import { runMutationGuard } from '../src/cli/hook/mutation-guard';
-import { protectedNameGate } from '../src/cli/hook/mutation-protected-gate';
+import { GIT_READ, GIT_RUNS, READ_ONLY, protectedNameGate } from '../src/cli/hook/mutation-protected-gate';
 import { getRoute } from '../src/cli/hook/route-registry';
 import { buildHookCommand } from '../src/cli/installer/managed-entries';
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
@@ -190,6 +190,36 @@ describe('Bash write tripwire host route', () => {
       // A row such as `constructor x; touch _ops/env/x` must reach a rule, not the gate's own error path.
       expect(corpus.catch.filter(command => protectedNameGate(command, cwd, cwd).denial?.reason.includes('gate failed'))).toEqual([]);
       expect(corpus.ordinary.map(row => row.replaceAll('${MANAGED}', managed)).filter(command => decide(command) !== 0)).toEqual([]);
+      // R1-F1: a quoted or escaped read-only program name is a finding of its own, so a later gate-only write cannot pass.
+      const quotedLines = [...READ_ONLY].flatMap(name => {
+        const args = name === 'git' ? [...GIT_READ.keys()].map(sub => `${sub} -- _ops/env`) : [name === 'gh' ? 'pr view _ops/env' : '_ops/env'];
+        return [`"${name}"`, `'${name}'`, `${name[0]}"${name.slice(1)}"`, `\\${name}`].flatMap(spelled => args.flatMap(rest =>
+          [`${spelled} ${rest}; xargs rm -rf < out.txt`, `${spelled} ${rest}; sh -c 'rm -rf env'`]));
+      });
+      expect(quotedLines.filter(command => decide(command) === 0)).toEqual([]);
+      // R1-F2: a signature placeholder with a +, - or space modifier runs gpg.program in each admitted format option.
+      const formats = [['log', '--format='], ['log', '--pretty='], ['show', '--format='], ['show', '--pretty='], ['shortlog', '--format=']];
+      const signed = formats.flatMap(([sub, option]) => ['', 'format:', 'tformat:'].flatMap(kind => ['', '+', '-', ' '].flatMap(modifier =>
+        ['G?', 'GS', 'GK', 'GF', 'GP', 'GT', 'GG'].map(placeholder => `git ${sub} '${option}${kind}%${modifier}${placeholder}' -- _ops/env`))));
+      expect(signed.filter(command => !protectedNameGate(command, cwd, cwd).denial)).toEqual([]);
+      // R1-F3, R2-F1, R3-F1: each replacement that a denial emits for a prefix, bare or with a value (signature values included),
+      // is admitted (a <value> placeholder filled in); a prefix with no admitted replacement, or of a forbidden option, is told to
+      // remove it.
+      const values = ['always', '%G?', '%+GS', '%-GK', '% GF', '%(signature:grade)'];
+      const unadmitted = [...GIT_READ].flatMap(([sub, read]) => [...read.options, ...GIT_RUNS.keys()]
+        .filter(option => option.startsWith('--')).flatMap(option => {
+          const name = option.replace(/=$/, '');
+          const prefixes = Array.from({ length: name.length - 2 }, (_, n) => name.slice(0, n + 3));
+          return prefixes.flatMap(prefix => [prefix, ...values.map(value => `'${prefix}=${value}'`)]).flatMap(word => {
+            const denial = protectedNameGate(`git ${sub} ${word} -- _ops/env`, cwd, cwd).denial;
+            if (!denial) return [];
+            const suggested = /^Write (?:the full option name|the value after =) \(([^)]*)\)/.exec(denial.fix)?.[1]?.split(' or ') ?? [];
+            if (!suggested.length) return denial.fix.startsWith('Remove ') ? [] : [`${sub} ${word}: ${denial.fix}`];
+            return suggested.filter(full => protectedNameGate(`git ${sub} '${full.replace('<value>', '1')}' -- _ops/env`, cwd, cwd).denial)
+              .map(full => `${sub} ${word} -> ${full}`);
+          });
+        }));
+      expect(unadmitted).toEqual([]);
     } finally {
       if (worktreeRoot === undefined) delete process.env.REPO_HARNESS_WORKTREE_ROOT; else process.env.REPO_HARNESS_WORKTREE_ROOT = worktreeRoot;
       rmSync(root, { recursive: true, force: true });
