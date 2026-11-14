@@ -82,14 +82,14 @@
     "build:oar-review-host": "bun build src/effects/review-runner/task-oar-host.ts --target=node --format=esm --packages=external --outfile=dist/oar-review-host.js"
   },
   "devDependencies": {
-    "@cloudflare/kumo": "2.17.0",
+    "@cloudflare/kumo": "2.18.1",
     "@colbymchenry/codegraph": "1.6.2",
     "@dagrejs/dagre": "3.1.3",
     "@phosphor-icons/react": "^2.1.10",
     "@tailwindcss/vite": "^4.3.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.2.1",
+    "@vitejs/plugin-react": "^6.3.0",
     "@xyflow/react": "12.12.1",
     "bun-types": "1.4.4",
     "happy-dom": "^21.0.4",
@@ -100,10 +100,10 @@
     "remark-gfm": "4.0.1",
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
-    "vite": "^8.3.6"
+    "vite": "^8.3.8"
   },
   "dependencies": {
-    "@botiverse/oar": "0.95.0",
+    "@botiverse/oar": "0.104.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "archctx": "0.14.1",
     "archctx-contracts": "0.14.1",
