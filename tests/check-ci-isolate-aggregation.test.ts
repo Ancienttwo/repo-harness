@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, delimiter, join, resolve, sep } from "node:path";
@@ -45,16 +45,8 @@ function writeTestFile(dir: string, name: string, passing: boolean): string {
 // CI exports BUN_TEST_JOBS to the whole Test job, so an inherited value would
 // silently decide which loop each case exercises. Every case states the job
 // count it means to test, and the absence of the variable is itself a case.
-//
-// A nested non-pool gate fails when any /tmp/*-wt-* path appears during its run.
-// In the CI pool, other test files create such worktrees at the same time, so an
-// unattributed nested gate fails at random. A suspect directory makes the gate
-// record those paths, as the pool does, and this file never reads them.
-const suspectDir = mkdtempSync(join(tmpdir(), "ci-suspects-"));
-afterAll(() => rmSync(suspectDir, { recursive: true, force: true }));
-
 function gateEnv(overrides: Record<string, string>): Record<string, string | undefined> {
-  const env: Record<string, string | undefined> = { ...process.env, CI_WORKTREE_SUSPECT_DIR: suspectDir };
+  const env: Record<string, string | undefined> = { ...process.env };
   delete env.BUN_TEST_JOBS;
   // Bun hides pass lines in agent environments, even with onlyFailures=false.
   for (const key of ["CLAUDECODE", "REPL_ID", "AGENT"]) delete env[key];
@@ -417,6 +409,54 @@ describe("ci isolate-mode test loop", () => {
       expect(reports[0]).toContain("outer-nesting.test.ts");
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a nested gate defers a new worktree path to the outermost run, which fails only a path that survives", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ci-suspect-nest-"));
+    try {
+      const inner = join(dir, "inner.test.ts");
+      writeFileSync(inner, 'import { test } from "bun:test";\nimport { mkdirSync } from "node:fs";\ntest("makes a worktree path", () => mkdirSync(process.env.LEAK_PATH!));\n');
+      // The inner file stands in for a sibling's worktree. The outer file removes it after the nested gate ends, unless it is meant to leak.
+      const outer = join(dir, "outer.test.ts");
+      writeFileSync(outer, [
+        'import { expect, test } from "bun:test";',
+        'import { rmSync } from "node:fs";',
+        'import { spawnSync } from "node:child_process";',
+        'test("nested gate", () => {',
+        '  const result = spawnSync("bash", ["-c", "set -euo pipefail; source \\"$1\\"; run_bun_tests", "nested", process.env.LIB!], {',
+        '    encoding: "utf-8", env: { ...process.env, BUN_TEST_ISOLATE_FILES: "1", BUN_TEST_FILES: process.env.INNER },',
+        '  });',
+        '  expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);',
+        '  if (process.env.LEAK !== "1") rmSync(process.env.LEAK_PATH!, { recursive: true });',
+        '});',
+        '',
+      ].join("\n"));
+      for (const leak of ["0", "1"]) {
+        const leakPath = join("/tmp", `rh-suspect-${process.pid}-${leak}-wt-x`);
+        try {
+          const result = spawnSync("bash", ["-c", `set -euo pipefail; source ${JSON.stringify(LIB_PATH)}; run_bun_tests`], {
+            cwd: REPO_ROOT, encoding: "utf-8",
+            env: gateEnv({
+              BUN_TEST_ISOLATE_FILES: "1", BUN_TEST_FILES: outer, BUN_TEST_TIMEOUT_MS: "60000", BUN_TEST_MAX_CONCURRENCY: "1",
+              CI_WORKTREE_SUSPECT_DIR: "", CI_WORKTREE_SUSPECT_OWNER: "", // this gate is the outermost run
+              BUN_TEST_JUNIT_DIR: join(dir, `junit-${leak}`), LIB: LIB_PATH, INNER: inner, LEAK: leak, LEAK_PATH: leakPath,
+            }),
+          });
+          const output = `${result.stdout}${result.stderr}`;
+          if (leak === "0") {
+            // Another process may leave its own path at the end, so the case names this path, not the exit status.
+            expect(output).not.toContain(basename(leakPath));
+          } else {
+            expect(result.status, output).toBe(1);
+            expect(output).toContain(`[ci] surviving new worktree path outside disposable roots (current uid; created during test): ${realpathSync("/tmp")}/${basename(leakPath)} (${outer})`);
+          }
+        } finally {
+          rmSync(leakPath, { recursive: true, force: true });
+        }
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
