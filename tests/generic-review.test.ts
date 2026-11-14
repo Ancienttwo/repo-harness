@@ -1289,12 +1289,13 @@ const options={cwd:dir,model:'openai/gpt-4o',env:{PI_CODING_AGENT_DIR:agent,OAR_
 let deadline,observed;
 if(${JSON.stringify(stage)}==='start'){
 // Hold the deadline timer until the native tree is ready and the start is still pending.
-const controlledDeadline={valueOf:()=>deadline??Date.now()+2140000000},realSetTimeout=globalThis.setTimeout;let fire,settled=false;
-globalThis.setTimeout=(fn,ms,...args)=>{if(ms>2000000000){fire=()=>fn(...args);return realSetTimeout(()=>{},2140000000)}return realSetTimeout(fn,ms,...args)};
+const controlledDeadline={valueOf:()=>deadline??Date.now()+2140000000},realSetTimeout=globalThis.setTimeout;let fire,settled=false,msCaptured,expected;
+globalThis.setTimeout=(fn,ms,...args)=>{if(ms>2000000000){msCaptured=ms;expected=Number(controlledDeadline)-Date.now();fire=()=>fn(...args);return realSetTimeout(()=>{},2140000000)}return realSetTimeout(fn,ms,...args)};
 const opening=openNativeSession(reviewRuntime('pi',${JSON.stringify(fixture)}),{kind:'available',via:'bundled'},options,controlledDeadline);
 globalThis.setTimeout=realSetTimeout;opening.then(()=>{settled=true},()=>{settled=true});
 while(!existsSync(${JSON.stringify(pids)})||!existsSync(${JSON.stringify(work)})||!existsSync(${JSON.stringify(spawned)})){if(settled)throw new Error('native start settled before tree was ready');await new Promise(resolve=>realSetTimeout(resolve,10))}
 if(settled||!fire)throw new Error('native start or deadline timer was not pending');
+if(Math.abs(msCaptured-expected)>1000)throw new Error('deadline delay '+msCaptured+' differs from expected '+expected);
 deadline=Date.now();fire();observed=await opening.catch(error=>String(error));}
 else{const host=new OarReviewHost(await reviewRuntime('pi',${JSON.stringify(fixture)}).session({kind:'available',via:'bundled'},options),()=>{});
 if(${JSON.stringify(stage)}==='stuck disposal')host.dispose=()=>new Promise(()=>{});
