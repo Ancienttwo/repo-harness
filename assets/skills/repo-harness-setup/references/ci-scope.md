@@ -33,14 +33,23 @@ other families.
    A routine plan selects a family only when a changed path matches one of its
    owners. Package or workspace membership alone never selects a platform
    family.
-3. **Owner drift contract.** A contract test parses each family job in the
-   workflow YAML. It resolves package scripts, directories and globs to the test
-   files and scripts that the job runs. A command that it cannot resolve fails
-   the test. It asserts that an owner of that family matches each file. It also
-   asserts a minimum count of checked inputs, so a parser that finds nothing
-   fails. Prove the test with a mutation probe: remove one owner, run the test,
-   record the failure `<family> runs <path> but does not own it`, then restore
-   the owner.
+3. **Owner drift contract.** A contract test checks the exact reviewed surface:
+   - `REVIEWED_JOBS` holds each targeted family job's exact header, without
+     `name` and `steps`. It holds the steps in order. Compare each step as a
+     whole object without `name`, so `run`, `shell`, `env`, `with`,
+     `working-directory` and `if` all count.
+   - `REVIEWED_SCRIPTS` holds the exact text of each package script that a step
+     runs, keyed by package and script name.
+   - Each reviewed step and script declares the repository paths it runs or
+     reads. These paths and the bunfig `[test].preload` files of a job that
+     runs `bun test` are the family inputs. Each input must be owned by the
+     family, directly or through broad impact.
+   - Refuse workflow-level keys outside `name`, `run-name`, `on`, `permissions`,
+     `concurrency` and `jobs`; install lifecycle scripts when a job runs
+     `bun install`; `pre<script>` and `post<script>` hooks for a script a job
+     runs; and `bunfig.toml` keys other than `[test].preload`.
+
+   A family command change updates the reviewed table in the same PR.
 4. **Release-only complete matrix.** Only `workflow_dispatch` runs the complete
    matrix. The dispatch input carries the exact full approved commit SHA, and it
    must equal the checked-out commit. For a dispatch run only, the ref
@@ -98,8 +107,13 @@ other families.
 
 - Run the target's selector, planner and workflow contract tests. Report the
   command, the pass and fail counts and the revision.
-- Run the mutation probe from contract item 3 for at least one family. Report
-  the failure output.
+- Run each mutation probe for at least one family. Each must fail. Report the
+  failure output and restore each change after the probe:
+  - Remove one owner.
+  - Remove one allow-list entry.
+  - Append the round-4 command `node x > /dev/null&./bin/tool`.
+  - Make a one-character near-miss of an allowed string.
+  - Add `[run] bun = true` to `bunfig.toml`.
 - Replay the old selector (from the base revision) and the new selector on the
   changed files of at least the last 20 merged pull requests. For each pull
   request, report the platform job count before and after and the families
