@@ -157,15 +157,22 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   each round has fewer blocking findings (P0-P2) than the round before and
   the scope does not grow. A grown scope is a joint decision. A new P0
   finding, or a new P1 finding about security, secrets, data or
-  authentication, stops the loop at the owner; any other new P1 finding
-  does not stop it. Round 5 is the hard stop. Details:
+  authentication, goes to the owner as a notice. The loop continues
+  without an owner word when the fix closes the finding. It stops at the
+  owner only when the fix for that finding would accept a residual, relax a
+  control or grow the scope. Each merge outside rule 2, each release, each credential or
+  permission change and each deletion that git cannot restore stay with
+  the owner. Any other new P1 finding does not stop the loop. Round 5 is
+  the hard stop. Details:
   `references/acceptor.md` §2.2. For issue-flow review loops,
   this rule replaces the three-round cap of the managed global working
   rules.
 - Dispatch. After the owner approves a batch parent and its plan comment,
   the orchestrator dispatches the plan's issues in plan order with no other
   owner step. A new issue or a changed order goes to the owner or to a joint
-  decision.
+  decision. A new issue that only closes a security gap (no accepted residual,
+  no relaxed control, no grown scope) joins a batch by joint decision, with a
+  notice to the owner.
 - Intake. Open issues are cleared before new ones are filed. During a batch,
   file a new issue only when it blocks an issue of the release set, records
   a defect that a user meets, or the owner asks for it. Search the open
@@ -180,7 +187,9 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   joint decision. An owner message applies to the item it names and stops
   or reorders no other work. The orchestrator and the advisor make a
   decision that otherwise goes to the owner when both agree, unless it
-  touches security. Before the action, the orchestrator posts it on the
+  touches security. A new issue that only closes a security gap (no accepted
+  residual, no relaxed control, no grown scope) joins a batch by joint
+  decision, with a notice to the owner. Before the action, the orchestrator posts it on the
   owning issue or PR as `Joint decision (orchestrator + advisor)` with the
   reason. A joint decision never replaces the High-tier cross-model review,
   and it does not reverse an explicit owner decision. When the two seats do

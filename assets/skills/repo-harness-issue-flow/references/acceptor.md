@@ -105,8 +105,13 @@ The table rules govern how the row combines with the review.
    while each round has fewer blocking findings (P0-P2) than the round
    before and the scope does not grow. A grown scope is a joint decision.
    A new P0 finding, or a new P1 finding about security, secrets, data or
-   authentication, stops the loop at the owner; any other new P1 finding
-   does not stop it. Round 5 is the hard stop. When every remaining finding
+   authentication, goes to the owner as a notice. The loop continues
+   without an owner word when the fix closes the finding. It stops at the
+   owner only when the fix for that finding would accept a residual, relax a
+   control or grow the scope. Each merge outside rule 2, each release, each credential or
+   permission change and each deletion that git cannot restore stay with
+   the owner. Any other new P1 finding does not stop the loop. Round 5 is
+   the hard stop. When every remaining finding
    is P2, all of them are in one bug family, and none concerns security,
    secrets, data or authentication,
    a recorded decision (the owner, or a joint decision of the orchestrator
@@ -117,18 +122,18 @@ The table rules govern how the row combines with the review.
    follow-up link. A `FAIL` row stays on its head, so the next round reviews
    that new head with those threads deferred. It must return `PASS` for that
    head before the PR merges, and its record names the follow-up issue. A
-   `FAIL` in round 5 is a hard stop and takes no deferral. A new P0 finding,
-   a new P1 finding about security, secrets, data or authentication, or a
-   blocking finding after round 5 becomes a parked owner gate
+   `FAIL` in round 5 is a hard stop and takes no deferral. A blocking
+   finding after round 5, or a fix for a new P0 or security P1 that would accept a
+   residual, relax a control or grow the scope, becomes a parked owner gate
    (`docs/reference-configs/agentic-development-flow.md`, Park a gate).
    Other work continues.
 
 The worker fixes each finding by the class rule (`worker.md` §7).
 If a new P1 appears in the fix delta in two rounds in a row, stop
 patching. The orchestrator and the advisor then make a joint decision to
-rescope the PR or revert it to the last clean rule. The owner stop for a
-new P0 or a new P1 about security, secrets, data or authentication still
-applies.
+rescope the PR or revert it to the last clean rule. A new P0 or a new P1
+about security, secrets, data or authentication still goes to the owner
+as a notice.
 
 Return `PASS` or `FAIL`. A `FAIL` has at least one P0, P1 or P2 finding.
 Rule 4 decides whether a `FAIL` after round 3 takes another round, defers a
