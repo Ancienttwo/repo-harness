@@ -82,9 +82,26 @@ export interface ReviewHostSpec {
   requestDirectory: string;
   output: string;
   controlDirectory: string;
+  /** The review timeout of every round on this host. Each round ends at its own absolute deadline, from `deadline-<round>.json` in the control directory. */
   timeoutMs: number;
 }
-/** The host writes one observation for each ended turn. */
+/**
+ * The owner writes this file to the control directory before each launch or bind, after its
+ * credential check. The host refuses a native session that starts at or after `deadline`, and
+ * a pi host repeats the credential-window check for `pi` there.
+ */
+export const REVIEW_HOST_LAUNCH_FILE = 'launch-deadline.json';
+export interface ReviewHostLaunch {
+  deadline: number;
+  /** The canonical `provider/model` of the admission, the native auth.json and the provider of its entry. */
+  pi: { model: string; auth: string; provider: string } | null;
+}
+/**
+ * The observation kind of a turn that the host stopped at its round deadline. The host writes it
+ * only after the native reviewer process tree has exited; the owner accepts no Result from it.
+ */
+export const HOST_DEADLINE_STOP = 'deadline_stop';
+/** The host writes one observation for each ended or deadline-stopped turn. */
 export interface HostRoundObservation {
   request_id: string;
   kind: string;
@@ -112,8 +129,8 @@ export interface ReviewerRunner<Session, Endpoint, Authority> {
   /** The fixed host command for a host spec file. A terminal launch also proves that the command reads back. */
   hostCommand(specFile: string, terminal: boolean): readonly string[];
   installation(kind: ReviewRuntimeId, executable?: string): Promise<InstallationSnapshot>;
-  /** Session options from the reviewer profile; review passes only the role's harness and output. */
-  sessionOptions(kind: ReviewRuntimeId, output: string, runtimeHome?: string): SessionOptions;
+  /** Session options from the reviewer profile; review passes the role's harness and output, and for pi the admitted `provider/model`. */
+  sessionOptions(kind: ReviewRuntimeId, output: string, runtimeHome?: string, piModel?: string): SessionOptions;
   /** The directory where the implementation writes the session's requests. */
   requestDirectory(primaryRoot: string, task: string, role: string): string;
   /** The reviewer output directory in the reviewer checkout. */

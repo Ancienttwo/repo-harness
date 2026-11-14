@@ -70,6 +70,8 @@ export const INTRA_LAYER_CYCLE_ALLOWANCES: Readonly<Record<string, string>> = {}
 const RUNTIME_SDK_LOADS: Readonly<Record<string, string>> = {
   'src/effects/pi-capability-child.ts':
     "import(pathToFileURL(join(process.argv[2]!, 'dist/index.js')).href)",
+  'src/effects/pi-model-child.ts':
+    "import(pathToFileURL(join(root, 'dist/index.js')).href)",
 };
 
 const CAPABILITY_SOURCE = 'src/core/capabilities/registry.ts';
