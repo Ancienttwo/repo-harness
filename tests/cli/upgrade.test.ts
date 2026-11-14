@@ -885,6 +885,26 @@ describe('legacy workflow-state upgrade report', () => {
     expect(tree(opts.cwd)).toEqual(before);
   }, false));
 
+  test('a managed package script with a value that no release wrote gets an advisory notice and stays', () => sandbox((opts) => {
+    const path = join(opts.cwd, 'package.json');
+    const bytes = `${JSON.stringify({ name: 'fixture', scripts: {
+      'check:brain': 'repo-harness brain check',
+      'sync:brain': 'rh brain sync',
+      'check:deploy-sql': 'echo local-check',
+      'check:context-files': 42,
+      'check:brain-manifest': 'echo manifest',
+    } }, null, 2)}\n`;
+    put(path, bytes);
+    const check = runUpgrade({ ...opts, scope: 'project' });
+    expect(check.items).toEqual([expect.objectContaining({ path, retiredBy: 'customized-managed-value', action: 'report', advisory: true,
+      reason: 'Package scripts that init manages differ from every released value; init and upgrade keep them: '
+        + 'check:deploy-sql: "echo local-check"; check:context-files: 42; check:brain-manifest: "echo manifest"' })]);
+    expect(check.exitCode).toBe(0);
+    expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: ['package.json'] }).rejected.map((rejection) => rejection.path)).toEqual(['package.json']);
+    runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(readFileSync(path, 'utf8')).toBe(bytes);
+  }, false));
+
   test('package scripts that run a missing script key are report-only', () => sandbox((opts) => {
     const path = join(opts.cwd, 'package.json');
     put(join(opts.cwd, 'build.ts'), 'console.log("build");\n');

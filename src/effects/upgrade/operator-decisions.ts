@@ -94,6 +94,7 @@ export function upgradeDecisionRejection(
   if (snapshot?.contentHash === undefined) return 'A decision needs a file or directory with a content hash.';
   if (decision === 'remove' && (item.surface !== 'file' || snapshot.kind !== 'file')) return 'Remove is valid only for a regular file; use keep.';
   if (decision === 'remove' && item.retiredBy === 'retired-script-reference') return 'Remove is not valid for a document that refers to a retired path; use keep.';
+  if (decision === 'remove' && item.retiredBy === 'customized-managed-value') return 'Remove is not valid for package.json with a customized managed script; use keep.';
   return undefined;
 }
 

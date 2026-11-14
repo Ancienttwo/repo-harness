@@ -8,7 +8,7 @@ import { isRepoHarnessLegacyTypedHookCommand, retiredHookCommands, stripRepoHarn
 import { isRepoHarnessSourceCheckout } from '../source-checkout';
 import { loadWorkflowContractAsset } from '../../core/adoption/workflow-contract-asset';
 import { CLI_NAME, namesRetiredCli, RETIRED_CLI_NAME } from '../../core/skill-surface/cli-name';
-import { MANAGED_PACKAGE_SCRIPTS } from '../../core/adoption/package-scripts';
+import { MANAGED_PACKAGE_SCRIPTS, RETIRED_PACKAGE_SCRIPT_KEYS } from '../../core/adoption/package-scripts';
 import { isReleasedPackageScript } from './released-values';
 import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../../core/skill-surface/catalog';
 
@@ -500,7 +500,9 @@ function rootRunTarget(args: string): string | null {
  * `rh run` resolves only the helpers in the shipped registry, init deletes
  * generated script keys that other scripts may still run, and the
  * `repo-harness` command is retired. Each fails at run time. User scripts stay
- * as they are; the report lists each key and command.
+ * as they are; the report lists each key and command. A managed key whose
+ * value is neither current nor released is the user's: init keeps it, and the
+ * report names it whatever command it runs.
  */
 function scanPackageScripts(root: string, add: AddItem): void {
   const path = join(root, 'package.json');
@@ -514,6 +516,9 @@ function scanPackageScripts(root: string, add: AddItem): void {
   // `bun run` falls back to a file or a local binary; `npm run` runs only script keys.
   const resolves = (runner: string, target: string): boolean => Object.hasOwn(scripts, target)
     || (runner === 'bun' && (stat(join(root, target)) !== null || stat(join(root, 'node_modules/.bin', target)) !== null));
+  const customized = Object.entries(scripts).flatMap(([key, command]) =>
+    (Object.hasOwn(MANAGED_PACKAGE_SCRIPTS, key) && MANAGED_PACKAGE_SCRIPTS[key] !== command || RETIRED_PACKAGE_SCRIPT_KEYS.includes(key))
+      && !isReleasedPackageScript(key, command) ? [`${key}: ${JSON.stringify(command)}`] : []);
   const findings = Object.entries(scripts).flatMap(([key, command]) => {
     // init replaces a managed key whose value is current or released, so only an edited value is the user's.
     if (typeof command !== 'string' || MANAGED_PACKAGE_SCRIPTS[key] === command || isReleasedPackageScript(key, command)) return [];
@@ -525,9 +530,16 @@ function scanPackageScripts(root: string, add: AddItem): void {
     });
     return retired || missing.length > 0 || retiredCli.length > 0 ? [`${key}: ${command}${[...retiredCli, ...missing].join('')}`] : [];
   });
-  if (findings.length === 0) return;
+  const customizedNotice = customized.length === 0 ? ''
+    : `Package scripts that init manages differ from every released value; init and upgrade keep them: ${customized.join('; ')}`;
+  if (findings.length === 0) {
+    if (customized.length > 0) {
+      add({ location: 'project', surface: 'file', path, retiredBy: 'customized-managed-value', ownership: 'unowned', proof: null, action: 'report', advisory: true, reason: customizedNotice });
+    }
+    return;
+  }
   add({ location: 'project', surface: 'file', path, retiredBy: 'retired-script-reference', ownership: 'unowned', proof: null, action: 'report',
-    reason: `Package scripts call a helper that this package does not ship, a script that package.json does not define, or the retired ${RETIRED_CLI_NAME} command; review them without automatic edits: ${findings.join('; ')}` });
+    reason: `Package scripts call a helper that this package does not ship, a script that package.json does not define, or the retired ${RETIRED_CLI_NAME} command; review them without automatic edits: ${findings.join('; ')}${customizedNotice && `. ${customizedNotice}`}` });
 }
 
 /**
