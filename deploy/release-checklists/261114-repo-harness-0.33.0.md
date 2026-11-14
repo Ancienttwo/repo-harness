@@ -4,6 +4,7 @@
 
 - Base: `c6939b613` on `main`. Previous release: `v0.32.0`. Range: `v0.32.0..c6939b613` (40 first-parent commits). A later PR goes to the next release unless a joint decision adds it.
 - Release date: UTC 2026-11-14. Parent #2742; release issue #2771. The owner authorized 0.33.0 with archctx 0.15.0 (word “放”, 2026-11-14, https://github.com/aimpact-inc/repo-harness/issues/2771#issuecomment-6881307091).
+- The 0.33.0 CHANGELOG section names archctx 0.14.1, because it was fixed before #2772 merged. The correction is the 2770 fragment in the next section. The release notes get the same correction line at step 6 if the owner approves it.
 - The core package, Operator web package, skill and template stamps, and README move to 0.33.0 in PR 2. PR 1 prepares these release notes.
 - Publish status: pending. npm publication, the tag and the GitHub Release need the owner's word for this release.
 
