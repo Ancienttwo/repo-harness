@@ -733,6 +733,16 @@ const OTHER_FAILURES = {
   'deep-indent-matrix': { summary: 'success', job: 'Build (a)', workflow: workflowDefinition('build', undefined, [
     '  build:', '    name: Build', '    strategy:', '        matrix:', '          k: [a]',
     '  buildx:', '    name: Build ${{ inputs.k }}']) },
+  // A static Build (two, one) owns the real name when the reader reorders keys, formats 1E+15 or reads on as a string.
+  'integer-like-matrix-keys': { summary: 'success', job: 'Build (two, one)', workflow: workflowDefinition('build', undefined, [
+    '  build:', '    name: Build', '    strategy:', '      matrix:', "        '2': [two]", "        '1': [one]",
+    '  other:', '    name: Build (two, one)']) },
+  'g15-matrix-number': { summary: 'success', job: 'Build 1E+15', workflow: workflowDefinition('build', undefined, [
+    '  build:', '    name: Build ${{ matrix.n }}', '    strategy:', '      matrix:', '        n: [1000000000000000]',
+    '  other:', '    name: Build 1E+15']) },
+  'yaml-version-scalar': { summary: 'success', job: 'Build true', workflow: workflowDefinition('build', undefined, [
+    '  build:', '    name: Build ${{ matrix.flag }}', '    strategy:', '      matrix:', '        flag: [on]',
+    '  other:', '    name: Build true']) },
   'transitive-need': { summary: 'success', job: 'Setup', workflow: workflowDefinition('setup', undefined, SETUP_JOB) },
   'missing-nested-need': { summary: 'success', job: PROJECTION_JOB, workflow: workflowDefinition('ghost') },
   'default-matrix-name': { summary: 'success', job: 'lint (ubuntu-latest)',
@@ -902,7 +912,8 @@ test('a failed job outside the needs is failure evidence only beside a failed at
 
 test.each(['transitive-need', 'missing-nested-need', 'skipped-transitive-need', 'workflow-changed-on-base',
   'quoted-block-need', 'scalar-need-next-line', 'format-name-collision', 'reusable-name-collision',
-  'reusable-callee-template', 'deep-indent-body', 'deep-indent-matrix'] as const)(
+  'reusable-callee-template', 'deep-indent-body', 'deep-indent-matrix', 'integer-like-matrix-keys', 'g15-matrix-number',
+  'yaml-version-scalar'] as const)(
   'an old failure that may sit in the needs graph stays on the fail-closed path: %s', (scenario) => {
     expect(() => evidenceVerdict(scenario)).toThrow('RequiredCheckObservation has no failed attempt');
   });

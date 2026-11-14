@@ -28,40 +28,54 @@ export interface RequiredJobPlacementV1 {
   readonly failed: ReadonlyMap<string, FailedJobPlacementV1>;
 }
 
-type MatrixValue = string | number | boolean;
-
 const MATRIX_EXPRESSION = /\$\{\{\s*matrix\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}/gu;
+/** Never integer-like, so object enumeration keeps declaration order. */
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_-]*$/u;
+/** Plain scalars that YAML 1.1 reads as booleans and YAML 1.2 reads as strings. */
+const YAML_VERSION_SCALAR = /^(?:y|n|yes|no|on|off)$/iu;
+/** GitHub formats numbers with invariant G15; String() gives the same text up to 15 digits. */
+const MAX_EXACT_INTEGER = 999_999_999_999_999;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isMatrixValue(value: unknown): value is MatrixValue {
-  return (typeof value === 'string' && !value.includes('${{'))
-    || typeof value === 'boolean'
-    || (typeof value === 'number' && Number.isSafeInteger(value));
+function isExactIdentifier(value: string): boolean {
+  return IDENTIFIER.test(value) && !YAML_VERSION_SCALAR.test(value);
 }
 
-/** A static matrix of plain lists in declaration order; undefined when the job has none, null when not static. */
-function staticMatrix(strategy: unknown): [string, MatrixValue[]][] | undefined | null {
+/** The text GitHub gives a matrix value in a display name; null outside the domain reproduced exactly. */
+function formatMatrixValue(value: unknown): string | null {
+  if (typeof value === 'boolean') return String(value);
+  if (typeof value === 'number') {
+    return Number.isInteger(value) && Math.abs(value) <= MAX_EXACT_INTEGER && !Object.is(value, -0) ? String(value) : null;
+  }
+  if (typeof value === 'string') return value.includes('${{') || YAML_VERSION_SCALAR.test(value) ? null : value;
+  return null;
+}
+
+/** A static matrix of formatted plain lists in declaration order; undefined when the job has none, null when not exact. */
+function staticMatrix(strategy: unknown): [string, string[]][] | undefined | null {
   if (strategy === undefined) return undefined;
   if (!isRecord(strategy)) return null;
   if (strategy.matrix === undefined) return undefined;
   if (!isRecord(strategy.matrix)) return null;
   const entries = Object.entries(strategy.matrix);
   if (entries.length === 0) return null;
-  const axes: [string, MatrixValue[]][] = [];
+  const axes: [string, string[]][] = [];
   for (const [key, values] of entries) {
     // include, exclude and expressions add or remove instances the reader cannot compute.
-    if (key === 'include' || key === 'exclude') return null;
-    if (!Array.isArray(values) || values.length === 0 || !values.every(isMatrixValue)) return null;
-    axes.push([key, values]);
+    if (key === 'include' || key === 'exclude' || !isExactIdentifier(key)) return null;
+    if (!Array.isArray(values) || values.length === 0) return null;
+    const formatted = values.map(formatMatrixValue);
+    if (formatted.some(value => value === null)) return null;
+    axes.push([key, formatted as string[]]);
   }
   return axes;
 }
 
-function combinations(axes: readonly [string, MatrixValue[]][]): Map<string, MatrixValue>[] {
-  return axes.reduce<Map<string, MatrixValue>[]>((rows, [key, values]) =>
+function combinations(axes: readonly [string, string[]][]): Map<string, string>[] {
+  return axes.reduce<Map<string, string>[]>((rows, [key, values]) =>
     rows.flatMap(row => values.map(value => new Map([...row, [key, value]]))), [new Map()]);
 }
 
@@ -69,6 +83,7 @@ function combinations(axes: readonly [string, MatrixValue[]][]): Map<string, Mat
 function expandNames(id: string, job: Record<string, unknown>): string[] | null {
   if (job.name !== undefined && typeof job.name !== 'string') return null;
   const name = job.name ?? id;
+  if (YAML_VERSION_SCALAR.test(name)) return null;
   const axes = staticMatrix(job.strategy);
   if (axes === null) return null;
   const keys = [...name.matchAll(MATRIX_EXPRESSION)].map(match => match[1]!);
@@ -77,8 +92,8 @@ function expandNames(id: string, job: Record<string, unknown>): string[] | null 
   const axisKeys = new Set(axes.map(([key]) => key));
   if (keys.some(key => !axisKeys.has(key))) return null;
   return combinations(axes).map(row => keys.length > 0
-    ? name.replace(MATRIX_EXPRESSION, (_, key: string) => String(row.get(key)))
-    : `${name} (${[...row.values()].map(String).join(', ')})`);
+    ? name.replace(MATRIX_EXPRESSION, (_, key: string) => row.get(key)!)
+    : `${name} (${[...row.values()].join(', ')})`);
 }
 
 function declaredNeeds(value: unknown): string[] | null {
@@ -91,9 +106,11 @@ function declaredNeeds(value: unknown): string[] | null {
 /**
  * Parses a workflow into its expanded job names and needs. Returns null for
  * invalid YAML, a needs value that is not a string or a list of strings, a
- * name or matrix the expansion cannot compute, a reusable-workflow job (its
- * callee jobs have names the workflow does not declare), or a duplicate
- * expanded name.
+ * job id outside the identifier domain, a name or matrix the expansion cannot
+ * compute, a reusable-workflow job (its callee jobs have names the workflow
+ * does not declare), or a duplicate expanded name. The YAML reader keeps the
+ * last of duplicate mapping keys; GitHub rejects such a workflow, so no run
+ * reaches this reader with one.
  */
 export function parseWorkflowGraph(text: string): WorkflowGraphV1 | null {
   let parsed: unknown;
@@ -103,7 +120,7 @@ export function parseWorkflowGraph(text: string): WorkflowGraphV1 | null {
   const jobByName = new Map<string, string>();
   const needs = new Map<string, readonly string[]>();
   for (const [id, job] of Object.entries(parsed.jobs)) {
-    if (!isRecord(job) || job.uses !== undefined) return null;
+    if (!isExactIdentifier(id) || !isRecord(job) || job.uses !== undefined) return null;
     const jobNeeds = declaredNeeds(job.needs);
     const names = expandNames(id, job);
     if (jobNeeds === null || names === null) return null;
