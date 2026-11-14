@@ -228,16 +228,19 @@ write_start_metadata() {
 EOF_METADATA
 }
 
-# A new worktree starts from the remote base tip, not from the checkout HEAD:
-# the dependency install runs on that base, and a stale base installs a tree
-# that bun.lock on the real base no longer matches. A failed fetch stops start.
-fetch_origin_base() {
-  local base_branch="$1"
-  if ! git fetch --quiet origin "+refs/heads/$base_branch:refs/remotes/origin/$base_branch" >&2; then
-    echo "contract-worktree: git fetch origin $base_branch failed; refusing to base the worktree on a possibly stale local commit" >&2
+# A new worktree starts from the upstream of the base branch, not from the
+# checkout HEAD: the dependency install runs on that base, and a stale base
+# installs a tree that bun.lock on the real base no longer matches. The helper
+# runs without network or credentials, so the caller runs `git fetch` first.
+resolve_upstream_base() {
+  local base_branch="$1" upstream commit
+  if ! upstream="$(git rev-parse --abbrev-ref --symbolic-full-name "$base_branch@{upstream}" 2>/dev/null)" \
+    || ! commit="$(git rev-parse --verify "$upstream^{commit}" 2>/dev/null)"; then
+    echo "contract-worktree: base branch $base_branch has no resolvable upstream; run 'git fetch' and set its upstream in the main checkout, then start again" >&2
     return 1
   fi
-  git rev-parse --verify "refs/remotes/origin/$base_branch^{commit}"
+  echo "[ContractWorktree] Base: $upstream $commit ($(git show -s --format=%ci "$commit"))" >&2
+  printf '%s\n' "$commit"
 }
 
 bootstrap_worktree_runtime() {
@@ -465,7 +468,7 @@ start_worktree() {
       echo "contract-worktree: --fresh refuses existing branch: $branch_name" >&2
       return 1
     fi
-    source_commit="$(fetch_origin_base "$base_branch")" || return 1
+    source_commit="$(resolve_upstream_base "$base_branch")" || return 1
     if [[ "$output_json" -eq 1 ]]; then
       run_contract_runtime add-worktree --repo "$REPO_ROOT" --worktree "$worktree_path" --branch "$branch_name" --base "$source_commit" >&2
     else
@@ -474,7 +477,7 @@ start_worktree() {
     disposition="attached_existing_branch"
     start_notice "[ContractWorktree] Added worktree for existing branch: $worktree_path"
   else
-    source_commit="$(fetch_origin_base "$base_branch")" || return 1
+    source_commit="$(resolve_upstream_base "$base_branch")" || return 1
     if [[ "$output_json" -eq 1 ]]; then
       run_contract_runtime add-worktree --repo "$REPO_ROOT" --worktree "$worktree_path" --branch "$branch_name" --base "$source_commit" --new-branch >&2
     else

@@ -144,11 +144,13 @@ export function initGitRepo(cwd: string) {
   appendFileSync(join(cwd, ".git/config"), '\n[user]\n\tname = Helper Test\n\temail = helper@test.local\n');
 }
 
-// `contract-worktree start` fetches origin; a fixture repo is its own origin.
+// `contract-worktree start` bases on the upstream of the base branch; a fixture repo is its own origin.
 export function addSelfOrigin(cwd: string) {
   if (run("git", ["remote", "get-url", "origin"], cwd).status !== 0) {
     expect(run("git", ["remote", "add", "origin", cwd], cwd).status).toBe(0);
   }
+  expect(run("git", ["fetch", "-q", "origin"], cwd).status).toBe(0);
+  expect(run("git", ["branch", "-q", "--set-upstream-to=origin/main", "main"], cwd).status).toBe(0);
 }
 
 export function commitAll(cwd: string, message: string) {

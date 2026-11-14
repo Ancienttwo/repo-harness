@@ -273,7 +273,7 @@ describe("contract-worktree helper integration", () => {
     }
   }, 60000);
 
-  test("contract-worktree start bases the worktree on the fetched origin tip and fails closed when the fetch fails", () => {
+  test("contract-worktree start bases the worktree on the upstream tip and fails closed without an upstream", () => {
     const cwd = tmpWorkspace("helper-contract-start-origin");
     const origin = `${cwd}-origin`;
     const worktreePath = `${cwd}-wt-origin`;
@@ -285,7 +285,13 @@ describe("contract-worktree helper integration", () => {
       expect(run("git", ["remote", "add", "origin", origin], cwd).status).toBe(0);
       const staleHead = run("git", ["rev-parse", "HEAD"], cwd).stdout.trim();
 
-      // A second clone advances origin/main; the checkout's local main stays behind.
+      // Without an upstream the base is unknown: start stops, no fallback to HEAD.
+      const failed = run("bash", ["scripts/contract-worktree.sh", "start", "--issue", "123", "--path", worktreePath], cwd, issueEnv());
+      expect(failed.status).toBe(1);
+      expect(failed.stderr).toContain("no resolvable upstream");
+      expect(existsSync(worktreePath)).toBe(false);
+
+      // A second clone advances origin/main; the caller fetches; local main stays behind.
       const pusher = `${cwd}-pusher`;
       expect(run("git", ["clone", origin, pusher], cwd).status).toBe(0);
       writeFileSync(join(pusher, "ahead"), "ahead\n");
@@ -294,17 +300,12 @@ describe("contract-worktree helper integration", () => {
       expect(run("git", ["push", "-q", "origin", "main"], pusher).status).toBe(0);
       const originTip = run("git", ["rev-parse", "HEAD"], pusher).stdout.trim();
       rmSync(pusher, { recursive: true, force: true });
+      expect(run("git", ["fetch", "-q", "origin"], cwd).status).toBe(0);
+      expect(run("git", ["branch", "-q", "--set-upstream-to=origin/main", "main"], cwd).status).toBe(0);
 
-      const broken = `${cwd}-missing`;
-      expect(run("git", ["remote", "set-url", "origin", broken], cwd).status).toBe(0);
-      const failed = start(["--issue", "123", "--path", worktreePath], cwd);
-      expect(failed.status).toBe(1);
-      expect(failed.stderr).toContain("git fetch origin main failed");
-      expect(existsSync(worktreePath)).toBe(false);
-
-      expect(run("git", ["remote", "set-url", "origin", origin], cwd).status).toBe(0);
       const started = start(["--issue", "123", "--path", worktreePath], cwd);
       expect(started.status, started.stderr).toBe(0);
+      expect(started.stderr).toContain(`Base: origin/main ${originTip}`);
       expect(run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim()).toBe(originTip);
       expect(originTip).not.toBe(staleHead);
       const metadata = JSON.parse(readFileSync(join(cwd, ".ai/harness/worktrees/123-location.json"), "utf8"));
