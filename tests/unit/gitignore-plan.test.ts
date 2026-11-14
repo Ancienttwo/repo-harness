@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -20,22 +20,16 @@ import { upsertManagedBlock } from "../../src/core/adoption/managed-block";
 const ABSENT_REPO = join(tmpdir(), "gitignore-plan-absent-repo");
 
 describe("gitignore managed block .repo-harness rule", () => {
-  test("relocated package readers share the asset and missing asset cannot write a fallback", () => {
+  test("a relocated package reads the asset and a missing asset cannot write a fallback", () => {
     const root = join(import.meta.dir, "../..");
     const cwd = mkdtempSync(join(tmpdir(), "gitignore-package-"));
     try {
       // The TypeScript reader imports the upgrade inventory, so the relocated package carries src/ and assets/ whole.
-      mkdirSync(join(cwd, "scripts/lib"), { recursive: true });
-      for (const path of ["scripts/lib/project-init-lib.sh", "src", "assets"]) cpSync(join(root, path), join(cwd, path), { recursive: true });
+      for (const path of ["src", "assets"]) cpSync(join(root, path), join(cwd, path), { recursive: true });
       const emitted = spawnSync(process.execPath, ["-e", 'import { GITIGNORE_MANAGED_BLOCK_CONTENT } from "./src/effects/adoption/gitignore-plan.ts"; process.stdout.write(GITIGNORE_MANAGED_BLOCK_CONTENT)'], { cwd, encoding: "utf8" });
       expect(emitted.status).toBe(0);
       expect(emitted.stdout).toBe(GITIGNORE_MANAGED_BLOCK_CONTENT);
       rmSync(join(cwd, "assets/templates/runtime.gitignore"));
-      writeFileSync(join(cwd, ".gitignore"), "private-notes/\n");
-      const shell = spawnSync("bash", ["-c", 'source scripts/lib/project-init-lib.sh; pi_ensure_gitignore_block .gitignore'], { cwd, encoding: "utf8" });
-      expect(shell.status).not.toBe(0);
-      expect(shell.stderr).toContain("runtime.gitignore");
-      expect(readFileSync(join(cwd, ".gitignore"), "utf8")).toBe("private-notes/\n");
       const missing = spawnSync(process.execPath, ["-e", 'import "./src/effects/adoption/gitignore-plan.ts"'], { cwd, encoding: "utf8" });
       expect(missing.status).not.toBe(0);
       expect(missing.stderr).toContain("runtime.gitignore");
@@ -43,27 +37,21 @@ describe("gitignore managed block .repo-harness rule", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
-  test("shell bootstrap and init emit identical rules and preserve user entries on reapply", () => {
-    const root = join(import.meta.dir, "../..");
-    const cwd = mkdtempSync(join(tmpdir(), "gitignore-authority-"));
-    try {
-      writeFileSync(join(cwd, ".gitignore"), "# user rules\nprivate-notes/\n");
-      const result = spawnSync("bash", ["-euc", 'source "$1/scripts/lib/project-init-lib.sh"; pi_ensure_gitignore_block .gitignore "" "custom-local/"; pi_ensure_gitignore_block .gitignore "" "custom-local/"', "gitignore-test", root], { cwd, encoding: "utf8" });
-      expect(result.status).toBe(0);
-      const output = readFileSync(join(cwd, ".gitignore"), "utf8");
-      expect(output.startsWith("# user rules\nprivate-notes/\n")).toBe(true);
-      const body = output.split("# BEGIN: repo-harness generated-runtime\n")[1]!.split("# END: repo-harness generated-runtime")[0]!.trimEnd();
-      expect(body).toBe(`${GITIGNORE_MANAGED_BLOCK_CONTENT}\ncustom-local/`);
-      expect(output.match(/^custom-local\/$/gm)).toHaveLength(1);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
+  test("init appends the block after user entries and a reapply changes nothing", () => {
+    const operation = gitignoreManagedBlockOperation(ABSENT_REPO, "planned", "custom-local/");
+    const first = upsertManagedBlock("# user rules\nprivate-notes/\n", operation, ignoreBlockProof(operation));
+    expect(first.ok).toBe(true);
+    const output = first.content!;
+    expect(output.startsWith("# user rules\nprivate-notes/\n")).toBe(true);
+    const body = output.split("# BEGIN: repo-harness generated-runtime\n")[1]!.split("# END: repo-harness generated-runtime")[0]!.trimEnd();
+    expect(body).toBe(`${GITIGNORE_MANAGED_BLOCK_CONTENT}\n\ncustom-local/`);
+    expect(upsertManagedBlock(output, operation, ignoreBlockProof(operation))).toMatchObject({ ok: true, changed: false, content: output });
   });
-  test("shell bootstrap replaces a released legacy-marker block in place and keeps an edited one", () => {
-    const root = join(import.meta.dir, "../..");
-    const cwd = mkdtempSync(join(tmpdir(), "gitignore-legacy-"));
-    try {
-      // The v0.1.5 bash block, a released value in assets/released-managed-values.v1.json.
+  test("init replaces a released legacy-marker block in place and keeps an edited one", () => {
+    const operation = gitignoreManagedBlockOperation(ABSENT_REPO, "planned");
+    const ensure = (text: string) => upsertManagedBlock(text, operation, ignoreBlockProof(operation));
+    const current = `# BEGIN: repo-harness generated-runtime\n${GITIGNORE_MANAGED_BLOCK_CONTENT}\n# END: repo-harness generated-runtime`;
+    // The v0.1.5 bash block, a released value in assets/released-managed-values.v1.json.
       const released = [
         "# BEGIN: claude-runtime-temp (managed by repo-harness)",
         ".claude/settings.local.json",
@@ -99,45 +87,23 @@ describe("gitignore managed block .repo-harness rule", () => {
         ".claude/.active-plan",
         "# END: claude-runtime-temp",
       ].join("\n");
-      const ensure = () => spawnSync("bash", ["-euc", 'source "$1/scripts/lib/project-init-lib.sh"; pi_ensure_gitignore_block .gitignore', "gitignore-test", root], { cwd, encoding: "utf8" });
-      writeFileSync(join(cwd, ".gitignore"), `before/\n${released}\nafter/\n`);
-      const result = ensure();
-      expect(result.status).toBe(0);
-      const output = readFileSync(join(cwd, ".gitignore"), "utf8");
-      expect(output).toBe(`before/\n# BEGIN: repo-harness generated-runtime\n${GITIGNORE_MANAGED_BLOCK_CONTENT}\n# END: repo-harness generated-runtime\nafter/\n`);
+    expect(ensure(`before/\n${released}\nafter/\n`)).toMatchObject({ ok: true, changed: true, content: `before/\n${current}\nafter/\n` });
 
-      const edited = "before/\n# BEGIN: claude-runtime-temp (managed by repo-harness)\nstale-entry/\n# END: claude-runtime-temp\nafter/\n";
-      writeFileSync(join(cwd, ".gitignore"), edited);
-      const kept = ensure();
-      expect(kept.status).toBe(0);
-      expect(kept.stderr).toContain("[repo-harness] kept edited managed block in .gitignore: # BEGIN: claude-runtime-temp (managed by repo-harness)");
-      expect(readFileSync(join(cwd, ".gitignore"), "utf8")).toBe(edited);
+    const edited = "before/\n# BEGIN: claude-runtime-temp (managed by repo-harness)\nstale-entry/\n# END: claude-runtime-temp\nafter/\n";
+    expect(ensure(edited)).toMatchObject({ ok: true, changed: false, kept: "# BEGIN: claude-runtime-temp (managed by repo-harness)", content: edited });
 
-      // A released block with a retired-rule section, in a CRLF file, is replaced like in the TS planner.
-      const retiredSection = ["", "# Retired runtime state that still exists; repo-harness upgrade lists these files", ".claude/.session-id", "tasks/current.md"];
-      const releasedRetired = ["# BEGIN: repo-harness generated-runtime", GITIGNORE_MANAGED_BLOCK_CONTENT, ...retiredSection, "# END: repo-harness generated-runtime"].join("\n");
-      writeFileSync(join(cwd, ".gitignore"), `before/\n${releasedRetired}\nafter/\n`.replaceAll("\n", "\r\n"));
-      expect(ensure().status).toBe(0);
-      expect(readFileSync(join(cwd, ".gitignore"), "utf8"))
-        .toBe(`before/\r\n# BEGIN: repo-harness generated-runtime\n${GITIGNORE_MANAGED_BLOCK_CONTENT}\n# END: repo-harness generated-runtime\nafter/\r\n`);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
+    // A released block with a retired-rule section, in a CRLF file, is replaced and keeps CRLF.
+    const retiredSection = ["", "# Retired runtime state that still exists; repo-harness upgrade lists these files", ".claude/.session-id", "tasks/current.md"];
+    const releasedRetired = ["# BEGIN: repo-harness generated-runtime", GITIGNORE_MANAGED_BLOCK_CONTENT, ...retiredSection, "# END: repo-harness generated-runtime"].join("\n");
+    expect(ensure(`before/\n${releasedRetired}\nafter/\n`.replaceAll("\n", "\r\n")))
+      .toMatchObject({ ok: true, changed: true, content: `before/\n${current}\nafter/\n`.replaceAll("\n", "\r\n") });
   });
 
-  test("shell bootstrap refuses an unterminated block without dropping user lines", () => {
-    const root = join(import.meta.dir, "../..");
-    const cwd = mkdtempSync(join(tmpdir(), "gitignore-unterminated-"));
-    try {
-      const original = "before/\n# BEGIN: repo-harness generated-runtime\nstale-entry/\nuser-after/\n";
-      writeFileSync(join(cwd, ".gitignore"), original);
-      const result = spawnSync("bash", ["-c", 'source "$1/scripts/lib/project-init-lib.sh"; pi_ensure_gitignore_block .gitignore', "gitignore-test", root], { cwd, encoding: "utf8" });
-      expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain("managed block is missing end marker: # END: repo-harness generated-runtime");
-      expect(readFileSync(join(cwd, ".gitignore"), "utf8")).toBe(original);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
+  test("init refuses an unterminated block without dropping user lines", () => {
+    const operation = gitignoreManagedBlockOperation(ABSENT_REPO, "planned");
+    const original = "before/\n# BEGIN: repo-harness generated-runtime\nstale-entry/\nuser-after/\n";
+    expect(upsertManagedBlock(original, operation, ignoreBlockProof(operation)))
+      .toMatchObject({ ok: false, changed: false, error: "managed block is missing end marker: # END: repo-harness generated-runtime" });
   });
 
   test("tracked and runtime-state blocks together ignore every repo-local runtime path the CLI writes", () => {

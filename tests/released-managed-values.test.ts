@@ -65,32 +65,67 @@ describe("released managed values", () => {
     ]);
   });
 
-  test("a renderer with an unknown source shape fails closed", async () => {
+  /** One commit that holds the given files, read as `ref`: a release tag of that name, or HEAD. */
+  async function buildRelease(files: Record<string, string>, ref = "v0.1.2") {
     const repoRoot = tmpWorkspace("released-managed-values");
     try {
       initGitRepo(repoRoot);
-      mkdirSync(join(repoRoot, "scripts/lib"), { recursive: true });
-      mkdirSync(join(repoRoot, "src/cli/commands"), { recursive: true });
-      writeFileSync(join(repoRoot, "scripts/lib/project-init-lib.sh"), [
+      for (const [path, text] of Object.entries(files)) {
+        mkdirSync(join(repoRoot, path, ".."), { recursive: true });
+        writeFileSync(join(repoRoot, path), text);
+      }
+      commitAll(repoRoot, "release");
+      expect(run("git", ["tag", "v0.1.2"], repoRoot).status).toBe(0);
+      if (ref !== "v0.1.2" && ref !== "HEAD") expect(run("git", ["tag", ref], repoRoot).status).toBe(0);
+      return await buildReleasedManagedValues(repoRoot, ref === "v0.1.2" ? undefined : [ref]);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  }
+
+  test("the bash writers are read up to the last release that has them and must be absent after it", async () => {
+    const writers = [
+      "pi_factor_factory_gitignore_entries() { printf '%s\\n' .claude/.factor-cache/; }",
+      "pi_default_runtime_block() { printf '%s\\n' '# BEGIN: x' \"$1\" '# END: x'; }",
+      "pi_ensure_task_sync() {",
+      '  pkg.scripts["check:brain"] = "repo-harness brain check";',
+      "}",
+      "",
+    ].join("\n");
+    const freeLib = { "scripts/lib/project-init-lib.sh": "pi_install_factor_factory() {\n  return 0\n}\n" };
+    // A release with the writers: a renamed or a forwarding library is not where the readers look.
+    await expect(buildRelease({ "scripts/lib/scaffold-managed.sh": writers })).rejects.toThrow("v0.1.2: bash renderer driver failed with exit 90");
+    await expect(buildRelease({
+      "scripts/lib/project-init-lib.sh": '. "$(dirname "${BASH_SOURCE[0]}")/scaffold-managed.sh"\n',
+      "scripts/lib/scaffold-managed.sh": writers,
+    })).rejects.toThrow("v0.1.2: package script writer in scripts/lib/project-init-lib.sh not found");
+    // After the pin and at HEAD the bash renderers do not run.
+    for (const ref of ["v0.32.1", "HEAD"]) {
+      const free = await buildRelease(freeLib, ref);
+      expect(free.packageScripts).toEqual({});
+      expect(free.projectGitignoreBlock.blocks).toEqual([]);
+    }
+    await expect(buildRelease({ ...freeLib, "scripts/lib/scaffold-managed.sh": writers }, "v0.32.1"))
+      .rejects.toThrow("v0.32.1: defines a bash writer after v0.32.0 (v0.32.1:scripts/lib/scaffold-managed.sh)");
+  });
+
+  test("a renderer with an unknown source shape fails closed", async () => {
+    await expect(buildRelease({
+      "scripts/lib/project-init-lib.sh": [
         "pi_factor_factory_gitignore_entries() { printf '%s\\n' .claude/.factor-cache/; }",
         "pi_default_runtime_block() { printf '%s\\n%s\\n%s\\n' '# BEGIN: x' \"$1\" '# END: x'; }",
         "pi_ensure_task_sync() {",
         'pkg.scripts["check:brain"] = "repo-harness brain check";',
         "}",
         "",
-      ].join("\n"));
-      writeFileSync(join(repoRoot, "src/cli/commands/init.ts"), [
+      ].join("\n"),
+      "src/cli/commands/init.ts": [
         'const GLOBAL_RULES_BEGIN = "<!-- BEGIN: repo-harness global-working-rules -->";',
         "function renderGlobalRules(sourceRoot: string): string {",
         "  return sourceRoot;",
         "}",
         "",
-      ].join("\n"));
-      commitAll(repoRoot, "release");
-      expect(run("git", ["tag", "v0.1.2"], repoRoot).status).toBe(0);
-      await expect(buildReleasedManagedValues(repoRoot)).rejects.toThrow("v0.1.2: unknown global rules renderer");
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-    }
+      ].join("\n"),
+    })).rejects.toThrow("v0.1.2: unknown global rules renderer");
   });
 });
