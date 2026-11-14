@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync
 } from "fs";
@@ -50,6 +51,19 @@ describe("ship-worktrees helper integration", () => {
     expect(recovery.status,`${recovery.stdout}\n${recovery.stderr}`).toBe(0);
     expect(run("git",["ls-remote","origin","refs/heads/feature/recover"],fixture.cwd).stdout).toBe(before);
     expect(readFileSync(fixture.log,"utf8").split("\n").filter(line=>line.startsWith("pr create "))).toHaveLength(1);
+  }));
+  test("two unfinished ship journals report the first as the conflict", () => withPlainShipFixture((fixture) => {
+    expect(run("git", ["switch", "-c", "feature/journals"], fixture.cwd).status).toBe(0);
+    writeFileSync(join(fixture.cwd, "change.txt"), "journal change\n");
+    const root = join(fixture.cwd, ".git/repo-harness/transactions/ship");
+    for (const key of ["aaa", "bbb"]) {
+      mkdirSync(join(root, key), { recursive: true });
+      writeFileSync(join(root, key, "status.json"), `{\n  "status": "in_progress",\n  "phases": [\n  ]\n}\n`);
+      writeFileSync(join(root, key, "meta.json"), `{\n  "worktree": "${realpathSync(fixture.cwd)}"\n}\n`);
+    }
+    const result = fixture.ship([]);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(`an unfinished ship journal blocks this ship: ${join(realpathSync(fixture.cwd), ".git/repo-harness/transactions/ship/aaa")}`);
   }));
   test("credential scan refuses push before PR creation", () => withPlainShipFixture((fixture) => {
     expect(run("git",["switch","-c","feature/private"],fixture.cwd).status).toBe(0);
