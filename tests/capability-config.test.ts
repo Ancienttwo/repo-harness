@@ -75,6 +75,22 @@ describe("capability-config helper", () => {
     }
   }, 30_000);
 
+  test("a projection manifest refuses a chosen or created module page (#2707)", () => {
+    const cwd = tmpWorkspace("capability-config-projection");
+    try {
+      mkdirSync(join(cwd, "apps/agent"), { recursive: true });
+      mkdirSync(join(cwd, "docs/architecture"), { recursive: true });
+      writeFileSync(join(cwd, "docs/architecture/.projection-manifest.json"), JSON.stringify({ targets: {} }));
+
+      const res = runCapabilityConfig(cwd, ["add", "--prefix", "apps/agent", "--create-architecture-module"]);
+      expect(res.status).toBe(2);
+      expect(res.stderr).toContain("docs/architecture/.projection-manifest.json owns the module pages");
+      expect(existsSync(join(cwd, ".ai/context/capabilities.json"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("refuses to create missing capability prefixes unless explicitly requested", () => {
     const cwd = tmpWorkspace("capability-config-missing-prefix");
     try {

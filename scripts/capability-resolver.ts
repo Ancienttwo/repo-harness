@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import {
+  PROJECTION_MANIFEST_PATH,
   matchCapabilityPath,
   normalizeCapabilityPath,
   parseCapabilityRegistry,
@@ -22,6 +23,7 @@ import { readRecordedSelection, registerSelectedArchitecturePorts } from "../src
 
 export {
   CapabilitySourceError,
+  PROJECTION_MANIFEST_PATH,
   buildArchContextNodesV2,
   capabilitySourceMode,
   findMatch,

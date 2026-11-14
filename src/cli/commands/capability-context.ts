@@ -5,9 +5,10 @@ import {
   CapabilitySourceError,
   capabilitySourceMode,
   findMatch,
+  readProjectedModulePages,
   readRegistry as readCapabilityRegistry,
 } from '../../effects/architecture/capability-resolver';
-import { normalizeCapabilityPath } from '../../core/capabilities/registry';
+import { normalizeCapabilityPath, projectedModulePage } from '../../core/capabilities/registry';
 import type { Capability, CapabilityRegistry, ContractFiles } from '../../core/capabilities/registry';
 import type { ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
 import { architecturePort, isArchitectureUnavailable, type ArchitectureOwnershipPort } from '../../core/architecture/contracts';
@@ -225,12 +226,20 @@ export function runCapabilityContextStatus(repoInput = '.', manifestPath = DEFAU
   };
 }
 
-function defaultManifestEntry(capability: Capability, authorityPath: string): ManifestCapability {
+// The source-map item that holds the capability's own module page.
+const MODULE_PAGE_LABEL = 'Architecture module';
+const MODULE_PAGE_ROLE = 'design-source';
+
+function modulePageItems(modulePage: string | null): SourceMapEntry[] {
+  return modulePage === null ? [] : [{ label: MODULE_PAGE_LABEL, path: modulePage, role: MODULE_PAGE_ROLE }];
+}
+
+function defaultManifestEntry(capability: Capability, storedPage: string | null, authorityPath: string): ManifestCapability {
   return {
     positioning: `Owns the ${capability.id} capability boundary declared in ${authorityPath}.`,
     source_map: [
       { label: 'Primary prefix', path: capability.prefixes[0] || '.', role: 'entrypoint' },
-      { label: 'Architecture module', path: capability.architecture_module, role: 'design-source' },
+      ...modulePageItems(storedPage),
     ],
     refresh_hints: capability.verification_hints?.length
       ? capability.verification_hints
@@ -240,13 +249,14 @@ function defaultManifestEntry(capability: Capability, authorityPath: string): Ma
 
 function manifestEntryFor(
   capability: Capability,
+  storedPage: string | null,
   manifest: SourceMapManifest,
   autoFill: boolean,
   authorityPath: string,
 ): { entry: ManifestCapability; changed: boolean } {
   const existing = manifest.capabilities[capability.id];
   if (existing) return { entry: existing, changed: false };
-  const generated = defaultManifestEntry(capability, authorityPath);
+  const generated = defaultManifestEntry(capability, storedPage, authorityPath);
   if (autoFill) {
     manifest.capabilities[capability.id] = generated;
     return { entry: generated, changed: true };
@@ -254,7 +264,14 @@ function manifestEntryFor(
   return { entry: generated, changed: false };
 }
 
-function renderCapabilityBlock(capability: Capability, entry: ManifestCapability, positioning: string | undefined): string {
+// Under a projection manifest the manifest owns this capability's page, read at render time. A stored
+// page item is not read; every other item, a reference to another capability's page included, renders as stored.
+function withProjectedPage(entry: ManifestCapability, modulePage: string | null): ManifestCapability {
+  const stored = (entry.source_map || []).filter((item) => item.label !== MODULE_PAGE_LABEL || item.role !== MODULE_PAGE_ROLE);
+  return { ...entry, source_map: [...stored, ...modulePageItems(modulePage)] };
+}
+
+function renderCapabilityBlock(capability: Capability, modulePage: string | null, entry: ManifestCapability, positioning: string | undefined): string {
   const sourceMap = (entry.source_map || [])
     .map((item) => `- ${item.label}: \`${item.path}\` (${item.role})`)
     .join('\n') || '- (none recorded)';
@@ -270,7 +287,7 @@ function renderCapabilityBlock(capability: Capability, entry: ManifestCapability
     `- Domain: \`${capability.domain}\``,
     `- Name: \`${capability.name}\``,
     `- Primary prefix: \`${capability.prefixes[0] || '.'}\``,
-    `- Architecture module: \`${capability.architecture_module}\``,
+    ...(modulePage === null ? [] : [`- Architecture module: \`${modulePage}\``]),
     '',
     '## Positioning',
     '',
@@ -312,6 +329,9 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
   const { registry, owners, summaries } = readCapabilityContext(repo);
   const manifest = readManifest(repo, manifestPath);
   const capabilities = selectCapabilities(registry, repo, opts, owners);
+  // Under a projection manifest no page path is written to the registry or the source-map file;
+  // the manifest supplies the shown page. A malformed manifest throws here, before any write.
+  const pages = archcontext ? null : readProjectedModulePages(repo);
   // Under archcontext the target is the declared extensions.contractFiles, never an
   // anchor, so an anchorless capability still has a target. readCapabilityContext already
   // refused a node that declares no contract files, before any write.
@@ -339,9 +359,12 @@ export function runCapabilityContextSync(opts: SyncOptions): SyncResult {
     const registryNormalized =
       capability.contract_files?.agents === target.agents &&
       capability.contract_files?.claude === target.claude;
-    const { entry, changed } = manifestEntryFor(capability, manifest, opts.autoFillPositioning === true, authorityPath);
+    const modulePage = pages ? projectedModulePage(capability, pages) : capability.architecture_module;
+    const storedPage = pages ? null : modulePage;
+    const { entry, changed } = manifestEntryFor(capability, storedPage, manifest, opts.autoFillPositioning === true, authorityPath);
     if (changed) changedManifestIds.add(capability.id);
-    const block = renderCapabilityBlock(capability, entry, summaries.get(capability.id));
+    const shown = pages ? withProjectedPage(entry, modulePage) : entry;
+    const block = renderCapabilityBlock(capability, modulePage, shown, summaries.get(capability.id));
     const basePath = fs.existsSync(path.join(repo, target.agents))
       ? path.join(repo, target.agents)
       : fs.existsSync(path.join(repo, target.claude))

@@ -5,8 +5,11 @@ import { POLICY_ABSENT, isPolicyObject, policyValue, type DecodedWorkflowPolicy 
 import { readWorkflowPolicyFile } from "../state/policy-file";
 import {
   archcontextNodeId,
+  PROJECTION_MANIFEST_PATH,
   normalizeCapabilityPath,
   parseCapabilityRegistry,
+  parseProjectedModulePages,
+  withProjectedModulePages,
   type ArchcontextCapabilityOwners,
   type ArchcontextCapabilityResolution,
   type Capability,
@@ -14,6 +17,7 @@ import {
   type CapabilityRegistryDiagnostic,
   type CapabilityRegistryResolution,
   type CapabilitySourceMode,
+  type ProjectedModulePages,
 } from "../../core/capabilities/registry";
 import {
   CapabilitySourceError,
@@ -177,6 +181,33 @@ function loadRegistry(repo: string, mode: CapabilitySourceMode): CapabilityRegis
   return parseCapabilityRegistry(readFileSync(registryPath, "utf-8"), { declared: true, repoRoot: repo });
 }
 
+function readProjectionManifest(repo: string): string | null {
+  const manifestPath = resolve(repo, PROJECTION_MANIFEST_PATH);
+  return existsSync(manifestPath) ? readFileSync(manifestPath, "utf-8") : null;
+}
+
+/** The module pages of the projection manifest; null without one. An invalid manifest throws. */
+export function readProjectedModulePages(repo: string): ProjectedModulePages | null {
+  const manifest = readProjectionManifest(repo);
+  if (manifest === null) return null;
+  const pages = parseProjectedModulePages(manifest);
+  if ("code" in pages) throw new Error(pages.message);
+  return pages;
+}
+
+/**
+ * Registry mode reads module pages from the projection manifest when one
+ * exists; `projectedPages` is then every path the manifest projects.
+ */
+function loadEffectiveRegistry(repo: string, mode: CapabilitySourceMode): {
+  readonly resolution: CapabilityRegistryResolution | ArchcontextCapabilityResolution;
+  readonly projectedPages: ReadonlySet<string> | null;
+} {
+  const resolution = loadRegistry(repo, mode);
+  if ("owners" in resolution || resolution.status !== "valid") return { resolution, projectedPages: null };
+  return withProjectedModulePages(resolution, readProjectionManifest(repo));
+}
+
 function malformedRegistryError(
   diagnostics: readonly CapabilityRegistryDiagnostic[],
   authority: string,
@@ -197,11 +228,13 @@ export function readRegistry(repo: string): CapabilityRegistry {
 }
 
 // Anchors must exist only for listed (active) capabilities. Every capability
-// node, whatever its status, still owns its architecture module.
+// node, whatever its status, still owns its architecture module. Under a
+// projection manifest, a page is an orphan when the manifest does not project it.
 function validateRegistryEffects(
   registry: CapabilityRegistry,
   repo: string,
   allCapabilities: readonly Capability[] = registry.capabilities,
+  projectedPages: ReadonlySet<string> | null = null,
 ): string[] {
   const errors: string[] = [];
   const architectureModules = new Set<string>();
@@ -214,8 +247,12 @@ function validateRegistryEffects(
       }
     }
   }
-  for (const capability of allCapabilities) {
-    architectureModules.add(normalizeCapabilityPath(capability.architecture_module, repo));
+  if (projectedPages) {
+    for (const path of projectedPages) architectureModules.add(path);
+  } else {
+    for (const capability of allCapabilities) {
+      architectureModules.add(normalizeCapabilityPath(capability.architecture_module!, repo));
+    }
   }
 
   const modulesRoot = resolve(repo, "docs/architecture/modules");
@@ -305,7 +342,7 @@ export async function runCapabilityResolverCli(argv: string[]): Promise<void> {
   const repo = repoRoot(args.repo);
   const mode = capabilitySourceMode(repo);
   const authority = capabilityAuthorityPath(mode);
-  const resolution = loadRegistry(repo, mode);
+  const { resolution, projectedPages } = loadEffectiveRegistry(repo, mode);
   if (resolution.status === "absent") throw missingRegistryError();
 
   if (args.command === "validate") {
@@ -323,7 +360,7 @@ export async function runCapabilityResolverCli(argv: string[]): Promise<void> {
     }
     const errors = resolution.status === "invalid"
       ? resolution.diagnostics.map((item) => item.message)
-      : validateRegistryEffects(resolution.registry, repo, allCapabilities(resolution));
+      : validateRegistryEffects(resolution.registry, repo, allCapabilities(resolution), projectedPages);
     if (args.format === "json") {
       printJson({ ok: errors.length === 0, errors });
     } else if (errors.length === 0) {
@@ -359,7 +396,7 @@ export async function runCapabilityResolverCli(argv: string[]): Promise<void> {
   }
 
   if (args.command === "export") {
-    const exportErrors = validateRegistryEffects(registry, repo);
+    const exportErrors = validateRegistryEffects(registry, repo, registry.capabilities, projectedPages);
     if (exportErrors.length > 0) {
       throw new Error(`capability registry is invalid:\n${exportErrors.join("\n")}`);
     }
@@ -367,7 +404,7 @@ export async function runCapabilityResolverCli(argv: string[]): Promise<void> {
     return;
   }
 
-  const errors = validateRegistryEffects(registry, repo, allCapabilities(resolution));
+  const errors = validateRegistryEffects(registry, repo, allCapabilities(resolution), projectedPages);
   if (errors.length > 0) {
     throw new Error(`capability registry is invalid:\n${errors.join("\n")}`);
   }

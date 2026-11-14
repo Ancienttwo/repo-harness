@@ -46,7 +46,7 @@ export function registryProjectedFixture(): string {
   const root = registryNoticeFixture();
   rmSync(join(root, 'packages'), { recursive: true, force: true });
   fixtureGit(root, ['checkout', '-q', 'main']);
-  fixtureWrite(root, 'docs/architecture/.projection-manifest.json', JSON.stringify({ profile: 'repo-harness/v1' }));
+  fixtureWrite(root, 'docs/architecture/.projection-manifest.json', JSON.stringify({ profile: 'repo-harness/v1', targets: {} }));
   fixtureCommit(root);
   fixtureWrite(root, 'packages/old-core/index.ts', 'export const old = 1;\n');
   fixtureCommit(root);
@@ -64,7 +64,7 @@ export function agentNoticeFixture(): string {
   const root = moduleRepository({ section3: 'Read `src/module/read.ts:999`.', flow: false });
   fixtureGit(root, ['branch', '-M', 'main']);
   fixtureWrite(root, '.archcontext/product.yaml', 'schemaVersion: archcontext.product/v1\nid: product.test\nname: Test\n');
-  fixtureWrite(root, 'docs/architecture/.projection-manifest.json', JSON.stringify({ profile: 'repo-harness/v1' }));
+  fixtureWrite(root, 'docs/architecture/.projection-manifest.json', JSON.stringify({ profile: 'repo-harness/v1', targets: {} }));
   fixtureWrite(root, '.ai/harness/workflow-contract.json', '{}\n');
   fixtureWrite(root, '.ai/harness/policy.json', JSON.stringify({ context: { capability_source: 'archcontext' } }));
   fixtureWrite(root, '.gitignore', NOTICE_IGNORE);

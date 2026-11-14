@@ -5,6 +5,7 @@ import { spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 import {
   CapabilitySourceError,
+  PROJECTION_MANIFEST_PATH,
   capabilitySourceMode,
   normalizeCapabilityPath,
   readRegistry as readCapabilityRegistry,
@@ -253,8 +254,8 @@ function validateRegistry(repo: string): void {
   runChecked(repo, process.execPath, [helperPath("capability-resolver.ts"), "validate", "--repo", repo, "--format", "text"]);
 }
 
-function createArchitectureModule(repo: string, capability: Capability): void {
-  const path = resolve(repo, capability.architecture_module);
+function createArchitectureModule(repo: string, capability: Capability, modulePath: string): void {
+  const path = resolve(repo, modulePath);
   if (existsSync(path)) return;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(
@@ -288,6 +289,12 @@ function main(): void {
         "Declare the capability as an archcontext node under .archcontext/model/nodes instead"
     );
   }
+  // archctx projects module pages from its manifest; a page chosen or created here would be an orphan.
+  if ((args.architectureModule || args.createArchitectureModule) && existsSync(resolve(repo, PROJECTION_MANIFEST_PATH))) {
+    throw new CapabilitySourceError(
+      `${PROJECTION_MANIFEST_PATH} owns the module pages; --architecture-module and --create-architecture-module are not available`
+    );
+  }
   const requestedCapability = buildCapability(args, repo);
   const prefixPath = resolve(repo, requestedCapability.prefixes[0]);
   const registry = readRegistry(repo);
@@ -304,12 +311,14 @@ function main(): void {
   const { status, capability } = upsertCapability(registry, requestedCapability);
   actions.push(`${status}:${capability.id}`);
 
-  if (args.createArchitectureModule) actions.push(`create-architecture-module:${capability.architecture_module}`);
+  // The registry file always holds a module path; only a projection manifest replaces it on read.
+  const modulePath = capability.architecture_module!;
+  if (args.createArchitectureModule) actions.push(`create-architecture-module:${modulePath}`);
   actions.push("validate:capability-registry");
 
   if (!args.dryRun) {
     if (status === "added") writeRegistry(repo, registry);
-    if (args.createArchitectureModule) createArchitectureModule(repo, capability);
+    if (args.createArchitectureModule) createArchitectureModule(repo, capability, modulePath);
     validateRegistry(repo);
   }
 
