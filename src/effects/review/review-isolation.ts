@@ -2,13 +2,20 @@ import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync,
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, relative, sep, join, dirname } from 'node:path';
 import { piAgentDir } from '../pi-agent-dir';
+import type { PiModelIdentity } from '../pi-host-probe';
 import { OPERATOR_DEFAULT_PORT } from '../../core/review/operator-console-port';
 import { shellQuote } from '../../core/shell-quote';
 import type { ReviewIsolationAdmission, ReviewIsolationPaths } from '../../core/review/runner-port';
 
 
-/** `model` is the `provider/model` that the native settings name; the review passes it to pi explicitly. */
-export interface PiAgentDirectory { readonly directory: string; readonly loopbackPorts: readonly number[]; readonly model: string }
+/**
+ * `model` is the canonical `provider/model` from pi's resolver; the review passes it to pi as `--model`.
+ * `assertCredentialWindow` repeats the admission check against the same round deadline.
+ */
+export interface PiAgentDirectory {
+  readonly directory: string; readonly loopbackPorts: readonly number[]; readonly model: string;
+  readonly assertCredentialWindow: () => void;
+}
 
 /** pi-ai refreshes an OAuth token that has less than 5 minutes left (auth/resolve.js DEFAULT_OAUTH_MINIMUM_VALIDITY_MS). */
 const PI_OAUTH_REFRESH_MARGIN_MS = 300_000;
@@ -44,11 +51,14 @@ function piModelLoopbackPorts(bytes: Buffer): readonly number[] {
 /**
  * Credentials stay at their source. Only the native model defaults are projected into private settings.
  * Without an explicit model pi falls through to the first provider with auth, so the native
- * settings must name the provider and model. pi refreshes that provider's OAuth token when it
- * has less than the refresh margin left, and the sandbox denies the refresh, so the token
- * must outlive the review timeout plus that margin.
+ * settings must name the provider and model in the canonical form that pi's own resolver
+ * returns, and auth.json must hold an entry for that provider. pi refreshes the provider's
+ * OAuth token when it has less than the refresh margin left, and the sandbox denies the
+ * refresh, so the token must outlive the round deadline plus that margin.
  */
-export function preparePiAgentDirectory(output: string, sourceHome: string, reviewTimeoutMs: number, env: Readonly<Record<string, string | undefined>> = process.env): PiAgentDirectory {
+export function preparePiAgentDirectory(output: string, sourceHome: string, deadline: number,
+  resolveModel: (agentDirectory: string, reference: string) => PiModelIdentity,
+  env: Readonly<Record<string, string | undefined>> = process.env): PiAgentDirectory {
   const directory = join(ownedOutput(output), '.pi-agent');
   try { mkdirSync(directory, { mode: 0o700 }); } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -68,25 +78,29 @@ export function preparePiAgentDirectory(output: string, sourceHome: string, revi
     if (!existsSync(destination)) symlinkSync(models, destination);
     if (!lstatSync(destination).isSymbolicLink() || readlinkSync(destination) !== models) throw new Error('review_pi_models_changed');
   } else if (existsSync(destination)) throw new Error('review_pi_models_changed');
-  const settings = preparePiSettings(directory, source);
+  const settings = preparePiSettings(directory, source), settingsPath = join(source, 'settings.json');
   const provider = settings.defaultProvider, model = settings.defaultModel;
   if (typeof provider !== 'string' || provider === '' || typeof model !== 'string' || model === '') {
-    throw new Error(`review_pi_model_unnamed: set defaultProvider and defaultModel in ${join(source, 'settings.json')}`);
+    throw new Error(`review_pi_model_unnamed: set defaultProvider and defaultModel in ${settingsPath}`);
+  }
+  const resolved = resolveModel(directory, `${provider}/${model}`);
+  if (resolved.provider !== provider || resolved.model !== model) {
+    throw new Error(`review_pi_model_not_canonical: pi resolves ${provider}/${model} to ${resolved.provider}/${resolved.model}; set defaultProvider and defaultModel in ${settingsPath} to that form`);
   }
   const auth = join(source, 'auth.json'), link = join(directory, 'auth.json');
-  if (existsSync(auth)) {
+  const renew = `run pi outside the review and enter /login ${provider}`;
+  // The deadline does not move, so a startup delay past it would leave the token inside pi's refresh margin.
+  const assertCredentialWindow = () => {
+    if (Date.now() >= deadline) throw new Error('review_round_deadline_passed: the round deadline passed before the pi session start; repeat the round');
+    if (!existsSync(auth)) throw new Error(`review_pi_auth_missing: ${auth} does not exist; ${renew}`);
     const bytes = readNativeConfigBytes(auth);
-    try {
-      assertAccessWindow(piAuthExpiries(bytes, provider), reviewTimeoutMs + PI_OAUTH_REFRESH_MARGIN_MS,
-        `run pi outside the review and enter /login ${provider} to renew the ${provider} token`);
-    } finally { bytes.fill(0); }
-    if (!existsSync(link)) symlinkSync(auth, link);
-    if (!lstatSync(link).isSymbolicLink() || readlinkSync(link) !== auth) throw new Error('review_pi_auth_changed');
-  } else {
-    if (!existsSync(link)) writeFileSync(link, '{}', { flag: 'wx', mode: 0o600 });
-    if (lstatSync(link).isSymbolicLink() || readFileSync(link, 'utf8') !== '{}') throw new Error('review_pi_auth_changed');
-  }
-  return { directory, loopbackPorts, model: `${provider}/${model}` };
+    try { assertAccessWindow([piAuthExpiry(bytes, provider, renew)], deadline + PI_OAUTH_REFRESH_MARGIN_MS, `${renew} to renew the ${provider} token`); }
+    finally { bytes.fill(0); }
+  };
+  assertCredentialWindow();
+  if (!existsSync(link)) symlinkSync(auth, link);
+  if (!lstatSync(link).isSymbolicLink() || readlinkSync(link) !== auth) throw new Error('review_pi_auth_changed');
+  return { directory, loopbackPorts, model: `${provider}/${model}`, assertCredentialWindow };
 }
 
 function preparePiSettings(directory: string, source: string): Readonly<Record<string, unknown>> {
@@ -111,7 +125,7 @@ function preparePiSettings(directory: string, source: string): Readonly<Record<s
   return projection;
 }
 
-/** Unlink only output-local configuration references and the empty auth placeholder. Never follow links. */
+/** Unlink only output-local configuration references. Never follow links. */
 export function removePiCredentialReferences(output: string): { status: 'removed' | 'absent' | 'cleanup_pending' } {
   try {
     const directory = join(ownedOutput(output), '.pi-agent');
@@ -143,11 +157,12 @@ function ownedOutput(output: string): string {
 /** A credential expiry in epoch milliseconds, or 'none' for a credential that does not expire (an API key). */
 type CredentialExpiry = number | 'none';
 
-/** The one run-window rule: a sandboxed run cannot refresh a credential, so each one must outlive the run. */
-function assertAccessWindow(expiries: readonly CredentialExpiry[], runWindowMs: number, renew?: string): void {
-  if (!Number.isSafeInteger(runWindowMs) || runWindowMs < 1) throw new Error('review_auth_window_invalid');
-  if (expiries.some(expiry => expiry !== 'none' && expiry <= Date.now() + runWindowMs)) {
-    throw new Error(`review_access_expires_within_run${renew ? `; the token must stay valid for ${Math.ceil(runWindowMs / 60_000)} minutes; ${renew}` : ''}`);
+/** The one run-window rule: a sandboxed run cannot refresh a credential, so each one must outlive `until` (epoch ms). */
+function assertAccessWindow(expiries: readonly CredentialExpiry[], until: number, renew?: string): void {
+  const now = Date.now();
+  if (!Number.isSafeInteger(until) || until <= now) throw new Error('review_auth_window_invalid');
+  if (expiries.some(expiry => expiry !== 'none' && expiry <= until)) {
+    throw new Error(`review_access_expires_within_run${renew ? `; the token must stay valid for ${Math.ceil((until - now) / 60_000)} minutes; ${renew}` : ''}`);
   }
 }
 /** Codex auth.json: the access token JWT carries the expiry in seconds. */
@@ -163,19 +178,19 @@ function codexAuthExpiry(bytes: Buffer): CredentialExpiry[] {
 }
 /**
  * pi auth.json: a provider map of `api_key` entries (no expiry) and `oauth`
- * entries (`expires` in epoch milliseconds). The run passes one provider to pi,
- * so only its entry counts; without an entry pi takes no credential from this
- * file. Another shape fails closed.
+ * entries (`expires` in epoch milliseconds). The run passes one canonical
+ * provider to pi, so only its entry counts, and the entry must exist. Another
+ * shape fails closed.
  */
-function piAuthExpiries(bytes: Buffer, provider: string): CredentialExpiry[] {
+function piAuthExpiry(bytes: Buffer, provider: string, renew: string): CredentialExpiry {
   let entries: unknown;
   try { entries = JSON.parse(bytes.toString('utf8')); } catch { throw new Error('review_pi_auth_shape_unknown'); }
   if (!entries || typeof entries !== 'object' || Array.isArray(entries)) throw new Error('review_pi_auth_shape_unknown');
   const map = entries as Record<string, unknown>;
-  if (!Object.hasOwn(map, provider)) return [];
+  if (!Object.hasOwn(map, provider)) throw new Error(`review_pi_auth_missing: auth.json has no ${provider} entry; ${renew}`);
   const entry = map[provider] as { type?: unknown; expires?: unknown } | null;
-  if (entry?.type === 'api_key') return ['none'];
-  if (entry?.type === 'oauth' && typeof entry.expires === 'number' && Number.isFinite(entry.expires)) return [entry.expires];
+  if (entry?.type === 'api_key') return 'none';
+  if (entry?.type === 'oauth' && typeof entry.expires === 'number' && Number.isFinite(entry.expires)) return entry.expires;
   throw new Error(`review_pi_auth_shape_unknown: provider ${JSON.stringify(provider)}`);
 }
 /** One bounded read of a native credential or configuration file (auth.json, models.json, settings.json); never follows a link. */
@@ -202,7 +217,7 @@ export function prepareCodexHome(output: string, sourceHome: string, runWindowMs
       const stat = lstatSync(destination);
       if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o600) throw new Error('review_auth_copy_unsafe');
       const bytes = readNativeConfigBytes(destination);
-      try { assertAccessWindow(codexAuthExpiry(bytes), runWindowMs); } finally { bytes.fill(0); }
+      try { assertAccessWindow(codexAuthExpiry(bytes), Date.now() + runWindowMs); } finally { bytes.fill(0); }
       return { home, auth_copied: true, mode: '0600' };
     }
     const sourceDirectory = join(realpathSync(sourceHome), '.codex');
@@ -210,7 +225,7 @@ export function prepareCodexHome(output: string, sourceHome: string, runWindowMs
     const bytes = readNativeConfigBytes(join(sourceDirectory, 'auth.json'));
     let fd: number | undefined; let created = false;
     try {
-      assertAccessWindow(codexAuthExpiry(bytes), runWindowMs);
+      assertAccessWindow(codexAuthExpiry(bytes), Date.now() + runWindowMs);
       fd = openSync(destination, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600); created = true;
       writeFileSync(fd, bytes); fsyncSync(fd);
     } catch (error) {
@@ -256,12 +271,11 @@ const PI_AUTH_LOCK_DENIED = 'file-write-acl file-write-data file-write-finderinf
 /**
  * pi locks the resolved auth.json (pi #11655): proper-lockfile creates, touches
  * and removes the directory `<native auth.json>.lock` beside the native file.
- * The rule opens only those three operations on that literal directory path. A
- * placeholder auth.json lies in the output, so its lock needs no rule.
+ * The rule opens only those three operations on that literal directory path.
  */
 function piAuthLockPolicy(directory: string): string {
   const auth = join(directory, 'auth.json');
-  if (!lstatSync(auth).isSymbolicLink()) return '';
+  if (!lstatSync(auth).isSymbolicLink()) throw new Error('review_pi_auth_changed');
   const lock = JSON.stringify(`${realpathSync(auth)}.lock`);
   return `(allow file-write* (require-all (literal ${lock}) (vnode-type DIRECTORY)))\n(deny ${PI_AUTH_LOCK_DENIED} (literal ${lock}))\n`;
 }

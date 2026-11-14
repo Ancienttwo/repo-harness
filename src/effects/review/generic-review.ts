@@ -20,7 +20,7 @@ import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint,
 import { gitExecFileSync } from '../git/runner';
 import { isReviewRuntimeId, type ReviewRuntimeId } from '../../core/review/review-runtimes';
 import { piExecutable } from '../pi-executable';
-import { piReviewLaunchBlocker } from '../pi-host-probe';
+import { piReviewLaunchBlocker, resolvePiModel } from '../pi-host-probe';
 
 type Harness = ReviewRuntimeId;
 const REVIEWER_LABELS: Record<ReviewRuntimeId, AcceptanceReceipt['reviewer']> = {
@@ -74,7 +74,7 @@ function completedModel(session: Pick<ReviewSession<unknown>, 'control_directory
   return observation.actual_model;
 }
 /** Review-owned effects. A fixture may replace each one. */
-const reviewEffects = { model: completedModel, piExecutable, piReviewLaunchBlocker };
+const reviewEffects = { model: completedModel, piExecutable, piReviewLaunchBlocker, resolvePiModel };
 /** The reviewer runner and optional replacements of the review-owned effects. */
 export type ReviewEffects<Session, Endpoint> = ReviewerRunner<Session, Endpoint, TaskSessionAuthority> & Partial<typeof reviewEffects>;
 
@@ -197,9 +197,18 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     }
     const outbox = client.outputDirectory(reviewerRepo, primary, session.task, GENERIC_REVIEW_ROLE);
     ensureSessionDirectory(reviewerRepo, outbox);
+    const specPath = join(dir, 'host.json');
+    // A live host keeps the timeout of its spec, so every round runs with that timeout.
+    if (existsSync(specPath)) {
+      const hostTimeout = readSessionArtifact<ReviewHostSpec>(specPath).timeoutMs;
+      if (hostTimeout !== timeout) throw new Error(`review_timeout_changed_for_live_host: the host runs with --timeout-ms ${hostTimeout}; repeat the round with that value, or cancel the review and start a new one`);
+    }
+    // The one absolute round deadline: the credential window, the host turn and this wait all end at it.
+    const deadline = Date.now() + timeout;
     let runtimeHome: string | undefined;
     let piLoopbackPorts: readonly number[] = [];
     let piModel: string | undefined;
+    let assertPiCredentialWindow: (() => void) | undefined;
     if (session.actual_harness === 'codex') {
       authOutput = outbox;
       const marker = join(dir, 'auth-copy.json');
@@ -209,8 +218,10 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     }
     if (session.actual_harness === 'pi') {
       piOutput = outbox;
-      const prepared = preparePiAgentDirectory(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir, timeout);
+      const prepared = preparePiAgentDirectory(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir, deadline,
+        (agentDirectory, reference) => client.resolvePiModel(client.piExecutable()!, agentDirectory, reference));
       runtimeHome = prepared.directory; piLoopbackPorts = prepared.loopbackPorts; piModel = prepared.model;
+      assertPiCredentialWindow = prepared.assertCredentialWindow;
     }
     // Isolation admission precedes any SDK/native Session creation.
     const repository = taskRepository(root);
@@ -221,7 +232,6 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     const profilePath = join(dir, 'isolation.sb');
     if (!existsSync(profilePath)) writeFileSync(profilePath, policy, { flag: 'wx', mode: 0o600 });
     else if (readFileSync(profilePath, 'utf8') !== policy) throw new Error('review_isolation_changed');
-    const specPath = join(dir, 'host.json');
     if (!existsSync(specPath)) {
       const installation = await client.installation(session.actual_harness);
       if (installation.kind !== 'available') throw new Error('review_provider_executable_missing_or_unsupported');
@@ -241,6 +251,8 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
       writeSessionArtifact(specPath, spec);
     }
     const command = client.hostCommand(specPath, false);
+    // pi reads the credential when its session starts; the host launch follows this check directly.
+    assertPiCredentialWindow?.();
     let binding: Session;
     if (session.endpoint === null) {
       const bound = await client.bindTerminal(reviewerRepo, { task: session.task, role: GENERIC_REVIEW_ROLE, harness_kind: session.actual_harness,
@@ -267,10 +279,11 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     lock.assertOwned();
     // Write intent before send; an unknown delivery must never allocate another round.
     writeSessionArtifact(join(dir, `request-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: null });
+    // The host bounds the turn by this deadline; the file exists before the request is published.
     const request = await client.send(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, relative(reviewerRepo, packetPath), 'repeatable',
-      request => client.ready(join(dir, `ack-${request.round}.json`)), undefined, undefined, taskAuthority);
+      request => client.ready(join(dir, `ack-${request.round}.json`)),
+      async request => writeSessionArtifact(join(dir, `deadline-${request.round}.json`), { request_id: request.request_id, deadline }), undefined, taskAuthority);
     writeSessionArtifact(join(dir, `delivery-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: request });
-    const deadline = Date.now() + timeout;
     let collected;
     let bindingCheckedAt = 0;
     let inboxSettled = false;

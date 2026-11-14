@@ -84,7 +84,11 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
   if (sha256Prefixed(content) !== request.context_sha256) throw new Error('OAR_HOST_CONTEXT_MISMATCH');
   const started = readSessionArtifact<{ request_id: string; provider: ProcessProof }>(join(spec.requestDirectory, `started-${request.round}.json`));
   if (started.request_id !== request.request_id || started.provider?.pid !== process.pid || !started.provider.identity) throw new Error('OAR_HOST_REQUEST_IDENTITY_MISMATCH');
+  // The owner's absolute round deadline bounds the turn, so the credential window that admission checked covers it.
+  const round = readSessionArtifact<{ request_id: string; deadline: number }>(join(spec.controlDirectory, `deadline-${request.round}.json`));
+  if (round.request_id !== request.request_id || !Number.isSafeInteger(round.deadline)) throw new Error('OAR_HOST_DEADLINE_INVALID');
   const consumed_at = Date.now();
+  if (round.deadline <= consumed_at) throw new Error('OAR_HOST_DEADLINE_PASSED');
   const inbox = consumePrePromptInbox({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId, host: spec.kind, now: consumed_at });
   writeSessionArtifact(join(spec.controlDirectory, `ack-${request.round}.json`), { request_id: request.request_id });
   // Fleet's RECOMMENDATION-first message is retained. Only the reviewer tool
@@ -94,7 +98,7 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
       writeSessionArtifact(join(spec.requestDirectory, oarObservationFile(request.round)), snapshot, false);
       recordPrePromptInboxAccepted({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId,
         host: spec.kind, consumed_at, observation: snapshot });
-    }, spec.timeoutMs);
+    }, round.deadline - Date.now());
   if (run.kind !== 'rejected' && run.kind !== 'handled' && run.outcome.kind === 'failed' && run.outcome.failure === 'auth') throw new Error('OAR_REVIEW_AUTH_STOP');
   // Rejected and handled inputs have no turn outcome.
   const observation = { request_id: request.request_id, kind: run.kind,

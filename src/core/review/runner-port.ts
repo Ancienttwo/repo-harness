@@ -82,6 +82,7 @@ export interface ReviewHostSpec {
   requestDirectory: string;
   output: string;
   controlDirectory: string;
+  /** The review timeout of every round on this host. Each round ends at its own absolute deadline, from `deadline-<round>.json` in the control directory. */
   timeoutMs: number;
 }
 /** The host writes one observation for each ended turn. */
