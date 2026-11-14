@@ -105,7 +105,7 @@ export function releaseTags(repoRoot: string): string[] {
 class TagTree {
   private readonly files: ReadonlySet<string>;
 
-  constructor(private readonly repoRoot: string, readonly tag: string) {
+  constructor(readonly repoRoot: string, readonly tag: string) {
     this.files = new Set(git(repoRoot, ['ls-tree', '-r', '--name-only', tag]).toString().split('\n').filter(Boolean));
   }
 
@@ -205,16 +205,24 @@ function bashFunctionSource(source: string, name: string): string | null {
 }
 
 const BASH_WRITERS = ['pi_ensure_task_sync', 'pi_default_runtime_block', 'pi_write_reference_config_stub'] as const;
+/** The last release whose bash scaffold writes managed values; #2734 moved every writer to `rh init`. */
+export const LAST_RELEASE_WITH_BASH_WRITERS = 'v0.32.0';
+/** A bash function definition of a writer: `name()`, `name ()` or `function name`. */
+const BASH_WRITER_DEFINITION = `(^|[^A-Za-z0-9_])(function[[:space:]]+(${BASH_WRITERS.join('|')})([^A-Za-z0-9_]|$)|(${BASH_WRITERS.join('|')})[[:space:]]*\\([[:space:]]*\\))`;
 
 /**
- * Since #2734 the bash scaffold writes no managed value: `rh init` is the only writer. A tag
- * qualifies only when its lib names no bash writer at all, so no declaration form can hide one.
- * Any mention sends the tag to the readers, which fail closed on a shape they do not know.
+ * The version decides, not the source text: a tag up to `LAST_RELEASE_WITH_BASH_WRITERS` has the bash
+ * writers, and their readers fail closed when a writer is not where they expect it. A later tag and HEAD
+ * have none; one that still defines a writer anywhere under `scripts/` fails closed, so the pin cannot
+ * hide a live writer (for example a hotfix cut from a branch that has them).
  */
-function bashWritesNoManagedValue(tree: TagTree): boolean {
-  if (!tree.has(BASH_INIT_LIB)) return true;
-  const lib = tree.read(BASH_INIT_LIB);
-  return BASH_WRITERS.every((name) => !new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`).test(lib));
+function hasBashWriters(tree: TagTree): boolean {
+  if (tree.tag !== 'HEAD' && !/^v\d+\.\d+\.\d+$/.test(tree.tag)) throw new Error(`${tree.tag}: not a release tag or HEAD`);
+  if (tree.tag !== 'HEAD' && compareTags(tree.tag, LAST_RELEASE_WITH_BASH_WRITERS) <= 0) return true;
+  const grep = spawnSync('git', ['grep', '-l', '-E', BASH_WRITER_DEFINITION, tree.tag, '--', 'scripts'], { cwd: tree.repoRoot, maxBuffer: MAX_BUFFER });
+  if (grep.status === 1) return false;
+  if (grep.status === 0) throw new Error(`${tree.tag}: defines a bash writer after ${LAST_RELEASE_WITH_BASH_WRITERS} (${grep.stdout.toString().trim().split('\n').join(', ')}); a later release must not write managed values from bash`);
+  throw new Error(`git grep failed for ${tree.tag}: ${grep.stderr.toString().trim() || `exit ${grep.status}`}`);
 }
 
 /**
@@ -222,10 +230,10 @@ function bashWritesNoManagedValue(tree: TagTree): boolean {
  * come from the tag, so a retired key keeps its released values. A line that names `scripts[` in a
  * shape this parser does not know fails closed.
  */
-function packageScriptValues(tree: TagTree, into: Map<string, Set<string>>): void {
+function packageScriptValues(tree: TagTree, bashWriters: boolean, into: Map<string, Set<string>>): void {
   for (const renderer of PACKAGE_SCRIPT_RENDERERS) {
     if (!tree.has(renderer.path)) continue;
-    if (renderer.path === BASH_INIT_LIB && bashWritesNoManagedValue(tree)) continue;
+    if (renderer.path === BASH_INIT_LIB && !bashWriters) continue;
     const region = requireValue(renderer.region(tree.read(renderer.path)), tree.tag, `package script writer in ${renderer.path}`);
     let found = 0;
     if (region.includes('MANAGED_PACKAGE_SCRIPTS')) {
@@ -313,9 +321,9 @@ function runBash(dir: string): Promise<{ readonly status: number | null; readonl
   });
 }
 
-async function runBashRenderers(tree: TagTree, scratch: string): Promise<BashRenders> {
+async function runBashRenderers(tree: TagTree, bashWriters: boolean, scratch: string): Promise<BashRenders> {
   // An empty stub map, not null: null means the tag copied whole reference configs.
-  if (bashWritesNoManagedValue(tree)) return { gitignoreBlocks: [], stubs: new Map() };
+  if (!bashWriters) return { gitignoreBlocks: [], stubs: new Map() };
   const dir = join(scratch, tree.tag);
   mkdirSync(dir, { recursive: true });
   tree.materialize(dir, BASH_PATHS);
@@ -551,7 +559,7 @@ async function inPool<T, R>(items: readonly T[], limit: number, run: (item: T) =
   return results;
 }
 
-/** `refs` defaults to the release tags; another list of refs reads them as if each were a release. */
+/** `refs` defaults to the release tags; HEAD reads the current tree as an unreleased release. */
 export async function buildReleasedManagedValues(repoRoot: string, refs: readonly string[] = releaseTags(repoRoot)): Promise<ReleasedManagedValues> {
   const releases = [...refs];
   const scratch = mkdtempSync(join(tmpdir(), 'released-managed-values-'));
@@ -565,10 +573,11 @@ export async function buildReleasedManagedValues(repoRoot: string, refs: readonl
   const legacy = new Map<string, Set<string>>();
   try {
     const trees = releases.map((tag) => new TagTree(repoRoot, tag));
-    const bashRenders = await inPool(trees, availableParallelism(), (tree) => runBashRenderers(tree, scratch));
+    const bashWriters = trees.map(hasBashWriters);
+    const bashRenders = await inPool(trees.map((tree, index) => [tree, bashWriters[index]!] as const), availableParallelism(), ([tree, writers]) => runBashRenderers(tree, writers, scratch));
     for (const [index, tree] of trees.entries()) {
       const tag = tree.tag;
-      packageScriptValues(tree, packageScripts);
+      packageScriptValues(tree, bashWriters[index]!, packageScripts);
 
       const bash = bashRenders[index]!;
       for (const block of bash.gitignoreBlocks) gitignoreBlocks.add(blockFingerprint(block));

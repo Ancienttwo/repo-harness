@@ -65,8 +65,8 @@ describe("released managed values", () => {
     ]);
   });
 
-  /** One release tag `v0.1.2` whose tree holds the given files. */
-  async function buildRelease(files: Record<string, string>) {
+  /** One commit that holds the given files, read as `ref`: a release tag of that name, or HEAD. */
+  async function buildRelease(files: Record<string, string>, ref = "v0.1.2") {
     const repoRoot = tmpWorkspace("released-managed-values");
     try {
       initGitRepo(repoRoot);
@@ -76,24 +76,37 @@ describe("released managed values", () => {
       }
       commitAll(repoRoot, "release");
       expect(run("git", ["tag", "v0.1.2"], repoRoot).status).toBe(0);
-      return await buildReleasedManagedValues(repoRoot);
+      if (ref !== "v0.1.2" && ref !== "HEAD") expect(run("git", ["tag", ref], repoRoot).status).toBe(0);
+      return await buildReleasedManagedValues(repoRoot, ref === "v0.1.2" ? undefined : [ref]);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
     }
   }
 
-  test("a bash lib that names no bash writer contributes no value; any other declaration form fails closed", async () => {
-    const free = await buildRelease({ "scripts/lib/project-init-lib.sh": "pi_install_factor_factory() {\n  return 0\n}\n" });
-    expect(free.packageScripts).toEqual({});
-    expect(free.projectGitignoreBlock.blocks).toEqual([]);
-    await expect(buildRelease({ "scripts/lib/project-init-lib.sh": [
-      "function pi_factor_factory_gitignore_entries() { printf '%s\\n' .claude/.factor-cache/; }",
-      "function pi_default_runtime_block() { printf '%s\\n' '# BEGIN: x' \"$1\" '# END: x'; }",
-      "function pi_ensure_task_sync() {",
-      'pkg.scripts["check:brain"] = "repo-harness brain check";',
+  test("the bash writers are read up to the last release that has them and must be absent after it", async () => {
+    const writers = [
+      "pi_factor_factory_gitignore_entries() { printf '%s\\n' .claude/.factor-cache/; }",
+      "pi_default_runtime_block() { printf '%s\\n' '# BEGIN: x' \"$1\" '# END: x'; }",
+      "pi_ensure_task_sync() {",
+      '  pkg.scripts["check:brain"] = "repo-harness brain check";',
       "}",
       "",
-    ].join("\n") })).rejects.toThrow("v0.1.2: package script writer in scripts/lib/project-init-lib.sh not found");
+    ].join("\n");
+    const freeLib = { "scripts/lib/project-init-lib.sh": "pi_install_factor_factory() {\n  return 0\n}\n" };
+    // A release with the writers: a renamed or a forwarding library is not where the readers look.
+    await expect(buildRelease({ "scripts/lib/scaffold-managed.sh": writers })).rejects.toThrow("v0.1.2: bash renderer driver failed with exit 90");
+    await expect(buildRelease({
+      "scripts/lib/project-init-lib.sh": '. "$(dirname "${BASH_SOURCE[0]}")/scaffold-managed.sh"\n',
+      "scripts/lib/scaffold-managed.sh": writers,
+    })).rejects.toThrow("v0.1.2: package script writer in scripts/lib/project-init-lib.sh not found");
+    // After the pin and at HEAD the bash renderers do not run.
+    for (const ref of ["v0.32.1", "HEAD"]) {
+      const free = await buildRelease(freeLib, ref);
+      expect(free.packageScripts).toEqual({});
+      expect(free.projectGitignoreBlock.blocks).toEqual([]);
+    }
+    await expect(buildRelease({ ...freeLib, "scripts/lib/scaffold-managed.sh": writers }, "v0.32.1"))
+      .rejects.toThrow("v0.32.1: defines a bash writer after v0.32.0 (v0.32.1:scripts/lib/scaffold-managed.sh)");
   });
 
   test("a renderer with an unknown source shape fails closed", async () => {
