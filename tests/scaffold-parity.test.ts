@@ -161,7 +161,46 @@ describe("create-project-dirs scaffold parity", () => {
         expect(scripts.test).toBe("bun test");
         expect(scripts["check:task-sync"]).toBeUndefined();
         expect(scripts["check:task-workflow"]).toBe(command.startsWith("repo-harness") ? undefined : command);
+        if (!command.startsWith("repo-harness")) {
+          expect(result.stderr).toContain('[repo-harness] kept package.json script check:task-workflow: "bun run custom-workflow.ts"');
+        }
       }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("init replaces a released package script value and keeps a customized one with a notice", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "scaffold-released-script-"));
+    try {
+      writeFileSync(join(cwd, "package.json"), JSON.stringify({
+        scripts: { "check:brain": "repo-harness brain check", "sync:brain": "bun run my-sync.ts" },
+      }));
+      const result = spawnSync("bash", ["-c", 'source "$1"; pi_ensure_task_sync "$2" 0 apply',
+        "bash", join(ROOT, "scripts/lib/project-init-lib.sh"), cwd], { cwd, encoding: "utf-8" });
+      expect(result.status).toBe(0);
+      const scripts = JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8")).scripts;
+      expect(scripts["check:brain"]).toBe("rh brain check");
+      expect(scripts["sync:brain"]).toBe("bun run my-sync.ts");
+      expect(result.stderr).toContain('[repo-harness] kept package.json script sync:brain: "bun run my-sync.ts"');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("init preserves an edited reference config stub with a notice", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "scaffold-edited-stub-"));
+    try {
+      const install = () => spawnSync("bash", ["-c", 'source "$1"; pi_install_reference_configs "$2" "$3" apply',
+        "bash", join(ROOT, "scripts/lib/project-init-lib.sh"), cwd, join(ROOT, "assets/reference-configs")], { cwd, encoding: "utf-8" });
+      expect(install().status).toBe(0);
+      const stubPath = join(cwd, "docs/reference-configs/external-tooling.md");
+      const edited = `${readFileSync(stubPath, "utf-8")}\nLocal note.\n`;
+      writeFileSync(stubPath, edited);
+      const result = install();
+      expect(result.status).toBe(0);
+      expect(readFileSync(stubPath, "utf-8")).toBe(edited);
+      expect(result.stderr).toContain("[repo-harness] preserved user-authored reference config: docs/reference-configs/external-tooling.md");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

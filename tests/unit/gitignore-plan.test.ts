@@ -56,15 +56,59 @@ describe("gitignore managed block .repo-harness rule", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
-  test("shell bootstrap replaces a legacy-marker block in place", () => {
+  test("shell bootstrap replaces a released legacy-marker block in place and keeps an edited one", () => {
     const root = join(import.meta.dir, "../..");
     const cwd = mkdtempSync(join(tmpdir(), "gitignore-legacy-"));
     try {
-      writeFileSync(join(cwd, ".gitignore"), "before/\n# BEGIN: claude-runtime-temp (managed by repo-harness)\nstale-entry/\n# END: claude-runtime-temp\nafter/\n");
-      const result = spawnSync("bash", ["-euc", 'source "$1/scripts/lib/project-init-lib.sh"; pi_ensure_gitignore_block .gitignore', "gitignore-test", root], { cwd, encoding: "utf8" });
+      // The v0.1.5 bash block, a released value in assets/released-managed-values.v1.json.
+      const released = [
+        "# BEGIN: claude-runtime-temp (managed by repo-harness)",
+        ".claude/settings.local.json",
+        ".claude/.atomic_pending",
+        ".claude/.session-id",
+        ".claude/.trace.jsonl",
+        ".claude/.tool-call-count",
+        ".claude/.session-handoff.md",
+        ".claude/.task-state.json",
+        ".claude/.task-handoff.md",
+        ".claude/.context-pressure/",
+        ".claude/.codegraph-state/",
+        ".claude/*.tmp",
+        ".claude/*.bak",
+        ".claude/*.bak.*",
+        ".claude/*.backup-*",
+        ".ai/harness/checks/latest.json",
+        ".ai/harness/checks/post-bash-latest.json",
+        ".ai/harness/events.jsonl",
+        ".ai/harness/failures/latest.jsonl",
+        ".ai/harness/handoff/current.md",
+        ".ai/harness/handoff/resume.md",
+        ".ai/harness/context-budget/latest.json",
+        ".ai/harness/capability-context/",
+        ".ai/harness/planning/*",
+        "!.ai/harness/planning/.gitkeep",
+        ".ai/harness/architecture/events.jsonl",
+        ".ai/harness/active-plan",
+        ".ai/harness/active-worktree",
+        ".ai/harness/worktrees/",
+        ".ai/harness/runs/",
+        ".codex/*",
+        ".claude/.active-plan",
+        "# END: claude-runtime-temp",
+      ].join("\n");
+      const ensure = () => spawnSync("bash", ["-euc", 'source "$1/scripts/lib/project-init-lib.sh"; pi_ensure_gitignore_block .gitignore', "gitignore-test", root], { cwd, encoding: "utf8" });
+      writeFileSync(join(cwd, ".gitignore"), `before/\n${released}\nafter/\n`);
+      const result = ensure();
       expect(result.status).toBe(0);
       const output = readFileSync(join(cwd, ".gitignore"), "utf8");
       expect(output).toBe(`before/\n# BEGIN: repo-harness generated-runtime\n${GITIGNORE_MANAGED_BLOCK_CONTENT}\n# END: repo-harness generated-runtime\nafter/\n`);
+
+      const edited = "before/\n# BEGIN: claude-runtime-temp (managed by repo-harness)\nstale-entry/\n# END: claude-runtime-temp\nafter/\n";
+      writeFileSync(join(cwd, ".gitignore"), edited);
+      const kept = ensure();
+      expect(kept.status).toBe(0);
+      expect(kept.stderr).toContain("[repo-harness] kept edited managed block in .gitignore: # BEGIN: claude-runtime-temp (managed by repo-harness)");
+      expect(readFileSync(join(cwd, ".gitignore"), "utf8")).toBe(edited);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
