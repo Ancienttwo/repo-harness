@@ -239,8 +239,10 @@ You are the head owner. Only you push to this branch.
   that you fix yourself. A fix-loop stop is any stop or coordinator-decision
   gate of this section (three failed CI fix rounds, the second finding in
   one bug family) and of `acceptor.md` §2.2 (the round limits, the
-  blocking-finding count, a new P0 or sensitive P1, a grown scope, a new
-  P1 in two consecutive fix deltas). Every host message to the coordinator
+  blocking-finding count, a fix for a new P0 or sensitive P1 that would accept
+  a residual or relax a control, a grown scope, a new P1 in two consecutive
+  fix deltas). A new P0 or sensitive P1 that the fix closes is a notice to
+  the owner, not a stop. Every host message to the coordinator
   starts with `[rh-notice] <kind> #<issue>`. Select the form by content:
   - **Simple:** a fact or a question that changes no board state and
     needs no decision. Examples: dispatch received, a factual question
