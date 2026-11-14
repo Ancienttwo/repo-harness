@@ -635,7 +635,7 @@ describe('candidate-bound global runtime reconciliation', () => {
           // Inject a daemon status failure without starting or changing any shared daemon.
           const providerPath = join(candidateRoot, 'src', 'effects', 'architecture', 'archctx-provider.ts');
           const provider = readFileSync(providerPath, 'utf-8');
-          const anchor = 'export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxProviderOptions = {}): void {';
+          const anchor = 'export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxProviderOptions = {}, packageRoot?: string): void {';
           if (!provider.includes(anchor)) throw new Error('fixture requires the daemon inspector');
           writeFileSync(providerPath, provider.replace(anchor, `${anchor}
   throw new Error('User authorization required: daemon fixture needs maintenance');`));

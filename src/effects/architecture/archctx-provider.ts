@@ -42,20 +42,22 @@ function capabilityAuthorityReady(repoRoot: string): boolean {
  * consumer root. The base is a real module file in the source tree and in
  * `dist/hook-entry.js`, so both find the dependency that the install placed.
  */
-export function resolvePackageLocalArchctx(consumerRoot?: string, requiredVersion: string = ARCHCTX_REQUIRED_VERSION): ResolvedArchctxPackage {
+export function resolvePackageLocalArchctx(consumerRoot?: string, requiredVersion: string = ARCHCTX_REQUIRED_VERSION, packageRoot?: string): ResolvedArchctxPackage {
   const origin = consumerRoot === undefined ? `module ${fileURLToPath(import.meta.url)}` : `consumer root ${resolve(consumerRoot)}`;
-  const manifestPath = resolvePackageManifest(consumerRoot === undefined ? import.meta.url : join(resolve(consumerRoot), 'package.json'), 'archctx', `package-local archctx@${requiredVersion} is missing from the dependency tree of ${origin}`);
-  const packageRoot = dirname(manifestPath);
+  const manifestPath = packageRoot === undefined
+    ? resolvePackageManifest(consumerRoot === undefined ? import.meta.url : join(resolve(consumerRoot), 'package.json'), 'archctx', `package-local archctx@${requiredVersion} is missing from the dependency tree of ${origin}`)
+    : join(packageRoot, 'package.json');
+  const resolvedRoot = dirname(manifestPath);
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name?: unknown; version?: unknown; bin?: unknown; engines?: unknown };
   if (manifest.name !== 'archctx' || manifest.version !== requiredVersion) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISMATCH', action: 'update-repo-harness', message: `package-local archctx mismatch: expected archctx@${requiredVersion}, got ${String(manifest.name)}@${String(manifest.version)} (resolved from ${origin})` });
   const engines = isRecord(manifest.engines) ? manifest.engines : null;
   if (engines?.node !== ARCHCONTEXT_NODE_RANGE) throw new Error(`package-local archctx@${requiredVersion} Node runtime contract mismatch: expected ${ARCHCONTEXT_NODE_RANGE}, got ${String(engines?.node)}`);
   const bin = isRecord(manifest.bin) && typeof manifest.bin.archctx === 'string' ? manifest.bin.archctx : null;
   if (!bin) throw new Error(`package-local archctx@${requiredVersion} does not declare bin.archctx`);
-  const binaryPath = resolve(packageRoot, bin);
+  const binaryPath = resolve(resolvedRoot, bin);
   if (!existsSync(binaryPath)) throw new Error(`package-local archctx@${requiredVersion} binary is missing: ${binaryPath}`);
   const realBinary = realpathSync(binaryPath);
-  const realPackage = realpathSync(packageRoot);
+  const realPackage = realpathSync(resolvedRoot);
   const inside = (path: string, root: string) => path === root || path.startsWith(`${root}${sep}`);
   if (!inside(realBinary, realPackage)) throw new Error('package-local archctx binary escapes the archctx package root');
   return { binaryPath: realBinary, nodeRange: ARCHCONTEXT_NODE_RANGE, packageRoot: realPackage, version: requiredVersion };
@@ -130,8 +132,8 @@ function runArchctxProcess(
 export class ArchctxClient {
   readonly resolved: ResolvedArchctxPackage;
 
-  constructor(readonly repoRoot: string, requiredVersion: string, readonly options: ArchctxProviderOptions = {}) {
-    this.resolved = resolvePackageLocalArchctx(options.consumerRoot, requiredVersion);
+  constructor(readonly repoRoot: string, requiredVersion: string, readonly options: ArchctxProviderOptions = {}, packageRoot?: string) {
+    this.resolved = resolvePackageLocalArchctx(options.consumerRoot, requiredVersion, packageRoot);
   }
 
   json(args: readonly string[], maximumMs = 120_000, allowErrorEnvelope = false): unknown {
@@ -188,8 +190,9 @@ export function runPackageLocalArchctxJson(
   options: ArchctxProviderOptions = {},
   maximumMs = 120_000,
   allowErrorEnvelope = false,
+  packageRoot?: string,
 ): { resolved: ResolvedArchctxPackage; value: unknown } {
-  const client = new ArchctxClient(repoRoot, requiredVersion, options);
+  const client = new ArchctxClient(repoRoot, requiredVersion, options, packageRoot);
   return { resolved: client.resolved, value: client.json(args, maximumMs, allowErrorEnvelope) };
 }
 
@@ -225,19 +228,21 @@ function readArchitectureCodeFacts(client: ArchctxClient, maximumMs: number): Do
   return { state: facts.state, issues };
 }
 
-export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOptions = {}): { resolved: ResolvedArchctxPackage; capabilities: ArchctxCapabilitiesV1 } {
+export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOptions = {}, packageRoot?: string): { resolved: ResolvedArchctxPackage; capabilities: ArchctxCapabilitiesV1 } {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
-  const { resolved, value } = runPackageLocalArchctxJson(repoRoot, policy.requiredVersion, ['capabilities', '--json'], options, Math.min(policy.timeoutMs, 10_000));
+  const { resolved, value } = runPackageLocalArchctxJson(repoRoot, policy.requiredVersion, ['capabilities', '--json'], options, Math.min(policy.timeoutMs, 10_000), false, packageRoot);
   try { assertArchctxVersion(value, policy.requiredVersion); }
   catch (error) { throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISMATCH', action: 'update-repo-harness', message: error instanceof Error ? error.message : String(error) }); }
   return { resolved, capabilities: value as ArchctxCapabilitiesV1 };
 }
 
 /** Lifecycle readback is separate from the CLI-only capabilities handshake. */
-export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxProviderOptions = {}): void {
+export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxProviderOptions = {}, packageRoot?: string): void {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
-  const { resolved, value } = runPackageLocalArchctxJson(repoRoot, policy.requiredVersion, ['daemon', 'status', '--json'], options, Math.min(policy.timeoutMs, 10_000));
+  const client = new ArchctxClient(repoRoot, policy.requiredVersion, options, packageRoot);
+  const resolved = client.resolved;
+  const value = client.json(['daemon', 'status', '--json'], Math.min(policy.timeoutMs, 10_000));
   if (!isRecord(value) || value.schemaVersion !== 'archcontext.envelope/v1' || value.ok !== true || !isRecord(value.data) || typeof value.data.running !== 'boolean') {
     throw new Error('archctx daemon status returned an invalid envelope');
   }

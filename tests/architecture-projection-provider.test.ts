@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import {
@@ -41,6 +42,7 @@ import { architectureModelReady, readArchitectureNativeContext, readArchitecture
 import { trustedNodeCandidates } from '../src/effects/runtime/node-candidates';
 import { selectCompatibleNode } from '../src/effects/runtime/node-runtime';
 import { buildArchitectureProjectionCommand } from '../src/cli/commands/architecture-projection';
+import { ARCHITECTURE_SETUP_PROVIDER } from '../src/cli/commands/architecture-setup';
 import { architectureProjectionExitCode, humanActionLine } from '../src/cli/commands/architecture-projection-actions';
 import { applyArchitectureProjection } from '../src/effects/architecture/projection-apply';
 import { architectureWriterArgs, followArchitectureWriter, WRITER_RESTART_EXIT_CODE } from '../src/effects/architecture/projection-writer';
@@ -1780,6 +1782,36 @@ describe('package-local ArchContext projection provider', () => {
 
 
 describe('ArchContext maintenance reminders', () => {
+  test('managed daemon check finds a hoisted Bun global install and fails when missing', () => {
+    const f = fixture();
+    const bunRoot = join(f.root, '.bun');
+    const globalRoot = join(bunRoot, 'install', 'global');
+    const harnessRoot = join(globalRoot, 'node_modules', 'repo-harness');
+    mkdirSync(harnessRoot, { recursive: true });
+    writeFileSync(join(harnessRoot, 'package.json'), JSON.stringify({ dependencies: { archctx: ARCHCTX_REQUIRED_VERSION, 'archctx-contracts': '1.0.0' } }));
+    const selectedRoot = join(globalRoot, 'node_modules', 'archctx');
+    const nestedRoot = join(harnessRoot, 'node_modules', 'archctx');
+    const sourceRoot = join(f.consumerRoot, 'node_modules', 'archctx');
+    const manifest = JSON.parse(readFileSync(join(sourceRoot, 'package.json'), 'utf8'));
+    manifest.dependencies = { '@colbymchenry/codegraph': '1.0.0' };
+    writeFileSync(join(sourceRoot, 'package.json'), JSON.stringify(manifest));
+    writeFileSync(f.binary, `console.log(JSON.stringify(process.argv[2] === 'capabilities' ? ${JSON.stringify(capabilities())} : {schemaVersion:'archcontext.envelope/v1',ok:true,data:{running:false}}));`);
+    for (const name of ['archctx-contracts', '@colbymchenry/codegraph']) {
+      const root = join(globalRoot, 'node_modules', name);
+      mkdirSync(root, { recursive: true });
+      writeFileSync(join(root, 'package.json'), JSON.stringify({ name, version: '1.0.0' }));
+    }
+    cpSync(sourceRoot, selectedRoot, { recursive: true });
+    cpSync(selectedRoot, nestedRoot, { recursive: true });
+    expect(createRequire(join(harnessRoot, 'package.json')).resolve('archctx/package.json')).toBe(join(nestedRoot, 'package.json'));
+    rmSync(nestedRoot, { recursive: true });
+    const env = { ...process.env, BUN_INSTALL: bunRoot };
+    expect(() => ARCHITECTURE_SETUP_PROVIDER.verifyDaemon(f.repoRoot, env)).not.toThrow();
+    expect(ARCHITECTURE_SETUP_PROVIDER.readManagedPackages(harnessRoot, f.repoRoot, env).status).toBe('ready');
+    rmSync(selectedRoot, { recursive: true });
+    expect(() => ARCHITECTURE_SETUP_PROVIDER.verifyDaemon(f.repoRoot, env)).toThrow();
+  });
+
   const incompatible = {
     schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.status',
     data: { running: true, versionUnsupported: {
