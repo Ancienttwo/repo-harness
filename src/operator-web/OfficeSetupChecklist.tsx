@@ -1,14 +1,13 @@
 import type { BoardPlanV1 } from '../core/board/board';
 import type { BoardSeatsV1 } from '../core/board/parents';
 import { isTruncatedDevActivityReason, type DevActivitySourceHealth } from '../core/dev-activity/types';
-import { HC_MIN_VERSION } from '../core/terminal/herdr-pin';
 import type { OfficeCard, OfficeRepositoryView } from './board-office';
 import type { BoardParentsReason, BoardParentsView, BoardSeatsView } from './board-view';
 import type { BotAccessView } from './bots';
 import type { DevActivityView } from './dev-activity';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import type { RepositoriesView } from './repositories';
-import { hcRepairCommands } from './RuntimeBadges';
+import { HC_RESTART_COMMAND, hcRepairCommands } from './RuntimeBadges';
 import { ARGV } from './SeatsPage';
 import { SKILL_UPDATE_COMMAND } from './setup';
 import { CopyButton, StatusDot, type DotTone } from './ui';
@@ -62,7 +61,7 @@ function hcRow(view: BotAccessView, t: OperatorTranslate): OfficeSetupRow {
   const { hc } = view.snapshot;
   if (hc.state === 'unavailable') {
     const detail = t(`bots.hc.reason.${hc.reason}`);
-    return hc.reason === 'hc_missing' ? row('missing', detail, [SKILL_UPDATE_COMMAND]) : row('failed', detail, [hcRepairCommands(HC_MIN_VERSION)[1]]);
+    return hc.reason === 'hc_missing' ? row('missing', detail, [SKILL_UPDATE_COMMAND]) : row('failed', detail, [HC_RESTART_COMMAND]);
   }
   const { state, expected, actual } = hc.version.value;
   const words = { version: actual.version, min: expected.min_version };

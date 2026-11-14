@@ -72,6 +72,11 @@ function covering(hold: BoardMergeHoldV1, items: readonly number[]): BoardMergeH
   return hold.holds.find(record => record.issues === null || items.some(item => record.issues!.includes(item))) ?? null;
 }
 
+/** The skip reason of a rule that needs an observed plan: the plan is absent, or it is unavailable. */
+export function planSkipReason(status: BoardV1['plan']['status']): 'plan_absent' | 'plan_unavailable' {
+  return status === 'absent' ? 'plan_absent' : 'plan_unavailable';
+}
+
 /**
  * The plan's refusal of a pull request, shared by `board merge` and `board review`: the plan does not decode, the plan is
  * absent on a parent with more than two children, or the plan holds an issue that the pull request links. A parent with two
