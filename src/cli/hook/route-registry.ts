@@ -100,7 +100,7 @@ export const ROUTES: readonly Route[] = Object.freeze([
     matcher: 'Bash',
     hosts: ['claude', 'pi'] as const,
     handler: 'bash-mutation-guard',
-    // A tripwire is advisory on unparsed input or failure; a known path denial exits 2.
+    // Exit 2 denies a write target outside the repository or in _ops/_ref, and a command that names _ops/_ref outside the strict form.
   }),
   Object.freeze({
     event: 'UserPromptSubmit' as const,
