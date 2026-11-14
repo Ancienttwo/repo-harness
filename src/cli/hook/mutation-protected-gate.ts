@@ -643,17 +643,22 @@ function recursionFinding(args: readonly Word[], dirs: Dirs, resolver: Resolver)
 /** Programs whose operands are write targets; only their operands and redirect targets take the writable-directory exemption. */
 const WRITERS = new Set(['touch', 'mkdir', 'rm', 'rmdir', 'mv', 'tee', 'ln', 'truncate']);
 const MOVES_DIR = new Set(['cd', 'pushd', 'popd']);
-/** The option before a commit message, PR or issue body or title: the values that A3 keeps as data. */
-const TEXT_OPTION: Record<string, RegExp> = { git: /^-[A-Za-z]*m$|^--message$/, gh: /^-[bt]$|^--(?:body|title)$/ };
-const TEXT_GLUED: Record<string, RegExp> = { git: /^--message=/, gh: /^--(?:body|title)=/ };
+/** The option before a commit or tag message, or a PR or issue body or title: the values that A3 keeps as data. Own keys only. */
+const TEXT_OPTION = new Map([['git', /^-[A-Za-z]*m$|^--message$/], ['gh', /^-[bt]$|^--(?:body|title)$/]]);
+const TEXT_GLUED = new Map([['git', /^--message=/], ['gh', /^--(?:body|title)=/]]);
+const GIT_TEXT = new Set(['commit', 'tag']);
 
-/** A rule 3 span is data as an operand of a read-only program other than cd, or as a message, body or title value of git or gh. */
+/** A rule 3 span is data only as a `git commit`/`git tag` message value or a `gh` body or title value (joint decision, round 3). */
 function dataPosition(args: readonly Word[], n: number): boolean {
   const program = args[0]!;
   if (n === 0 || program.quoted || program.expand) return false;
-  if (program.value !== 'cd' && readOnly(args)) return true;
-  const option = TEXT_OPTION[program.value], glued = TEXT_GLUED[program.value];
-  return !!option && !!glued && (option.test(args[n - 1]!.value) || glued.test(args[n]!.value));
+  const option = TEXT_OPTION.get(program.value), glued = TEXT_GLUED.get(program.value);
+  if (!option || !glued) return false;
+  if (program.value === 'git') {
+    const git = gitInvocation(args);
+    if (!git || n <= git.at || !GIT_TEXT.has(args[git.at]!.value)) return false;
+  }
+  return option.test(args[n - 1]!.value) || glued.test(args[n]!.value);
 }
 
 /** Replaces each span mark with DATA in a data position, else with the span body, which then counts for rules 2 and 7. */
@@ -671,6 +676,13 @@ function fillSpans(word: Word, data: boolean): void {
 
 const NAME = new RegExp(`(?:^|[^\\w.-])(?:${PROTECTED_REPO_DIRS.map(name => name.toUpperCase()).join('|')})(?![\\w.-])`);
 const namesProtected = (text: string) => NAME.test(text.toUpperCase());
+/** A word names a protected directory itself, or as the value of a glued short option such as `sort -o_ops/x` or `-uo_ops/x`. */
+const wordNamesProtected = (value: string) => {
+  if (namesProtected(value)) return true;
+  const flags = /^-[A-Za-z]+/.exec(value)?.[0].length ?? 0;
+  for (let at = 2; at <= flags; at++) if (namesProtected(value.slice(at))) return true;
+  return false;
+};
 const WRITE_REDIRECT = /^\d*(?:>|>>|>\||<>|&>|&>>)$/;
 
 export const PROTECTED_NAME_GUARD = 'ProtectedNameGuard';
@@ -683,6 +695,22 @@ export interface GateDecision {
 
 /** The gate decision for one Bash command; the evaluator of mutation-bash.ts runs first and its denials stand. */
 export function protectedNameGate(command: string, repoRoot: string, cwd: string): GateDecision {
+  // The Bash route fails open when a handler throws, so the gate turns its own error into a denial.
+  try {
+    return gate(command, repoRoot, cwd);
+  } catch (error) {
+    return {
+      trigger: true,
+      denial: {
+        guard: PROTECTED_NAME_GUARD,
+        reason: `The protected-name gate failed: ${error instanceof Error ? error.message : String(error)}.`,
+        fix: 'Split the command into simple commands, or report the gate error.',
+      },
+    };
+  }
+}
+
+function gate(command: string, repoRoot: string, cwd: string): GateDecision {
   const resolver = new Resolver(repoRoot);
   const { streams, violations } = lex(command);
   const findings: string[] = [];
@@ -695,7 +723,7 @@ export function protectedNameGate(command: string, repoRoot: string, cwd: string
     const outer: Dirs[] = [];
     const steps = commands(tokens, violations);
     const list = steps.filter((step): step is Command => step.kind === 'command');
-    // Rule 3 spans: positions first, since a filled operand can change what readOnly reads.
+    // Rule 3 spans: positions first, since a filled operand can change what gitInvocation reads.
     for (const cmd of list) {
       const data = cmd.words.map((_, n) => dataPosition(cmd.words, n));
       cmd.words.forEach((word, n) => fillSpans(word, data[n]!));
@@ -717,7 +745,7 @@ export function protectedNameGate(command: string, repoRoot: string, cwd: string
     const pipelineTrigger = new Map<number, boolean>();
     const exempt = (cmd: Command, word: Word, base: Dirs) => !word.glob && !word.expand && writeTarget(cmd, word)
       && resolver.writableLiteral(word.value, base);
-    const wordNames = (cmd: Command, word: Word, base: Dirs) => (namesProtected(word.value) && !exempt(cmd, word, base))
+    const wordNames = (cmd: Command, word: Word, base: Dirs) => (wordNamesProtected(word.value) && !exempt(cmd, word, base))
       || (word.glob && !word.expand && resolver.mayReachProtected(word.pattern, base));
     for (const cmd of steps) {
       // A subshell does not move the shell that started it.

@@ -21,7 +21,13 @@
     "rm -f [[]", "rm -f [x--]", "rm -rf [z-a]", "cd /tmp & echo x > _ops/x", "cd /tmp & cp a _ops/x", "cd /tmp | echo x > _ops/x",
     "echo $'\\'' ; rm -rf _ops/env #'", "echo $'\\'' > _ops/x #'", "rm -rf \"$(cat <<'D'\n_ops/env\nD\n)\"", "echo x > \"$(cat <<'D'\n_ops/x\nD\n)\"",
     "cp a \"$(cat <<'D'\n_ops/x\nD\n)\"", "cd \"$(cat <<'D'\n_ops\nD\n)\" && touch x", "touch \"$(cat <<'D'\n_ops/x\nD\n)\"", "mkdir -p \"$(cat <<'D'\n_ops/x\nD\n)\"",
-    "mv a \"$(cat <<'D'\n_ops/x\nD\n)\"", "echo x | tee \"$(cat <<'D'\n_ops/x\nD\n)\"", "git rm -r \"$(cat <<'D'\n_ops\nD\n)\""
+    "mv a \"$(cat <<'D'\n_ops/x\nD\n)\"", "echo x | tee \"$(cat <<'D'\n_ops/x\nD\n)\"", "git rm -r \"$(cat <<'D'\n_ops\nD\n)\"",
+    "sort -o_ops/env/x /dev/null", "sort \"$(cat <<'D'\n-o_ops/env/x\nD\n)\" /dev/null", "echo \"$(cat <<'D'\n_ops/env\nD\n)\" | xargs rm -rf",
+    "printf %s \"$(cat <<'D'\n_ops/env\nD\n)\" | xargs -0 rm -rf", "find \"$(cat <<'D'\n_ops\nD\n)\" -type f | xargs rm -f",
+    "constructor x; touch _ops/env/x", "git constructor x; touch _ops/env/x", "touch --constructor _ops/env/x", "gh pr create -constructor x; touch _ops/env/x",
+    "__proto__ x; touch _ops/env/x", "git __proto__ x; touch _ops/env/x", "touch --__proto__ _ops/env/x", "gh pr create -__proto__ x; touch _ops/env/x",
+    "toString x; touch _ops/env/x", "git toString x; touch _ops/env/x", "touch --toString _ops/env/x", "gh pr create -toString x; touch _ops/env/x",
+    "hasOwnProperty x; touch _ops/env/x", "git hasOwnProperty x; touch _ops/env/x", "touch --hasOwnProperty _ops/env/x", "gh pr create -hasOwnProperty x; touch _ops/env/x"
   ],
   "accepted": {
     "1": ["rm -rf ${X}ps", "rm -rf $(printf _o)ps", "rm -rf \"$P\"/env", "cd \"$(printf _o)ps\" && rm -rf env"],

@@ -6,6 +6,7 @@ import { join } from 'path';
 import { execFileSync, spawnSync } from 'child_process';
 import { runBashMutationGuard } from '../src/cli/hook/mutation-bash';
 import { runMutationGuard } from '../src/cli/hook/mutation-guard';
+import { protectedNameGate } from '../src/cli/hook/mutation-protected-gate';
 import { getRoute } from '../src/cli/hook/route-registry';
 import { buildHookCommand } from '../src/cli/installer/managed-entries';
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
@@ -186,6 +187,8 @@ describe('Bash write tripwire host route', () => {
       const corpus = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/mutation-replay/corpus.json'), 'utf8')) as { catch: string[]; ordinary: string[] };
       const decide = (command: string) => runBashMutationGuard({ repoRoot: cwd, payload: { tool_input: { command }, cwd }, identity: hookIdentity() }).exitCode;
       expect(corpus.catch.filter(command => decide(command) === 0)).toEqual([]);
+      // A row such as `constructor x; touch _ops/env/x` must reach a rule, not the gate's own error path.
+      expect(corpus.catch.filter(command => protectedNameGate(command, cwd, cwd).denial?.reason.includes('gate failed'))).toEqual([]);
       expect(corpus.ordinary.map(row => row.replaceAll('${MANAGED}', managed)).filter(command => decide(command) !== 0)).toEqual([]);
     } finally {
       if (worktreeRoot === undefined) delete process.env.REPO_HARNESS_WORKTREE_ROOT; else process.env.REPO_HARNESS_WORKTREE_ROOT = worktreeRoot;
