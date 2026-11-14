@@ -182,6 +182,15 @@ const SCRIPT_OBJECT = /(?:^ {2}"scripts": \{|^ {2}Object\.assign\(scripts, \{)\n
 const SCRIPT_OBJECT_ENTRY = /^ {4}"([^"]+)": "([^"]*)",?$/;
 /** `pkg.scripts["key"] = "value";` writes; `if (scripts["key"] === "value") {` guards a delete. */
 const SCRIPT_LINE = /^\s*(?:pkg\.scripts\["([^"]+)"\] = "([^"]*)";|if \((?:pkg\.)?scripts\["([^"]+)"\] === "([^"]*)"\) \{|delete (?:pkg\.)?scripts\["([^"]+)"\];)$/;
+/** The TS writers since #2701 take their values from `MANAGED_PACKAGE_SCRIPTS`. */
+const MANAGED_PACKAGE_SCRIPTS_PATH = 'src/core/adoption/package-scripts.ts';
+const MANAGED_PACKAGE_SCRIPTS_OBJECT = /^export const MANAGED_PACKAGE_SCRIPTS: Readonly<Record<string, string>> = \{\n([\s\S]*?)\n\};$/m;
+const MANAGED_PACKAGE_SCRIPTS_ENTRY = /^ {2}"([^"]+)": "([^"]*)",?$/;
+/**
+ * addPackageOperation sources that index `scripts` only with a loop key: they write the
+ * `MANAGED_PACKAGE_SCRIPTS` values and delete a retired key only when its value is released.
+ */
+const PACKAGE_SCRIPT_LOOP_PINS = new Set<string>(['f02d053f9ecd94f950a25741e34abc633509049c6e5f4a5a913d1d3f1478b9e8']); // #2708
 
 /** A bash function from `name() {` to the next top-level function; its heredocs hold lines that are exactly `}`. */
 function bashFunctionSource(source: string, name: string): string | null {
@@ -202,6 +211,16 @@ function packageScriptValues(tree: TagTree, into: Map<string, Set<string>>): voi
     if (!tree.has(renderer.path)) continue;
     const region = requireValue(renderer.region(tree.read(renderer.path)), tree.tag, `package script writer in ${renderer.path}`);
     let found = 0;
+    if (region.includes('MANAGED_PACKAGE_SCRIPTS')) {
+      const managed = requireValue(tree.has(MANAGED_PACKAGE_SCRIPTS_PATH) ? tree.read(MANAGED_PACKAGE_SCRIPTS_PATH).match(MANAGED_PACKAGE_SCRIPTS_OBJECT)?.[1] : null,
+        tree.tag, `MANAGED_PACKAGE_SCRIPTS in ${MANAGED_PACKAGE_SCRIPTS_PATH}`);
+      for (const line of managed.split('\n')) {
+        const entry = requireValue(line.match(MANAGED_PACKAGE_SCRIPTS_ENTRY), tree.tag, `MANAGED_PACKAGE_SCRIPTS entry shape: ${line.trim()}`);
+        addTo(into, entry[1]!, entry[2]!);
+        found += 1;
+      }
+    }
+    const loop = PACKAGE_SCRIPT_LOOP_PINS.has(sha(region));
     for (const object of region.matchAll(SCRIPT_OBJECT)) {
       for (const line of object[1]!.split('\n')) {
         const entry = requireValue(line.match(SCRIPT_OBJECT_ENTRY), tree.tag, `package script entry shape in ${renderer.path}: ${line.trim()}`);
@@ -211,7 +230,7 @@ function packageScriptValues(tree: TagTree, into: Map<string, Set<string>>): voi
     }
     const deleted = new Set<string>();
     const guarded = new Set<string>();
-    for (const line of region.split('\n').filter((text) => text.includes('scripts['))) {
+    for (const line of loop ? [] : region.split('\n').filter((text) => text.includes('scripts['))) {
       const match = requireValue(line.match(SCRIPT_LINE), tree.tag, `package script line shape in ${renderer.path}: ${line.trim()}`);
       if (match[1] !== undefined) addTo(into, match[1], match[2]!);
       if (match[3] !== undefined) {
@@ -299,6 +318,7 @@ async function runBashRenderers(tree: TagTree, scratch: string): Promise<BashRen
 const STANDARD_PLAN_PATHS = ['src/effects/adoption/standard-plan.ts', 'src/core/adoption/standard-plan.ts'];
 const REFERENCE_STUB_PINS = new Set<string>([
   '29b009a2c44a9af4281aca4262e344212bce313b9fa2988cb01d0070d79e7071', // v0.10.0 to v0.32.0
+  '1c7e39c181ebc3d878e1296fa761989933154771d87d6fc5abff5a73b98a8803', // #2701: rh docs path
 ]);
 
 function referenceStubRenderer(tree: TagTree): ((docId: string) => string) | null {
@@ -512,8 +532,9 @@ async function inPool<T, R>(items: readonly T[], limit: number, run: (item: T) =
   return results;
 }
 
-export async function buildReleasedManagedValues(repoRoot: string): Promise<ReleasedManagedValues> {
-  const releases = releaseTags(repoRoot);
+/** `refs` defaults to the release tags; another list of refs reads them as if each were a release. */
+export async function buildReleasedManagedValues(repoRoot: string, refs: readonly string[] = releaseTags(repoRoot)): Promise<ReleasedManagedValues> {
+  const releases = [...refs];
   const scratch = mkdtempSync(join(tmpdir(), 'released-managed-values-'));
   const packageScripts = new Map<string, Set<string>>();
   const referenceConfigs = new Map<string, Set<string>>();
