@@ -58,11 +58,13 @@ test('a pull request that links a plan-held issue is skipped; the others still s
   expect(label(plan([pr(1), pr(2)], page(), [{ issue: 10, reason: 'owner decision' }]))).toEqual(['1:plan_hold', '2:start']);
 });
 
-test('an unobserved plan skips every pull request', () => {
-  const unplanned = { ...board([pr(1), pr(2)]), plan: { status: 'absent', truncated: false } } as unknown as BoardV1;
+test('an absent plan skips every pull request of a parent with more than two children and none of a smaller parent', () => {
+  const unplanned = (children: number) => ({ ...board([pr(1), pr(2)]), items: Array.from({ length: children }, (_, at) => ({ number: 10 + at })), plan: { status: 'absent', truncated: false } }) as unknown as BoardV1;
   const comments = new Map([[1, page()], [2, page()]]);
-  expect(label(planReview({ board: unplanned, comments, gatekeeper: GATEKEEPER }))).toEqual(['1:plan_unavailable', '2:plan_unavailable']);
-  expect(planReview({ board: unplanned, comments, gatekeeper: GATEKEEPER })[0]).toMatchObject({ reason: 'plan_unavailable', detail: 'the plan is absent' });
+  expect(label(planReview({ board: unplanned(3), comments, gatekeeper: GATEKEEPER }))).toEqual(['1:plan_unavailable', '2:plan_unavailable']);
+  expect(planReview({ board: unplanned(3), comments, gatekeeper: GATEKEEPER })[0])
+    .toMatchObject({ reason: 'plan_unavailable', detail: 'the plan is absent and #1 has 3 children; a parent with more than two children needs a plan' });
+  expect(label(planReview({ board: unplanned(2), comments, gatekeeper: GATEKEEPER }))).toEqual(['1:start', '2:start']);
 });
 
 test('an unavailable plan names why the plan block does not decode', () => {

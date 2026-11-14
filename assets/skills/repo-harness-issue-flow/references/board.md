@@ -175,9 +175,11 @@ after each claim or status change.
   its own issue. The coordinator decides and posts a `scope change` on
   every affected issue.
 - **Integration.** The integrator squashes each eligible PR on its own,
-  in the plan block's merge order. A parent without a plan (two children or
-  fewer) merges in blocked-by order, and the Order column of the parent
-  table is only a view. A PR whose base is behind main merges with no
+  in the plan block's merge order. A parent with two children or fewer
+  and no plan merges in blocked-by order. `rh board merge` and `rh board
+  review` refuse a parent with more than two children and no plan
+  (`plan_unavailable`). The Order column of the parent table is only a
+  view. A PR whose base is behind main merges with no
   sync, so each PR head has one CI run. A PR that conflicts with main
   takes a merge of main by its head owner. That merge is a new head: it
   needs its own CI run and its own review rows by the tier rule

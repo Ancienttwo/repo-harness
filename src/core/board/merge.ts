@@ -72,12 +72,21 @@ function covering(hold: BoardMergeHoldV1, items: readonly number[]): BoardMergeH
   return hold.holds.find(record => record.issues === null || items.some(item => record.issues!.includes(item))) ?? null;
 }
 
-/** The plan's refusal of a pull request, shared by `board merge` and `board review`: the plan is not observed, or it holds an issue that the pull request links. */
+/**
+ * The plan's refusal of a pull request, shared by `board merge` and `board review`: the plan does not decode, the plan is
+ * absent on a parent with more than two children, or the plan holds an issue that the pull request links. A parent with two
+ * children or fewer needs no plan (`orchestrator.md` §4), so its absent plan refuses nothing.
+ */
 export function planRefusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: 'plan_unavailable' | 'plan_hold'; readonly detail: string } | null {
-  // The absent plan has no reason to name. An unavailable plan keeps the decode error of its newest plan comment, so the reader
+  // An unavailable plan keeps the decode error of its newest plan comment, so the reader
   // learns why the block does not decode without a second read of that comment.
   if (board.plan.status === 'unavailable') return { reason: 'plan_unavailable', detail: `the plan is unavailable: ${board.plan.reason}` };
-  if (board.plan.status === 'absent') return { reason: 'plan_unavailable', detail: 'the plan is absent' };
+  if (board.plan.status === 'absent') {
+    // `items` holds every sub-issue of the parent, open and closed.
+    const children = board.items.length;
+    if (children <= 2) return null;
+    return { reason: 'plan_unavailable', detail: `the plan is absent and #${board.parent.number} has ${children} children; a parent with more than two children needs a plan` };
+  }
   const linked = new Set([...pr.closes, ...pr.refs]);
   const hold = board.plan.block.holds.find(entry => entry.issue !== board.parent.number && linked.has(entry.issue));
   return hold === undefined ? null : { reason: 'plan_hold', detail: `the plan holds #${hold.issue}: ${hold.reason}` };
@@ -85,7 +94,10 @@ export function planRefusal(board: BoardV1, pr: BoardPullRequestV1): { readonly 
 
 function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: BoardMergeRefusalV1; readonly detail: string } | null {
   if (board.acceptance_merge !== 'on') return { reason: 'acceptance_merge_off', detail: `publication.acceptance_merge is ${board.acceptance_merge} on ${board.default_branch}` };
-  if (board.plan.status !== 'observed') return planRefusal(board, pr);
+  if (board.plan.status !== 'observed') {
+    const refused = planRefusal(board, pr);
+    if (refused !== null) return refused;
+  }
   if (pr.is_draft) return { reason: 'draft', detail: `#${pr.number} is a draft` };
   const onBoard = new Map(board.items.map(item => [item.number, item] as const));
   const linked = [...new Set([...pr.closes, ...pr.refs])].filter(number => number !== board.parent.number).sort((left, right) => left - right);
@@ -105,17 +117,26 @@ function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: Boa
   }
   const unknown = holds.find(entry => entry.hold.status === 'unknown');
   if (unknown !== undefined) return { reason: 'hold_unknown', detail: `the comments of ${unknown.where} are truncated and hold no hold record` };
-  const plan = board.plan.block;
-  const planHold = planRefusal(board, pr);
-  if (planHold !== null) return planHold;
-  const unordered = items.filter(number => !plan.merge_order.includes(number));
-  if (unordered.length > 0) return { reason: 'not_in_merge_order', detail: `${unordered.map(number => `#${number}`).join(' ')} not in the plan merge_order` };
-  const last = Math.max(...items.map(number => plan.merge_order.indexOf(number)));
-  // Every entry before each linked item must be closed. An earlier issue outside the board has no observed state, so it blocks like an open one.
-  const earlier = plan.merge_order.slice(0, last).filter(number => onBoard.get(number)?.state !== 'closed');
-  const own = earlier.find(number => pr.closes.includes(number));
-  if (own !== undefined) return { reason: 'merge_order', detail: `earlier plan item #${own} is closed only by this PR; split the PR` };
-  if (earlier.length > 0) return { reason: 'merge_order', detail: `earlier in merge_order and not closed: ${earlier.map(number => `#${number}`).join(' ')}` };
+  if (board.plan.status === 'observed') {
+    const plan = board.plan.block;
+    const planHold = planRefusal(board, pr);
+    if (planHold !== null) return planHold;
+    const unordered = items.filter(number => !plan.merge_order.includes(number));
+    if (unordered.length > 0) return { reason: 'not_in_merge_order', detail: `${unordered.map(number => `#${number}`).join(' ')} not in the plan merge_order` };
+    const last = Math.max(...items.map(number => plan.merge_order.indexOf(number)));
+    // Every entry before each linked item must be closed. An earlier issue outside the board has no observed state, so it blocks like an open one.
+    const earlier = plan.merge_order.slice(0, last).filter(number => onBoard.get(number)?.state !== 'closed');
+    const own = earlier.find(number => pr.closes.includes(number));
+    if (own !== undefined) return { reason: 'merge_order', detail: `earlier plan item #${own} is closed only by this PR; split the PR` };
+    if (earlier.length > 0) return { reason: 'merge_order', detail: `earlier in merge_order and not closed: ${earlier.map(number => `#${number}`).join(' ')}` };
+  } else {
+    // A parent without a plan merges in blocked-by order: every blocker of each linked item must be closed.
+    const open = [...new Set(items.flatMap(number => onBoard.get(number)!.blocked_by.filter(blocker => blocker.state === 'open').map(blocker => blocker.number)))]
+      .sort((left, right) => left - right);
+    const own = open.find(number => pr.closes.includes(number));
+    if (own !== undefined) return { reason: 'merge_order', detail: `blocker #${own} is closed only by this PR; split the PR` };
+    if (open.length > 0) return { reason: 'merge_order', detail: `blocked by issues that are not closed: ${open.map(number => `#${number}`).join(' ')}` };
+  }
   // The provisional `tier_low` path needs an evidence check by a seat, so an unattended merge takes a record at every tier.
   // A record acceptance of a High head already needs two PASS rows, one cross-family (`acceptance` in board.ts).
   if (pr.acceptance.status !== 'accepted' || pr.acceptance.via === 'tier_low') {
@@ -128,7 +149,7 @@ function refusal(board: BoardV1, pr: BoardPullRequestV1): { readonly reason: Boa
   return null;
 }
 
-/** One decision for each open pull request, in plan merge order when the plan is observed, else by number. */
+/** One decision for each open pull request, in plan merge order when the plan is observed, else by number; blocked-by order is a refusal. */
 export function boardMergeDecisions(board: BoardV1): BoardMergeDecisionV1[] {
   const order = board.plan.status === 'observed' ? board.plan.block.merge_order : [];
   const rank = (pr: BoardPullRequestV1): number => {
