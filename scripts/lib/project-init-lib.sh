@@ -211,7 +211,7 @@ pi_runtime_block_end_for() {
 
 pi_has_runtime_block() {
   local file_path="$1"
-  grep -Fxq -e "$PI_RUNTIME_BLOCK_BEGIN" -e "$PI_LEGACY_RUNTIME_BLOCK_BEGIN" "$file_path"
+  sed 's/\r$//' "$file_path" | grep -Fxq -e "$PI_RUNTIME_BLOCK_BEGIN" -e "$PI_LEGACY_RUNTIME_BLOCK_BEGIN"
 }
 
 pi_ensure_gitignore_block() {
@@ -248,12 +248,12 @@ pi_ensure_gitignore_block() {
 
   local block_end existing_block found_end released
   while IFS= read -r line || [[ -n "$line" ]]; do
-    if block_end="$(pi_runtime_block_end_for "$line")"; then
-      existing_block="$line"
+    if block_end="$(pi_runtime_block_end_for "${line%$'\r'}")"; then
+      existing_block="${line%$'\r'}"
       found_end=0
       while IFS= read -r inner_line || [[ -n "$inner_line" ]]; do
         existing_block+=$'\n'"${inner_line%$'\r'}"
-        if [[ "$inner_line" == "$block_end" ]]; then
+        if [[ "${inner_line%$'\r'}" == "$block_end" ]]; then
           found_end=1
           break
         fi
@@ -267,7 +267,7 @@ pi_ensure_gitignore_block() {
 
       if [[ "$existing_block" != "$block" ]]; then
         released=0
-        printf '%s' "$existing_block" | pi_released_managed_fingerprint_in projectGitignoreBlock blocks - || released=$?
+        printf '%s' "$existing_block" | pi_released_managed_value project-ignore-block - || released=$?
         if [[ "$released" -ne 0 ]]; then
           rm -f "$tmp_file"
           [[ "$released" -eq 1 ]] || return 1
@@ -290,37 +290,103 @@ pi_ensure_gitignore_block() {
 }
 
 pi_released_managed_values_file() {
-  printf '%s' "${BASH_SOURCE[0]%/*}/../../assets/released-managed-values.v1.json"
+  local lib_dir
+  lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || return 1
+  printf '%s' "$lib_dir/../../assets/released-managed-values.v1.json"
 }
 
-# Exit 0 when the sha256 fingerprint of <file|-> is in <surface>.<key> of the
-# released managed values, 1 when it is not, 2 when the values cannot be read.
-pi_released_managed_fingerprint_in() {
-  local surface="$1"
-  local key="$2"
-  local input="$3"
+# Reads and checks assets/released-managed-values.v1.json with the same rules as
+# src/effects/upgrade/released-values.ts; a missing or malformed field throws.
+PI_RELEASED_VALUES_JS='
+const releasedValues = (file) => {
+  const fail = (path, expected) => { throw new Error(`${file}: ${path} must be ${expected}`); };
+  const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+  const object = (value, path) => isObject(value) ? value : fail(path, "an object");
+  const string = (value, path) => typeof value === "string" ? value : fail(path, "a string");
+  const FINGERPRINT = /^sha256:[0-9a-f]{64}$/;
+  const strings = (value, path, pattern) => Array.isArray(value) && value.every((item) => typeof item === "string" && (!pattern || pattern.test(item)))
+    ? value : fail(path, pattern ? "an array of sha256 fingerprints" : "an array of strings");
+  const lists = (value, path, pattern) => {
+    for (const [key, item] of Object.entries(object(value, path))) strings(item, `${path}.${key}`, pattern);
+    return value;
+  };
+  let root;
+  try { root = JSON.parse(require("fs").readFileSync(file, "utf8")); } catch (error) { throw new Error(`${file}: ${error.message}`); }
+  object(root, "$");
+  if (root.schema !== "repo-harness.released-managed-values.v1") fail("$.schema", JSON.stringify("repo-harness.released-managed-values.v1"));
+  strings(root.releases, "$.releases");
+  lists(root.packageScripts, "$.packageScripts");
+  lists(root.referenceConfigs, "$.referenceConfigs", FINGERPRINT);
+  const project = object(root.projectGitignoreBlock, "$.projectGitignoreBlock");
+  strings(project.blocks, "$.projectGitignoreBlock.blocks", FINGERPRINT);
+  if (project.retiredSection !== null) {
+    const retired = object(project.retiredSection, "$.projectGitignoreBlock.retiredSection");
+    string(retired.header, "$.projectGitignoreBlock.retiredSection.header");
+    strings(retired.rules, "$.projectGitignoreBlock.retiredSection.rules");
+    strings(retired.bases, "$.projectGitignoreBlock.retiredSection.bases", FINGERPRINT);
+  }
+  strings(object(root.userExcludesBlock, "$.userExcludesBlock").blocks, "$.userExcludesBlock.blocks", FINGERPRINT);
+  const rules = object(root.globalRulesBlock, "$.globalRulesBlock");
+  strings(rules.blocks, "$.globalRulesBlock.blocks", FINGERPRINT);
+  string(rules.customInstructionSentinel, "$.globalRulesBlock.customInstructionSentinel");
+  strings(rules.customInstructionBlocks, "$.globalRulesBlock.customInstructionBlocks", FINGERPRINT);
+  lists(rules.legacySections, "$.globalRulesBlock.legacySections", FINGERPRINT);
+  return root;
+};
+const releasedList = (record, key) => Object.hasOwn(record, key) ? record[key] : [];
+const sha256 = (text) => "sha256:" + require("crypto").createHash("sha256").update(text).digest("hex");
+'
+
+# Exit 0 when <input> (a file, or - for stdin) is a released value, 1 when it is
+# not, 2 when the released values cannot be read.
+#   reference-config <doc id> <file> <current stub file>: the file with CRLF read
+#     as LF equals the current stub or a released stub
+#   project-ignore-block - : a released project .gitignore block, BEGIN to END
+#     joined by \n; a released retired-rule section sits directly before END
+pi_released_managed_value() {
+  local check="$1"
   local js_runtime
 
   js_runtime="$(pi_resolve_js_runtime)" || {
     echo "[repo-harness] no JavaScript runtime found; cannot check released managed values" >&2
     return 2
   }
-  "$js_runtime" -e '
+  "$js_runtime" -e "$PI_RELEASED_VALUES_JS"'
 const fs = require("fs");
-const crypto = require("crypto");
-const [file, surface, key, input] = process.argv.slice(1);
+const [file, check, ...args] = process.argv.slice(1);
 try {
-  const values = JSON.parse(fs.readFileSync(file, "utf8"));
-  const group = values.schema === "repo-harness.released-managed-values.v1" ? values[surface] : undefined;
-  if (!group || typeof group !== "object") throw new Error(`no ${surface} section`);
-  const text = fs.readFileSync(input === "-" ? 0 : input);
-  const fingerprint = "sha256:" + crypto.createHash("sha256").update(text).digest("hex");
-  process.exit((group[key] ?? []).includes(fingerprint) ? 0 : 1);
+  const values = releasedValues(file);
+  let released;
+  if (check === "reference-config") {
+    const [docId, input, currentStub] = args;
+    const text = fs.readFileSync(input, "utf8").replaceAll("\r\n", "\n");
+    released = text === fs.readFileSync(currentStub, "utf8") || releasedList(values.referenceConfigs, docId).includes(sha256(text));
+  } else if (check === "project-ignore-block") {
+    const block = fs.readFileSync(0, "utf8");
+    const group = values.projectGitignoreBlock;
+    released = group.blocks.includes(sha256(block));
+    const retired = group.retiredSection;
+    if (!released && retired) {
+      const lines = block.split("\n");
+      const end = lines.pop();
+      const content = lines.join("\n");
+      const at = content.lastIndexOf(`\n\n${retired.header}\n`);
+      let next = 0;
+      released = at !== -1 && content.slice(at + retired.header.length + 3).split("\n").every((rule) => {
+        const index = retired.rules.indexOf(rule, next);
+        next = index + 1;
+        return index !== -1;
+      }) && retired.bases.includes(sha256(`${content.slice(0, at)}\n${end}`));
+    }
+  } else {
+    throw new Error(`unknown check ${check}`);
+  }
+  process.exit(released ? 0 : 1);
 } catch (error) {
-  console.error(`[repo-harness] cannot read released managed values ${file}: ${error.message}`);
+  console.error(`[repo-harness] cannot read released managed values: ${error.message}`);
   process.exit(2);
 }
-' "$(pi_released_managed_values_file)" "$surface" "$key" "$input"
+' "$(pi_released_managed_values_file)" "$check" "${@:2}"
 }
 
 pi_resolve_json_runtime() {
@@ -823,7 +889,7 @@ pi_reference_config_is_managed() {
   current_stub="$(mktemp)"
   pi_write_reference_config_stub "$current_stub" "$name" "$ref_assets_dir"
   if ! cmp -s "$target_file" "$current_stub"; then
-    pi_released_managed_fingerprint_in referenceConfigs "$(pi_reference_config_doc_id "$name")" "$target_file" || status=$?
+    pi_released_managed_value reference-config "$(pi_reference_config_doc_id "$name")" "$target_file" "$current_stub" || status=$?
   fi
   rm -f "$current_stub"
   return "$status"
@@ -1420,14 +1486,11 @@ EOF_PACKAGE
 
   # The default package scripts are the current values; a different existing
   # value changes only when it is a released repo-harness value.
-  "$js_runtime" -e '
+  "$js_runtime" -e "$PI_RELEASED_VALUES_JS"'
 const fs = require("fs");
 const [file, defaultPackage, valuesFile] = process.argv.slice(1);
-const values = JSON.parse(fs.readFileSync(valuesFile, "utf8"));
-if (values.schema !== "repo-harness.released-managed-values.v1" || !values.packageScripts) {
-  throw new Error(`invalid released managed values: ${valuesFile}`);
-}
-const released = (key, value) => (values.packageScripts[key] ?? []).includes(value);
+const values = releasedValues(valuesFile);
+const released = (key, value) => typeof value === "string" && releasedList(values.packageScripts, key).includes(value);
 const keep = (key, value) => console.error(`[repo-harness] kept package.json script ${key}: ${JSON.stringify(value)} (not a released repo-harness value)`);
 const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
 pkg.private ??= true;
