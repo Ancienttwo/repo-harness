@@ -3,12 +3,7 @@ set -euo pipefail
 
 repo="${1:-.}"
 repo="$(cd "$repo" && pwd)"
-config_file="${REPO_HARNESS_CONTEXT_BLOCKS_FILE:-$repo/.ai/context/agent-context-blocks.txt}"
 registry_file="$repo/.ai/context/capabilities.json"
-
-emit_lines() {
-  sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | sed '/^$/d'
-}
 
 emit_existing_dirs() {
   while IFS= read -r rel_dir; do
@@ -118,17 +113,6 @@ for (const capability of registry.capabilities || []) {
 JS_EOF
     exit 0
   fi
-fi
-
-context_blocks="${REPO_HARNESS_CONTEXT_BLOCKS:-}"
-if [[ -n "$context_blocks" ]]; then
-  printf '%s\n' "$context_blocks" | tr ',:' '\n' | emit_lines | emit_existing_dirs
-  exit 0
-fi
-
-if [[ -f "$config_file" ]]; then
-  emit_lines < "$config_file" | emit_existing_dirs
-  exit 0
 fi
 
 find "$repo" \

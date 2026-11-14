@@ -3,8 +3,6 @@
   "profile": "stable-root-progressive-subdir",
   "functional_block_selector": {
     "script": "rh run select-agent-context-blocks",
-    "config_file": ".ai/context/agent-context-blocks.txt",
-    "env": "REPO_HARNESS_CONTEXT_BLOCKS",
     "rule": "compatibility selector; capability registry is the source of truth"
   },
   "lsp_profiles": {

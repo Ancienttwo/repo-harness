@@ -92,16 +92,6 @@ fi
 # Adoption writes the same contract template, so every new ledger uses one record format.
 pi_workflow_contract_query_lines "$ASSETS_WORKFLOW_CONTRACT" "adoptionTemplates.files.lessonsLog.lines" > tasks/lessons.md
 
-mkdir -p docs/researches
-cat > docs/researches/README.md << 'RESEARCH_README_EOF'
-# Research Reports
-
-Durable research reports live in this directory as topic-scoped Markdown files.
-
-Use `YYYYMMDD-topic.md` names when chronology matters, or `<topic>.md` for
-stable subject reports. Keep repeated correction-derived rules in `tasks/lessons.md`.
-RESEARCH_README_EOF
-
 write_templates
 install_workflow_helpers
 install_hook_assets
@@ -111,15 +101,7 @@ fi
 
 pi_print_codex_hook_trust_notice
 
-cat > docs/spec.md << 'DOCS_SPEC_EOF'
-# Product Spec
-
-> **Status**: Draft
-> **Owner**: Planner
-DOCS_SPEC_EOF
 # Canonical harness state surface:
-# - .ai/context/context-map.json
-# - .ai/harness/brain-manifest.json
 # - .ai/harness/events.jsonl
 # - .ai/harness/failures/latest.jsonl
 # - .ai/harness/security/.gitkeep
@@ -168,28 +150,4 @@ touch deploy/submissions/.gitkeep
 touch deploy/runbooks/.gitkeep
 touch deploy/release-checklists/.gitkeep
 touch deploy/sql/.gitkeep
-cat > deploy/README.md << 'DEPLOY_README_EOF'
-# Deployment Operations
-
-`deploy/` is a commit-ready surface for deployment and operations runbooks, submission materials, release checklists, helper scripts, and env examples.
-
-## Track
-
-- `deploy/scripts/` for operational scripts.
-- `deploy/submissions/` for submission or review materials.
-- `deploy/runbooks/` and `deploy/release-checklists/` for operational documentation.
-- `deploy/sql/` as the default SQL root for ordered files named like `0001_create_tables.sql`.
-- `deploy/*.md` for runbooks and operating notes.
-- `deploy/env/.env.example` for documented variable shapes only.
-
-If `.ai/harness/policy.json` defines `operations.deploy_sql`, its roots, naming modes, and `invariant_file` are the sole authority for an established alternate SQL layout. When it is absent, SQL files remain direct children of `deploy/sql/` with `ordered4` names.
-
-## Do Not Track
-
-- `_ops/`
-- private keys, real env files, provider state, production tokens, credential dumps, artifacts, logs, and local-only overrides
-
-Keep external upstream checkouts and source references in `_ref/`; `_ref/` is ignored and must stay out of commits.
-DEPLOY_README_EOF
-
 echo "Project directory structure created successfully. Next: rh init --repo ."

@@ -9,8 +9,9 @@ Run the shared preflight in `../SKILL.md` first.
 2. Use the plan catalog A-K from `assets/plan-map.json`.
 3. If the app needs agent runtime structure, select `ai_native_profile` as an overlay; otherwise keep the default `none`.
 4. Run `scripts/init-project.sh` or the matching stack template path. The scaffold writes no init-managed part.
-5. Run `rh init --repo <target-repo>`. It attaches the tasks-first workflow and writes the opt-in marker, the package scripts, the `.gitignore` managed block and the reference-config stubs. It is the only writer of these parts.
-6. Verify scaffold output and workflow checks.
+5. Run `rh init --repo <target-repo>`. It attaches the tasks-first workflow and writes the opt-in marker, the package scripts, the `.gitignore` managed block, the reference-config stubs and the seed files (`docs/spec.md`, `deploy/README.md`, `docs/architecture/index.md`, `docs/researches/README.md`, the context map, the brain manifest and the empty capability registry). It is the only writer of these parts.
+6. The scaffold does not discover context blocks. For each existing directory that has its own `CLAUDE.md` or `AGENTS.md`, run `rh run capability-config add --repo <target-repo> --prefix <dir>` to register it.
+7. Verify scaffold output and workflow checks.
 
 ## AI-native Overlay
 

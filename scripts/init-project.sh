@@ -207,16 +207,6 @@ EOF
 
     pi_install_templates "$PWD" "$ASSETS_TEMPLATES_DIR" "apply"
 
-    mkdir -p docs/researches
-    cat > docs/researches/README.md << EOF
-# Research Reports
-
-Durable research reports live in this directory as topic-scoped Markdown files.
-
-Use \`YYYYMMDD-topic.md\` names when chronology matters, or \`<topic>.md\` for
-stable subject reports. Keep repeated correction-derived rules in \`tasks/lessons.md\`.
-EOF
-
     local helper_names
     helper_names="$(pi_workflow_contract_query_lines "$ASSETS_WORKFLOW_CONTRACT" "helpers.scripts" | xargs)"
     pi_install_helpers "$PWD" "$ASSETS_TEMPLATES_DIR/helpers" "apply" "$helper_names"
@@ -224,8 +214,6 @@ EOF
         pi_install_factor_factory "$PWD" "$ASSETS_FACTOR_FACTORY_DIR" "$SCRIPT_DIR" "apply"
     fi
     # Canonical harness state surface:
-    # - .ai/context/context-map.json
-    # - .ai/harness/brain-manifest.json
     # - .ai/harness/events.jsonl
     # - .ai/harness/failures/latest.jsonl
     # - .ai/harness/security/.gitkeep
@@ -246,32 +234,6 @@ EOF
     touch deploy/runbooks/.gitkeep
     touch deploy/release-checklists/.gitkeep
     touch deploy/sql/.gitkeep
-    if [[ ! -f deploy/README.md ]]; then
-        cat > deploy/README.md << 'EOF'
-# Deployment Operations
-
-`deploy/` is a commit-ready surface for deployment and operations runbooks, submission materials, release checklists, helper scripts, and env examples.
-
-## Track
-
-- `deploy/scripts/` for operational scripts.
-- `deploy/submissions/` for submission or review materials.
-- `deploy/runbooks/` and `deploy/release-checklists/` for operational documentation.
-- `deploy/sql/` as the default SQL root for ordered files named like `0001_create_tables.sql`.
-- `deploy/*.md` for runbooks and operating notes.
-- `deploy/env/.env.example` for documented variable shapes only.
-
-If `.ai/harness/policy.json` defines `operations.deploy_sql`, its roots, naming modes, and `invariant_file` are the sole authority for an established alternate SQL layout. When it is absent, SQL files remain direct children of `deploy/sql/` with `ordered4` names.
-
-## Do Not Track
-
-- `_ops/`
-- private keys, real env files, provider state, production tokens, credential dumps, artifacts, logs, and local-only overrides
-
-Keep external upstream checkouts and source references in `_ref/`; `_ref/` is ignored and must stay out of commits.
-EOF
-    fi
-
     # Create .env.example
     cat > .env.example << 'EOF'
 # Supabase
@@ -345,7 +307,7 @@ main() {
     echo "Next steps:"
     echo "  1. cd $PROJECT_NAME"
     echo "  2. Copy .env.example to .env and configure"
-    echo "  3. Run: rh init --repo . (writes the policy, CLAUDE.md, AGENTS.md, the workflow marker, package scripts, the .gitignore block and the reference-config stubs)"
+    echo "  3. Run: rh init --repo . (writes the policy, CLAUDE.md, AGENTS.md, the workflow marker, package scripts, the .gitignore block, the reference-config stubs and the seed files; register each existing context block with rh run capability-config add)"
     echo "  4. Run: $PKG_MANAGER run dev"
     echo "  5. Open a GitHub issue for the first feature, then run: rh run contract-worktree start --issue <number>"
     echo ""
