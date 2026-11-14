@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -249,7 +249,8 @@ describe("test HOME and TMPDIR isolation", () => {
       const result = spawnSync("bash", ["--noprofile", "--norc", "-c",
         'source "$1"; failed_list=""; _ci_run_bun_test_pool 2 "$2" "$3"; printf "FAILED:%s" "$failed_list"',
         "pool", join(ROOT, "scripts/lib/ci-run-tests.sh"), join(f.temp, "owner.test.ts"), join(f.temp, "bystander.test.ts")], {
-        cwd: ROOT, env: f.env, encoding: "utf8",
+        // This pool is the top-level run: an inherited report sink would make it record without judging.
+        cwd: ROOT, env: { ...f.env, CI_WORKTREE_SUSPECT_DIR: "", CI_WORKTREE_SUSPECT_OWNER: "" }, encoding: "utf8",
       });
       return result.stdout.split("FAILED:")[1] ?? result.stdout + result.stderr;
     } finally { rmSync(tree, { recursive: true, force: true }); f.close(); }
@@ -414,9 +415,7 @@ describe("test HOME and TMPDIR isolation", () => {
     try {
       const library = join(f.temp, "node_modules", "repo-harness", "scripts", "lib");
       mkdirSync(library, { recursive: true });
-      for (const file of ["ci-run-tests.sh", "test-home-isolation.mjs"]) {
-        writeFileSync(join(library, file), readFileSync(join(ROOT, "scripts/lib", file)));
-      }
+      cpSync(join(ROOT, "scripts/lib"), library, { recursive: true });
       const marker = join(f.temp, "installed.json");
       const probe = join(f.temp, "installed.test.ts");
       writeFileSync(probe, 'import {test} from "bun:test";test("installed",async()=>{await Bun.write('
