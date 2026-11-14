@@ -2,8 +2,9 @@
 
 ## Scope and authority
 
-- Base: `71c28c440` on `main`. Previous release: `v0.32.0`. Range: `v0.32.0..71c28c440` (36 first-parent commits). A later PR goes to the next release unless a joint decision adds it.
-- Release date: UTC 2026-11-14. Parent #2742; release issue #2771. The owner authorized 0.33.0 on archctx 0.14.1. Archctx 0.15.0 is for 0.34.0.
+- Base: `c6939b613` on `main`. Previous release: `v0.32.0`. Range: `v0.32.0..c6939b613` (40 first-parent commits). A later PR goes to the next release unless a joint decision adds it.
+- Release date: UTC 2026-11-14. Parent #2742; release issue #2771. The owner authorized 0.33.0 with archctx 0.15.0 (word “放”, 2026-11-14, https://github.com/aimpact-inc/repo-harness/issues/2771#issuecomment-6881307091).
+- The 0.33.0 CHANGELOG section names archctx 0.14.1, because it was fixed before #2772 merged. The correction is the 2770 fragment in the next section. The release notes get the same correction line at step 6 if the owner approves it.
 - The core package, Operator web package, skill and template stamps, and README move to 0.33.0 in PR 2. PR 1 prepares these release notes.
 - Publish status: pending. npm publication, the tag and the GitHub Release need the owner's word for this release.
 
@@ -49,6 +50,10 @@ The release changes the command to `rh`, raises the Pi floor to 1.5.2, and updat
 | [#2760](https://github.com/aimpact-inc/repo-harness/pull/2760) | `7cf008b04` | fix(publication): a required check that did not succeed in every attempt never reads ready with no evidence (#2759) |
 | [#2766](https://github.com/aimpact-inc/repo-harness/pull/2766) | `182d58d8b` | docs(rules): clarify fail-closed finding count rule (#2765) |
 | [#2739](https://github.com/aimpact-inc/repo-harness/pull/2739) | `71c28c440` | fix(review): pi 1.5.2 reviews record the actual model; the sandbox opens only pi's auth.json lock directory (#2732) |
+| [#2779](https://github.com/aimpact-inc/repo-harness/pull/2779) | `0f2a62745` | fix(scripts): the harness benchmark links the rh launcher (#2777) |
+| [#2775](https://github.com/aimpact-inc/repo-harness/pull/2775) | `819834dd0` | docs(release): prepare 0.33.0 changelog and publication record (#2771) |
+| [#2780](https://github.com/aimpact-inc/repo-harness/pull/2780) | `1e53b3853` | test(review): the deadline fixtures wait for real signals, not wall-clock margins (#2773) |
+| [#2772](https://github.com/aimpact-inc/repo-harness/pull/2772) | `c6939b613` | chore(deps): archctx and archctx-contracts 0.15.0 (#2770) |
 
 ## Order of the owner steps
 
