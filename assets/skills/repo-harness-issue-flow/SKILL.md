@@ -159,8 +159,8 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   finding, or a new P1 finding about security, secrets, data or
   authentication, goes to the owner as a notice. The loop continues
   without an owner word when the fix closes the finding. It stops at the
-  owner only when a fix would accept a residual, relax a control or grow
-  the scope. Each merge outside rule 2, each release, each credential or
+  owner only when the fix for that finding would accept a residual, relax a
+  control or grow the scope. Each merge outside rule 2, each release, each credential or
   permission change and each deletion that git cannot restore stay with
   the owner. Any other new P1 finding does not stop the loop. Round 5 is
   the hard stop. Details:
@@ -187,7 +187,9 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   joint decision. An owner message applies to the item it names and stops
   or reorders no other work. The orchestrator and the advisor make a
   decision that otherwise goes to the owner when both agree, unless it
-  touches security. Before the action, the orchestrator posts it on the
+  touches security. A new issue that only closes a security gap (no accepted
+  residual, no relaxed control, no grown scope) joins a batch by joint
+  decision, with a notice to the owner. Before the action, the orchestrator posts it on the
   owning issue or PR as `Joint decision (orchestrator + advisor)` with the
   reason. A joint decision never replaces the High-tier cross-model review,
   and it does not reverse an explicit owner decision. When the two seats do
