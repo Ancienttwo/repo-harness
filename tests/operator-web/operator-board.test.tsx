@@ -2218,13 +2218,14 @@ describe('office setup checklist (#1788)', () => {
 
   test('row 1 reads the bot-access hc section, and each state has the repair command of its source', () => {
     const hc = (section: BotAccessSnapshotV1['hc']) => reads({ botAccess: bots({ ...READY, hc: section }) });
+    const degraded = decodeBotAccessSnapshot(degradedBotAccess(NOW));
     const cases: readonly (readonly [OfficeSetupReads, string, readonly string[]])[] = [
       [reads({ botAccess: { kind: 'loading' } }), 'unknown', ['hc server status']],
       [reads({ botAccess: { kind: 'unavailable', reason: 'bot_access_pending' } }), 'unknown', ['hc server status']],
       [reads({ botAccess: { kind: 'unavailable', reason: 'unreachable' } }), 'unknown', ['hc server status']],
       [hc({ state: 'unavailable', reason: 'hc_missing' }), 'missing', ['rh update']],
       [hc({ state: 'unavailable', reason: 'hc_unreachable' }), 'failed', [hcRepairCommands(HC_MIN_VERSION)[1]]],
-      [reads({ botAccess: bots(decodeBotAccessSnapshot(degradedBotAccess(NOW))) }), 'failed', [...hcRepairCommands(HC_MIN_VERSION)]],
+      [reads({ botAccess: bots(degraded) }), 'failed', [...hcRepairCommands((degraded.hc as Extract<BotAccessSnapshotV1['hc'], { version: unknown }>).version.value.expected.min_version)]],
       [hc({ ...READY.hc, terminals: { state: 'unavailable', reason: 'hc_terminals_failed' } } as BotAccessSnapshotV1['hc']), 'failed', ['hc server status']],
       [reads(), 'ok', ['hc server status']],
     ];
