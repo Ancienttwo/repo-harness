@@ -202,16 +202,19 @@ describe('Bash write tripwire host route', () => {
       const signed = formats.flatMap(([sub, option]) => ['', 'format:', 'tformat:'].flatMap(kind => ['', '+', '-', ' '].flatMap(modifier =>
         ['G?', 'GS', 'GK', 'GF', 'GP', 'GT', 'GG'].map(placeholder => `git ${sub} '${option}${kind}%${modifier}${placeholder}' -- _ops/env`))));
       expect(signed.filter(command => !protectedNameGate(command, cwd, cwd).denial)).toEqual([]);
-      // R1-F3: an abbreviation is told only full names that the subcommand admits; a prefix of a forbidden option is told to remove it.
-      const unadmitted = [...GIT_READ].flatMap(([sub, read]) => [...read.options, '--textconv', '--ext-diff', '--output', '--filters', '--show-signature']
+      // R1-F3, R2-F1: each replacement that a denial emits for a prefix, bare or with a value, is admitted (a <value> placeholder
+      // filled in); a prefix with no complete replacement, or of a forbidden option, is told to remove it.
+      const gitRuns = ['--textconv', '--ext-diff', '--output', '--filters', '--show-signature'];
+      const unadmitted = [...GIT_READ].flatMap(([sub, read]) => [...read.options, ...gitRuns]
         .filter(option => option.startsWith('--')).flatMap(option => {
           const name = option.replace(/=$/, '');
-          return Array.from({ length: name.length - 3 }, (_, n) => name.slice(0, n + 3)).flatMap(prefix => {
-            const fix = protectedNameGate(`git ${sub} ${prefix} -- _ops/env`, cwd, cwd).denial?.fix ?? '';
-            const suggested = /^Write the full option name \(([^)]*)\)/.exec(fix)?.[1]?.split(' or ') ?? [];
-            if (!suggested.length && !fix.startsWith('Remove ') && !read.options.has(prefix)) return [`${sub} ${prefix}: ${fix}`];
-            return suggested.filter(full => [full, `${full}=1`].every(spelling => protectedNameGate(`git ${sub} ${spelling} -- _ops/env`, cwd, cwd).denial))
-              .map(full => `${sub} ${prefix} -> ${full}`);
+          return Array.from({ length: name.length - 2 }, (_, n) => name.slice(0, n + 3)).flatMap(prefix => [prefix, `${prefix}=always`]).flatMap(word => {
+            const denial = protectedNameGate(`git ${sub} ${word} -- _ops/env`, cwd, cwd).denial;
+            if (!denial) return [];
+            const suggested = /^Write (?:the full option name|the value after =) \(([^)]*)\)/.exec(denial.fix)?.[1]?.split(' or ') ?? [];
+            if (!suggested.length) return denial.fix.startsWith('Remove ') ? [] : [`${sub} ${word}: ${denial.fix}`];
+            return suggested.filter(full => protectedNameGate(`git ${sub} ${full.replace('<value>', '1')} -- _ops/env`, cwd, cwd).denial)
+              .map(full => `${sub} ${word} -> ${full}`);
           });
         }));
       expect(unadmitted).toEqual([]);

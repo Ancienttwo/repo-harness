@@ -543,7 +543,7 @@ export const READ_ONLY = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'rg', 'ls
  * writes a file (`--output`) or turns on a configured command (`--ext-diff`, `--textconv`, `--show-signature`).
  */
 interface GitRead { readonly options: ReadonlySet<string>; readonly glued?: RegExp }
-const options = (...lists: string[]) => new Set(lists.join(' ').split(' '));
+const optionSet = (...lists: string[]) => new Set(lists.join(' ').split(' '));
 const REVISIONS = '--all --reverse --first-parent --merges --no-merges --topo-order --date-order --boundary --left-right --cherry-pick '
   + '--full-history --follow --since= --until= --after= --before= --author= --committer= --grep= --max-count= --skip= -n';
 const PRETTY = '--oneline --pretty --pretty= --format= --abbrev-commit --no-abbrev-commit --decorate --decorate= --no-decorate --graph '
@@ -553,28 +553,29 @@ const DIFF = '-p --patch -s --no-patch --stat --stat= --shortstat --numstat --na
   + '--relative --no-ext-diff --no-textconv --no-color --color=';
 const COUNT = /^-n?\d+$/;
 export const GIT_READ = new Map<string, GitRead>([
-  ['log', { options: options(REVISIONS, PRETTY, DIFF), glued: /^-n?\d+$|^-U\d+$/ }],
-  ['show', { options: options(PRETTY, DIFF), glued: /^-U\d+$/ }],
-  ['diff', { options: options(DIFF, '--cached --staged --quiet --exit-code --check --merge-base'), glued: /^-U\d+$/ }],
-  ['shortlog', { options: options(REVISIONS, '-s -e --summary --numbered --email --format='), glued: COUNT }],
-  ['rev-list', { options: options(REVISIONS, '--count --abbrev-commit'), glued: COUNT }],
-  ['status', { options: options('--short -s --branch -b --porcelain --porcelain= --long -z --untracked-files= -u --ignored --ignored= '
+  ['log', { options: optionSet(REVISIONS, PRETTY, DIFF), glued: /^-n?\d+$|^-U\d+$/ }],
+  ['show', { options: optionSet(PRETTY, DIFF), glued: /^-U\d+$/ }],
+  ['diff', { options: optionSet(DIFF, '--cached --staged --quiet --exit-code --check --merge-base'), glued: /^-U\d+$/ }],
+  ['shortlog', { options: optionSet(REVISIONS, '-s -e --summary --numbered --email --format='), glued: COUNT }],
+  ['rev-list', { options: optionSet(REVISIONS, '--count --abbrev-commit'), glued: COUNT }],
+  ['status', { options: optionSet('--short -s --branch -b --porcelain --porcelain= --long -z --untracked-files= -u --ignored --ignored= '
     + '--show-stash --ahead-behind --no-ahead-behind') }],
-  ['ls-files', { options: options('--cached -c --deleted -d --modified -m --others -o --ignored -i --exclude-standard --stage -s '
+  ['ls-files', { options: optionSet('--cached -c --deleted -d --modified -m --others -o --ignored -i --exclude-standard --stage -s '
     + '--unmerged -u -z --full-name --error-unmatch --directory --no-empty-directory --eol -t') }],
-  ['rev-parse', { options: options('--show-toplevel --abbrev-ref --abbrev-ref= --verify --short --short= --git-dir --git-common-dir '
+  ['rev-parse', { options: optionSet('--show-toplevel --abbrev-ref --abbrev-ref= --verify --short --short= --git-dir --git-common-dir '
     + '--absolute-git-dir --is-inside-work-tree --is-inside-git-dir --is-bare-repository --show-prefix --show-cdup --symbolic-full-name '
     + '-q --quiet') }],
-  ['ls-tree', { options: options('-r -d -t -l --long -z --name-only --name-status --full-name --full-tree --abbrev --abbrev= --object-only') }],
-  ['blame', { options: options('-L -w -M -C -e -s -l -t -p --porcelain --line-porcelain --show-email --root -n --show-number -f '
+  ['ls-tree', { options: optionSet('-r -d -t -l --long -z --name-only --name-status --full-name --full-tree --abbrev --abbrev= --object-only') }],
+  ['blame', { options: optionSet('-L -w -M -C -e -s -l -t -p --porcelain --line-porcelain --show-email --root -n --show-number -f '
     + '--show-name --date='), glued: /^-L\S+$/ }],
-  ['merge-base', { options: options('--is-ancestor --all --fork-point --octopus --independent') }],
-  ['show-ref', { options: options('--heads --tags --head --verify -q --quiet -s --hash --hash= --abbrev --abbrev= -d --dereference --exists') }],
-  ['describe', { options: options('--tags --all --always --long --exact-match --dirty --dirty= --contains --first-parent --abbrev= '
+  ['merge-base', { options: optionSet('--is-ancestor --all --fork-point --octopus --independent') }],
+  ['show-ref', { options: optionSet('--heads --tags --head --verify -q --quiet -s --hash --hash= --abbrev --abbrev= -d --dereference --exists') }],
+  ['describe', { options: optionSet('--tags --all --always --long --exact-match --dirty --dirty= --contains --first-parent --abbrev= '
     + '--match= --exclude= --candidates=') }],
 ]);
-/** Options that run a configured program; a prefix of one is an abbreviation even where the option is not listed. */
-const GIT_RUNS = ['--textconv', '--ext-diff', '--output', '--show-signature', '--filters'];
+/** Options that run a configured program or write a file; a prefix of one is an abbreviation even where the option is not listed. */
+const GIT_RUNS = new Map([['--textconv', 'runs a configured program'], ['--ext-diff', 'runs a configured program'],
+  ['--output', 'writes a file'], ['--show-signature', 'runs a configured program'], ['--filters', 'runs a configured program']]);
 /**
  * Format placeholders that run the configured signature verifier (`gpg.program`), also with a `+`, `-` or space modifier after `%`.
  * Only a format option value holds placeholders; `--date=format:%G` is a strftime year.
@@ -704,19 +705,40 @@ function gitOptionFinding(args: readonly Word[], at: number, unlisted: string): 
     if (read.options.has(value) || (equals > 0 && read.options.has(value.slice(0, equals + 1))) || read.glued?.test(value)) continue;
     const name = equals > 0 ? value.slice(0, equals) : value;
     if (name.startsWith('--')) {
-      const admitted = [...new Set([...read.options].map(option => option.replace(/=$/, '')))].filter(option => option !== name && option.startsWith(name));
-      if (admitted.length) {
-        return finding(`passes ${value} to git ${sub}, an abbreviation of ${admitted.join(' or ')}`,
-          `Write the full option name (${admitted.join(' or ')}): git takes a unique prefix of a long option, and the gate reads only full names.`);
+      const replacements = completions(read.options, name, equals > 0 ? value.slice(equals + 1) : null);
+      if (replacements.length) {
+        if (read.options.has(`${name}=`)) {
+          return finding(`passes ${value} to git ${sub}, an option that the gate reads only with its value after =`,
+            `Write the value after = (${replacements[0]}).`);
+        }
+        return finding(`passes ${value} to git ${sub}, an abbreviation of ${replacements.join(' or ')}`,
+          `Write the full option name (${replacements.join(' or ')}): git takes a unique prefix of a long option, and the gate reads only full names.`);
       }
-      const runs = GIT_RUNS.filter(option => option.startsWith(name));
-      if (runs.length) {
-        return finding(`passes ${value} to git ${sub}, an abbreviation of ${runs.join(' or ')}, which runs a configured program`, `Remove ${value} from the git ${sub} command.`);
+      const runs = [...GIT_RUNS].find(([option]) => option.startsWith(name));
+      const listed = [...read.options].some(option => option.startsWith(name));
+      if (runs || listed) {
+        const reason = !runs ? `and no listed option completes ${value}`
+          : runs[0] === name ? `which ${runs[1]}` : `an abbreviation of ${runs[0]}, which ${runs[1]}`;
+        return finding(`passes ${value} to git ${sub}, ${reason}`, `Remove ${value} from the git ${sub} command.`);
       }
     }
     return finding(`passes ${value} to git ${sub}, an option outside the read list`, unlisted);
   }
   return null;
+}
+
+/**
+ * The admitted spellings that replace the long option `name` (with `value` after `=`, or null), in the list entry syntax: a bare
+ * entry only without a value, and an equals-only entry (`--color=`) as `--color=<value>` or with the given value. A name that is an
+ * equals-only entry itself (`--date iso`) gets only that entry.
+ */
+function completions(listed: ReadonlySet<string>, name: string, value: string | null): string[] {
+  const entries = listed.has(`${name}=`) ? [`${name}=`] : [...listed].filter(option => option.startsWith(name));
+  return entries.flatMap(option => {
+    if (!option.endsWith('=')) return value === null ? [option] : [];
+    if (value === null && listed.has(option.slice(0, -1))) return [];
+    return [`${option}${value ?? '<value>'}`];
+  });
 }
 
 /** The values of one option in its three spellings: `--title x` or `-t x`, `--title=x`, `-tx`. */
