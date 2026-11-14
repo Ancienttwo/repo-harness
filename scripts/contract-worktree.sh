@@ -228,6 +228,18 @@ write_start_metadata() {
 EOF_METADATA
 }
 
+# A new worktree starts from the remote base tip, not from the checkout HEAD:
+# the dependency install runs on that base, and a stale base installs a tree
+# that bun.lock on the real base no longer matches. A failed fetch stops start.
+fetch_origin_base() {
+  local base_branch="$1"
+  if ! git fetch --quiet origin "+refs/heads/$base_branch:refs/remotes/origin/$base_branch" >&2; then
+    echo "contract-worktree: git fetch origin $base_branch failed; refusing to base the worktree on a possibly stale local commit" >&2
+    return 1
+  fi
+  git rev-parse --verify "refs/remotes/origin/$base_branch^{commit}"
+}
+
 bootstrap_worktree_runtime() {
   # A fresh linked worktree starts without the gitignored runtime artifacts the
   # verification gates depend on, and both resulting failures name neither cause.
@@ -418,7 +430,6 @@ start_worktree() {
   local slug base_branch existing_worktree base_commit source_commit new_branch=0 disposition metadata_file
   slug="$(derive_issue_slug "$issue_number" "$issue_title")"
   base_branch="$(policy_get '.worktree_strategy.base_branch' 'main')"
-  source_commit="$(git rev-parse HEAD)"
   branch_name="${branch_name:-${branch_type}/${slug}}"
   worktree_path="${worktree_path:-$(default_worktree_path "$slug")}"
   metadata_file="$REPO_ROOT/.ai/harness/worktrees/${slug}.json"
@@ -454,6 +465,7 @@ start_worktree() {
       echo "contract-worktree: --fresh refuses existing branch: $branch_name" >&2
       return 1
     fi
+    source_commit="$(fetch_origin_base "$base_branch")" || return 1
     if [[ "$output_json" -eq 1 ]]; then
       run_contract_runtime add-worktree --repo "$REPO_ROOT" --worktree "$worktree_path" --branch "$branch_name" --base "$source_commit" >&2
     else
@@ -462,6 +474,7 @@ start_worktree() {
     disposition="attached_existing_branch"
     start_notice "[ContractWorktree] Added worktree for existing branch: $worktree_path"
   else
+    source_commit="$(fetch_origin_base "$base_branch")" || return 1
     if [[ "$output_json" -eq 1 ]]; then
       run_contract_runtime add-worktree --repo "$REPO_ROOT" --worktree "$worktree_path" --branch "$branch_name" --base "$source_commit" --new-branch >&2
     else

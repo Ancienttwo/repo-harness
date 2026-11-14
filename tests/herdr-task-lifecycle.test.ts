@@ -412,6 +412,7 @@ test('workspace registration records the hc endpoint through the Bash consumer a
   const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/runtime-closeout'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
   run('git', ['init', '-q', '-b', 'main'], fixture, env);
   run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'base'], fixture, env);
+  run('git', ['remote', 'add', 'origin', fixture], fixture, env); // start fetches origin
   const checkout = join(fixture, 'recover'); run('git', ['worktree', 'add', '-qb', 'codex/recover', checkout], fixture, env);
   expect(await api.cleanupTaskWorktree(fixture, checkout)).toEqual({ status: 'not_registered', pids: [] });
   const first = await api.registerTaskWorktree(checkout, endpoint);

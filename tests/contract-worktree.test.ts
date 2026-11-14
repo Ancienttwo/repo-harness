@@ -19,7 +19,7 @@ import { defaultWorktreeTemplate } from "../src/core/worktree-location.mjs";
 import { sweepManagedWorktrees } from '../src/effects/state/coordination-worktree-topology';
 import { defaultPolicy } from "../src/effects/adoption/standard-plan";
 import { copyHelpers, ROOT } from "./helpers/helper-script-fixture";
-import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
+import { addSelfOrigin, commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
 import { installStateFixturePath, recordPluginSelection } from "./helpers/install-ownership";
 
 setDefaultTimeout(30000);
@@ -71,6 +71,7 @@ function start(
   env: NodeJS.ProcessEnv = {},
   issue: Partial<IssueStub> = {},
 ) {
+  addSelfOrigin(cwd);
   return run("bash", ["scripts/contract-worktree.sh", "start", ...args], cwd, issueEnv(env, issue));
 }
 
@@ -271,6 +272,50 @@ describe("contract-worktree helper integration", () => {
       }
     }
   }, 60000);
+
+  test("contract-worktree start bases the worktree on the fetched origin tip and fails closed when the fetch fails", () => {
+    const cwd = tmpWorkspace("helper-contract-start-origin");
+    const origin = `${cwd}-origin`;
+    const worktreePath = `${cwd}-wt-origin`;
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      commitAll(cwd, "seed origin start");
+      expect(run("git", ["clone", "--bare", cwd, origin], cwd).status).toBe(0);
+      expect(run("git", ["remote", "add", "origin", origin], cwd).status).toBe(0);
+      const staleHead = run("git", ["rev-parse", "HEAD"], cwd).stdout.trim();
+
+      // A second clone advances origin/main; the checkout's local main stays behind.
+      const pusher = `${cwd}-pusher`;
+      expect(run("git", ["clone", origin, pusher], cwd).status).toBe(0);
+      writeFileSync(join(pusher, "ahead"), "ahead\n");
+      expect(run("git", ["add", "."], pusher).status).toBe(0);
+      expect(run("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "ahead"], pusher).status).toBe(0);
+      expect(run("git", ["push", "-q", "origin", "main"], pusher).status).toBe(0);
+      const originTip = run("git", ["rev-parse", "HEAD"], pusher).stdout.trim();
+      rmSync(pusher, { recursive: true, force: true });
+
+      const broken = `${cwd}-missing`;
+      expect(run("git", ["remote", "set-url", "origin", broken], cwd).status).toBe(0);
+      const failed = start(["--issue", "123", "--path", worktreePath], cwd);
+      expect(failed.status).toBe(1);
+      expect(failed.stderr).toContain("git fetch origin main failed");
+      expect(existsSync(worktreePath)).toBe(false);
+
+      expect(run("git", ["remote", "set-url", "origin", origin], cwd).status).toBe(0);
+      const started = start(["--issue", "123", "--path", worktreePath], cwd);
+      expect(started.status, started.stderr).toBe(0);
+      expect(run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim()).toBe(originTip);
+      expect(originTip).not.toBe(staleHead);
+      const metadata = JSON.parse(readFileSync(join(cwd, ".ai/harness/worktrees/123-location.json"), "utf8"));
+      expect(metadata.base_commit).toBe(originTip);
+    } finally {
+      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(origin, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30000);
 
   test("contract-worktree start uses --type for the branch prefix", () => {
     const cwd = tmpWorkspace("helper-contract-start-type");
@@ -573,7 +618,7 @@ describe('W2/W3/W4 start and closeout ownership', () => {
   function fixture() {
     const parent = tmpWorkspace('start-closeout'); const cwd = join(parent, 'repo'); const target = join(parent, 'linked');
     mkdirSync(cwd); copyHelpers(cwd); initGitRepo(cwd);
-    writeFileSync(join(cwd, '.gitignore'), '.ai/\nnode_modules\n'); commitAll(cwd, 'base');
+    writeFileSync(join(cwd, '.gitignore'), '.ai/\nnode_modules\n'); commitAll(cwd, 'base'); addSelfOrigin(cwd);
     const args = ['--issue', '123', '--path', target, '--branch', 'codex/owned'];
     return {
       parent,
