@@ -157,8 +157,13 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   each round has fewer blocking findings (P0-P2) than the round before and
   the scope does not grow. A grown scope is a joint decision. A new P0
   finding, or a new P1 finding about security, secrets, data or
-  authentication, stops the loop at the owner; any other new P1 finding
-  does not stop it. Round 5 is the hard stop. Details:
+  authentication, goes to the owner as a notice. The loop continues
+  without an owner word when the fix closes the finding. It stops at the
+  owner only when a fix would accept a residual, relax a control or grow
+  the scope. Each merge outside rule 2, each release, each credential or
+  permission change and each deletion that git cannot restore stay with
+  the owner. Any other new P1 finding does not stop the loop. Round 5 is
+  the hard stop. Details:
   `references/acceptor.md` §2.2. For issue-flow review loops,
   this rule replaces the three-round cap of the managed global working
   rules.
