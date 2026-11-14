@@ -159,6 +159,7 @@ const boardAt = (issue?: number) => installDom(`http://127.0.0.1:4318/#board/${H
 const followUp = () => document.querySelector<HTMLElement>('[role="dialog"] section[aria-labelledby="drawer-follow-up"]')!;
 
 async function mount(element: React.ReactElement): Promise<void> {
+  await act(async () => root?.unmount());
   const container = document.createElement('div');
   document.body.append(container);
   root = createRoot(container);
