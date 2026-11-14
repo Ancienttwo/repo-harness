@@ -30,7 +30,18 @@
     "hasOwnProperty x; touch _ops/env/x", "git hasOwnProperty x; touch _ops/env/x", "touch --hasOwnProperty _ops/env/x", "gh pr create -hasOwnProperty x; touch _ops/env/x",
     "gh release download --pattern -b --dir=\"$(cat <<'D'\n_ops/env\nD\n)\"", "git commit -- -m \"$(cat <<'D'\n_ops/env\nD\n)\"", "git commit -m -m \"$(cat <<'D'\n_ops/env\nD\n)\"",
     "git commit --allow-empty -m \"$(cat <<'D'\n_ops/env\nD\n)\" | xargs rm -rf", "gh pr view 1 --json number -t \"$(cat <<'D'\n_ops/env\nD\n)\" | xargs rm -rf", "gh api repos/o/r -t \"$(cat <<'D'\n_ops/env\nD\n)\" | xargs rm -rf",
-    "git commit -m \"$(cat <<'D'\n_ops/env\nD\n)\" > out.txt; xargs rm < out.txt", "m=$(git commit -m \"$(cat <<'D'\n_ops/env\nD\n)\")", "(git commit -m \"$(cat <<'D'\n_ops/env\nD\n)\") | xargs rm -rf"
+    "git commit -m \"$(cat <<'D'\n_ops/env\nD\n)\" > out.txt; xargs rm < out.txt", "m=$(git commit -m \"$(cat <<'D'\n_ops/env\nD\n)\")", "(git commit -m \"$(cat <<'D'\n_ops/env\nD\n)\") | xargs rm -rf",
+    "git commit -m \"$(cat <<'EOF'\nfix(hook): deny Bash writes under _ops\n\n- keep _ref read-only\n- rm -rf _ops is denied\nEOF\n)\"",
+    "gh pr create --title \"fix(hook): gate\" --body \"$(cat <<'EOF'\n## Summary\nThe gate names _ops and _ref.\n\n## Verification\ncat _ops/x > report.txt\nEOF\n)\"",
+    "gh issue comment 1 --body \"$(cat <<'EOF'\nThe _ref cache is stale; refresh it.\nEOF\n)\"",
+    "git add -A && git commit -m \"$(cat <<'EOF'\nchore: note _ops layout\nEOF\n)\"",
+    "git commit -m {msg,--} -m \"$(cat <<'D'\n_ops/env\nD\n)\"",
+    "exec > out.txt; git commit --allow-empty -m \"$(cat <<'D'\n_ops/env\nD\n)\"; xargs rm -rf < out.txt",
+    "command exec > out.txt; git commit --allow-empty -m \"$(cat <<'D'\n_ops/env\nD\n)\"; xargs rm -rf < out.txt",
+    "builtin exec > out.txt; git commit --allow-empty -m \"$(cat <<'D'\n_ops/env\nD\n)\"; xargs rm -rf < out.txt",
+    "eval 'exec > out.txt'; git commit --allow-empty -m \"$(cat <<'D'\n_ops/env\nD\n)\"; xargs rm -rf < out.txt",
+    "echo _ops/env > out.txt; xargs rm -rf < out.txt",
+    "cat <<'EOF' > out.txt\n_ops/env\nEOF\nsh -c 'rm -rf $(cat out.txt)'"
   ],
   "accepted": {
     "1": ["rm -rf ${X}ps", "rm -rf $(printf _o)ps", "rm -rf \"$P\"/env", "cd \"$(printf _o)ps\" && rm -rf env"],
@@ -39,10 +50,6 @@
     "4": ["rm -rf \"$(git rev-parse --show-toplevel)\"", "xargs rm -rf < list.txt"]
   },
   "ordinary": [
-    "git commit -m \"$(cat <<'EOF'\nfix(hook): deny Bash writes under _ops\n\n- keep _ref read-only\n- rm -rf _ops is denied\nEOF\n)\"",
-    "gh pr create --title \"fix(hook): gate\" --body \"$(cat <<'EOF'\n## Summary\nThe gate names _ops and _ref.\n\n## Verification\ncat _ops/x > report.txt\nEOF\n)\"",
-    "gh issue comment 1 --body \"$(cat <<'EOF'\nThe _ref cache is stale; refresh it.\nEOF\n)\"",
-    "git add -A && git commit -m \"$(cat <<'EOF'\nchore: note _ops layout\nEOF\n)\"",
     "rg -n \"_ops\" src", "rg foo _ref/proj", "rg -l _ref docs | sort", "ls _ops", "ls -la _ref/", "ls _ops | wc -l", "cat _ops/x",
     "cat _ref/a/b.md | head -50", "head -20 _ops/x", "tail -n 5 _ops/log.txt", "wc -l _ops/*.md", "grep -rn x _ref | head",
     "find _ref -name '*.md'", "find _ref -name x -print", "stat _ops", "du -sh _ref", "diff _ref/a _ref/b > /tmp/d.txt",
@@ -52,6 +59,7 @@
     "cp _ref/tpl.md docs/tpl.md", "cd src && cat ../_ops/x", "cd _ref && ls", "cd _ref/proj && git log -3", "cd src && bun test",
     "bun test 2>&1 | tee /tmp/x.log", "bun run check:type", "gh pr view 1 --json body", "git diff main...HEAD -- src",
     "cat <<'EOF' > /tmp/plan.md\nThe plan reads _ops/notes.\nEOF", "git worktree add ${MANAGED}/repo-wt-x", "ls *", "rm -rf node_modules/*",
-    "cd src && git clean -fdx", "find src -name '*.tmp' -delete"
+    "cd src && git clean -fdx", "find src -name '*.tmp' -delete",
+    "cat <<'EOF' > /tmp/msg.txt\nfix(hook): deny Bash writes under _ops\nEOF", "git commit -F /tmp/msg.txt", "gh pr create --title \"fix(hook): gate\" --body-file /tmp/msg.txt"
   ]
 }

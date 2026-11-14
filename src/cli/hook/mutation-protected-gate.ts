@@ -262,8 +262,6 @@ interface Word {
   quoted: boolean;
   /** An unquoted `NAME=` or `NAME+=` prefix. */
   assign: boolean;
-  /** The body of each rule 3 data span, in order; the value holds DATA_MARK at each span. */
-  spans?: string[];
 }
 
 interface Op {
@@ -282,12 +280,14 @@ interface Lexed {
   readonly violations: string[];
 }
 
-/** Stands for a rule 3 data span in a word until the gate knows the word's position (joint decision on F5). */
-const DATA_MARK = '\u0000';
 const DATA_HEAD = /"\$\(cat <<\s?'([A-Za-z_][A-Za-z0-9_]*)'\n/y;
 const REDIRECT = /^(\d*)(>>|>\||>&|>|<>|<&|<<<|<<-|<<|<|&>>|&>)$/;
 
-/** Rule 3: the `"$(cat <<'D' ... D\n)"` data span at `at`, or null. The body has no `$`, backtick, `\`, `"` or delimiter line. */
+/**
+ * Rule 3: the `"$(cat <<'D' ... D\n)"` span at `at`, or null. The body has no `$`, backtick, `\`, `"` or delimiter line, so the
+ * shell prints it as text, and the lexer reads it as a quoted literal. Its text counts for the trigger and as a possible target
+ * in every position (round 5): no position keeps a span as data.
+ */
 function dataSpan(text: string, at: number): { end: number; body: string } | null {
   DATA_HEAD.lastIndex = at;
   const head = DATA_HEAD.exec(text);
@@ -375,8 +375,8 @@ function lex(text: string): Lexed {
     if (ch === '"') {
       const span = dataSpan(text, i);
       if (span) {
-        literal(DATA_MARK);
-        (current().spans ??= []).push(span.body);
+        current().quoted = true;
+        for (const c of span.body) literal(c);
         i = span.end - 1;
         continue;
       }
@@ -643,83 +643,6 @@ function recursionFinding(args: readonly Word[], dirs: Dirs, resolver: Resolver)
 /** Programs whose operands are write targets; only their operands and redirect targets take the writable-directory exemption. */
 const WRITERS = new Set(['touch', 'mkdir', 'rm', 'rmdir', 'mv', 'tee', 'ln', 'truncate']);
 const MOVES_DIR = new Set(['cd', 'pushd', 'popd']);
-/**
- * Rule 3 closed grammar (round 4): the flags that may come before a data span, per command. `text` flags take the message,
- * body or title; `value` flags take the next word; `flags` take none; `positionals` is the count of operands allowed.
- */
-interface TextGrammar {
-  readonly text: ReadonlySet<string>;
-  readonly glued: RegExp;
-  readonly value: ReadonlySet<string>;
-  readonly flags: ReadonlySet<string>;
-  readonly positionals: number;
-}
-const GIT_COMMIT: TextGrammar = {
-  text: new Set(['-m', '-am', '--message']), glued: /^--message=/, value: new Set(),
-  flags: new Set(['-a', '--all', '--amend', '--allow-empty', '--no-edit', '-n', '--no-verify', '-s', '--signoff', '-q', '--quiet', '-v', '--verbose']),
-  positionals: 0,
-};
-const GIT_TAG: TextGrammar = {
-  text: new Set(['-m', '-am', '--message']), glued: /^--message=/, value: new Set(),
-  flags: new Set(['-a', '--annotate', '-s', '--sign', '-f', '--force']), positionals: 1,
-};
-const GH_TEXT = { text: new Set(['-b', '--body', '-t', '--title']), glued: /^--(?:body|title)=/ };
-const GH_VALUE = new Set(['-B', '--base', '-H', '--head', '-l', '--label', '-a', '--assignee', '-r', '--reviewer', '-m', '--milestone',
-  '-p', '--project', '-R', '--repo']);
-const GH_FLAGS = new Set(['-d', '--draft', '--fill']);
-const gh = (positionals: number): TextGrammar => ({ ...GH_TEXT, value: GH_VALUE, flags: GH_FLAGS, positionals });
-/** Keyed by `program subcommand` or `program group subcommand`. Own keys only. */
-const TEXT_GRAMMAR = new Map<string, TextGrammar>([
-  ['git commit', GIT_COMMIT], ['git tag', GIT_TAG],
-  ['gh pr create', gh(0)], ['gh pr edit', gh(1)], ['gh pr comment', gh(1)], ['gh pr review', gh(1)], ['gh pr merge', gh(1)],
-  ['gh issue create', gh(0)], ['gh issue edit', gh(1)], ['gh issue comment', gh(1)],
-  ['gh release create', gh(1)], ['gh release edit', gh(1)],
-]);
-
-/**
- * The word indexes of `cmd` whose rule 3 spans are data (round-4 rule). The command must be top level (not in a substitution
- * body or a subshell), the only member of its pipeline and without a redirect, since a pipe, a redirect or a substitution
- * carries the printed text (git commit prints the subject; gh -t is a Go template) to another command. The scan reads the
- * words in order and stops at `--`, an unlisted word or a word that holds a span outside a text value.
- */
-function dataWords(cmd: Command, topLevel: boolean): Set<number> {
-  const data = new Set<number>();
-  const args = cmd.words;
-  const plain = (n: number) => !!args[n] && !args[n]!.quoted && !args[n]!.expand && !args[n]!.glob && !args[n]!.spans;
-  if (!topLevel || cmd.size !== 1 || cmd.redirects.length) return data;
-  const head = args[0]?.value === 'git' ? 2 : 3;
-  if (![...Array(head).keys()].every(plain)) return data;
-  const grammar = TEXT_GRAMMAR.get(args.slice(0, head).map(word => word.value).join(' '));
-  if (!grammar) return data;
-  let positionals = 0;
-  for (let n = head; n < args.length; n++) {
-    const word = args[n]!, value = word.value;
-    if (word.spans) {
-      if (!grammar.glued.test(value) || word.expand) return data;
-      data.add(n);
-    } else if (grammar.text.has(value) && plain(n)) {
-      if (args[n + 1]?.spans && !args[n + 1]!.expand) data.add(++n); else n++;
-    } else if (grammar.value.has(value) && plain(n)) n++;
-    else if (grammar.flags.has(value) && plain(n)) continue;
-    else if (!value.startsWith('-') && !word.expand && !word.glob && positionals < grammar.positionals) positionals++;
-    else return data;
-  }
-  return data;
-}
-
-/** Replaces each span mark with DATA in a data position, else with the span body, which then counts for rules 2 and 7. */
-function fillSpans(word: Word, data: boolean): void {
-  const spans = word.spans;
-  if (!spans) return;
-  const fill = (text: string, form: (body: string) => string) => {
-    let n = 0;
-    return text.replaceAll(DATA_MARK, () => data ? 'DATA' : form(spans[n++] ?? ''));
-  };
-  word.value = fill(word.value, body => body);
-  word.pattern = fill(word.pattern, escapePattern);
-  word.spans = undefined;
-}
-
 const NAME = new RegExp(`(?:^|[^\\w.-])(?:${PROTECTED_REPO_DIRS.map(name => name.toUpperCase()).join('|')})(?![\\w.-])`);
 const namesProtected = (text: string) => NAME.test(text.toUpperCase());
 /** A word names a protected directory itself, or as the value of a glued short option such as `sort -o_ops/x` or `-uo_ops/x`. */
@@ -732,6 +655,23 @@ const wordNamesProtected = (value: string) => {
 const WRITE_REDIRECT = /^\d*(?:>|>>|>\||<>|&>|&>>)$/;
 
 export const PROTECTED_NAME_GUARD = 'ProtectedNameGuard';
+
+interface Finding { readonly reason: string; readonly fix: string }
+const STRICT = 'Name a protected directory only in simple commands of read-only programs (cat, rg, ls, git log, ...) or as a cp source.';
+const SPLIT = `Split the command line: run the command that names _ops or _ref alone. ${STRICT}`;
+const finding = (reason: string, fix = STRICT): Finding => ({ reason, fix });
+
+/** Rule 6: a program that is not read-only on a command line that names a protected directory. The fix names the usual way out. */
+function programFinding(args: readonly Word[], named: boolean, commands: number): Finding {
+  const program = args[0]!.value;
+  const sub = args.slice(1).find(word => !word.value.startsWith('-'))?.value;
+  const reason = `runs ${program === 'git' || program === 'gh' ? `${program} ${sub ?? ''}`.trim() : program}, which is not a read-only program`;
+  if (!named && commands > 1) return finding(reason, SPLIT);
+  if ((program === 'git' && (sub === 'commit' || sub === 'tag')) || program === 'gh') {
+    return finding(reason, 'Write the message to a file, then pass it with git commit -F <file>, git tag -F <file> or gh --body-file <file>.');
+  }
+  return finding(reason, commands > 1 ? SPLIT : STRICT);
+}
 
 export interface GateDecision {
   readonly denial: Denial | null;
@@ -759,7 +699,7 @@ export function protectedNameGate(command: string, repoRoot: string, cwd: string
 function gate(command: string, repoRoot: string, cwd: string): GateDecision {
   const resolver = new Resolver(repoRoot);
   const { streams, violations } = lex(command);
-  const findings: string[] = [];
+  const findings: Finding[] = [];
   let trigger = resolver.inProtected(cwd);
   let recursion: string | null = null;
 
@@ -769,14 +709,6 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
     const outer: Dirs[] = [];
     const steps = commands(tokens, violations);
     const list = steps.filter((step): step is Command => step.kind === 'command');
-    // Rule 3 spans: positions first, since a filled operand can change what gitInvocation reads. Only stream 0 is top level.
-    let depth = 0;
-    for (const step of steps) {
-      if (step.kind !== 'command') { depth += step.kind === '(' ? 1 : -1; continue; }
-      const data = dataWords(step, index === 0 && depth === 0);
-      step.words.forEach((word, n) => fillSpans(word, data.has(n)));
-      for (const redirect of step.redirects) if (redirect.target) fillSpans(redirect.target, false);
-    }
     // F1 (owner, 2026-11-14): the writable-directory exemption holds only for a write target with no earlier cd, pushd or popd.
     const moved = new Map<Command, boolean>();
     list.reduce((seen, cmd) => {
@@ -790,7 +722,6 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
       if (cmd.redirects.some(r => r.target === word)) return true;
       return !!program && word !== program && !program.quoted && WRITERS.has(program.value);
     };
-    const pipelineTrigger = new Map<number, boolean>();
     const exempt = (cmd: Command, word: Word, base: Dirs) => !word.glob && !word.expand && writeTarget(cmd, word)
       && resolver.writableLiteral(word.value, base);
     const wordNames = (cmd: Command, word: Word, base: Dirs) => (wordNamesProtected(word.value) && !exempt(cmd, word, base))
@@ -801,12 +732,9 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
         if (cmd.kind === '(') outer.push(dirs); else dirs = outer.length ? outer.pop()! : null;
         continue;
       }
-      if (!pipelineTrigger.has(cmd.pipeline)) {
-        const members = list.filter(other => other.pipeline === cmd.pipeline);
-        pipelineTrigger.set(cmd.pipeline, members.some(member => member.words.some(word => wordNames(member, word, dirs))
-          || member.redirects.some(r => (r.target !== null && wordNames(member, r.target, dirs)) || (r.body !== undefined && namesProtected(r.body)))));
-      }
-      const named = pipelineTrigger.get(cmd.pipeline)!;
+      // Rule 6 has one trigger for the whole command line: a file or a pipe carries a name from one command to the next.
+      const named = cmd.words.some(word => wordNames(cmd, word, dirs))
+        || cmd.redirects.some(r => (r.target !== null && wordNames(cmd, r.target, dirs)) || (r.body !== undefined && namesProtected(r.body)));
       trigger ||= named;
       const args = cmd.words;
       const program = args[0];
@@ -822,14 +750,11 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
         const cp = program.value === 'cp' && !program.quoted;
         const operands = args.slice(1);
         if (!known && operands.some(word => word.expand)) violations.push(`an expanded word for ${program.value}`);
-        const holdsProtected = dirs === null || dirs.some(dir => resolver.inProtected(dir));
         if (cp) {
-          if (operands.some(word => /^-[^-]*t|^--target-directory/.test(word.value))) findings.push('cp with a target-directory option');
+          if (operands.some(word => /^-[^-]*t|^--target-directory/.test(word.value))) findings.push(finding('cp with a target-directory option'));
           const destination = operands.filter(word => !word.value.startsWith('-')).at(-1);
-          if (destination && resolver.mayReachProtected(destination.pattern, dirs)) findings.push(`cp to ${destination.value}`);
-        } else if (!known && (named || holdsProtected)) {
-          findings.push(`${program.value} ${named ? 'next to a protected name' : 'in a protected or unknown directory'}`);
-        }
+          if (destination && resolver.mayReachProtected(destination.pattern, dirs)) findings.push(finding(`cp to ${destination.value}`));
+        } else if (!known) findings.push(programFinding(args, named, list.length));
       }
       for (const redirect of cmd.redirects) {
         const target = redirect.target;
@@ -842,7 +767,7 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
         if (duplicate && /^(?:\d+|-)$/.test(target.value) && !target.quoted) continue;
         if (!WRITE_REDIRECT.test(redirect.op) && !redirect.op.endsWith('>&')) continue;
         if (target.expand) { violations.push('an expanded redirect target'); continue; }
-        if (resolver.mayReachProtected(target.pattern, dirs)) findings.push(`a redirect to ${target.value}`);
+        if (resolver.mayReachProtected(target.pattern, dirs)) findings.push(finding(`a redirect to ${target.value}`));
       }
 
       // Rule 5: the directory set after this command.
@@ -865,14 +790,9 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
   if (recursion) {
     return { trigger, denial: { guard: PROTECTED_NAME_GUARD, reason: `The command runs ${recursion}.`, fix: 'Name the directories to clean below the repository root.' } };
   }
-  const reason = !trigger ? null : violations[0] ? `uses ${violations[0]}, outside the strict form` : findings[0];
+  const first = !trigger ? null : violations[0] ? finding(`uses ${violations[0]}, outside the strict form`) : findings[0];
   return {
     trigger,
-    denial: reason ? {
-      guard: PROTECTED_NAME_GUARD,
-      reason: `The command names _ops or _ref and ${reason}.`,
-      fix: 'Name a protected directory only in simple commands of read-only programs (cat, rg, ls, git log, ...) or as a cp source, '
-        + 'and pass long text as "$(cat <<\'EOF\' ... EOF)" with no $, backtick, \\ or " in the body.',
-    } : null,
+    denial: first ? { guard: PROTECTED_NAME_GUARD, reason: `The command names _ops or _ref and ${first.reason}.`, fix: first.fix } : null,
   };
 }
