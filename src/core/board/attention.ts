@@ -1,5 +1,5 @@
 import { planIssues } from './plan-block';
-import { boardMergeDecisions } from './merge';
+import { boardMergeDecisions, planSkipReason } from './merge';
 import type { BoardItemV1, BoardPullRequestV1, BoardReviewHarness, BoardTerminalV1, BoardV1 } from './board';
 import { hcStatusClass, liveSeats, seatItem, seatPullRequest } from './desk';
 import { pathHazardHits, pathHighHits } from './hazards';
@@ -474,7 +474,7 @@ function a17(context: Context): void {
     }
     if (status.status_kind !== 'observed' || !status.status.startsWith('blocked')) continue;
     if (plan.status !== 'observed') {
-      skip(context, 'A17', plan.status === 'absent' ? 'plan_absent' : 'plan_unavailable', `#${item.number}`);
+      skip(context, 'A17', planSkipReason(plan.status), `#${item.number}`);
       continue;
     }
     if (plan.block.holds.some(hold => hold.issue === item.number)) continue;
@@ -558,7 +558,7 @@ function r5(context: Context): void {
 
 function r4(context: Context): void {
   const plan = context.board.plan;
-  if (plan.status !== 'observed') return skip(context, 'R4', plan.status === 'absent' ? 'plan_absent' : 'plan_unavailable');
+  if (plan.status !== 'observed') return skip(context, 'R4', planSkipReason(plan.status));
   const ordered = new Set(plan.block.merge_order);
   for (const pr of accepted(context, 'R4')) {
     const waited = context.now - Date.parse(pr.acceptance.accepted_at);
@@ -575,7 +575,7 @@ function r4(context: Context): void {
  */
 function r6(context: Context): void {
   const { plan, items } = context.board;
-  if (plan.status !== 'observed') return skip(context, 'R6', plan.status === 'absent' ? 'plan_absent' : 'plan_unavailable');
+  if (plan.status !== 'observed') return skip(context, 'R6', planSkipReason(plan.status));
   if (context.board.execution.status === 'unavailable') return skip(context, 'R6', context.board.execution.reason);
   const terminals = workerTerminals(context, 'R6');
   // A live terminal with an unknown seat may be a worker, so the free count is unknown (workerTerminals listed the reason).
@@ -598,7 +598,7 @@ function r6(context: Context): void {
 /** R7: an accepted pull request waits behind an earlier open entry of the merge order that is held, which blocks each ready pull request behind it. */
 function r7(context: Context): void {
   const { board } = context;
-  if (board.plan.status !== 'observed') return skip(context, 'R7', board.plan.status === 'absent' ? 'plan_absent' : 'plan_unavailable');
+  if (board.plan.status !== 'observed') return skip(context, 'R7', planSkipReason(board.plan.status));
   const { merge_order: order, holds } = board.plan.block;
   const onBoard = new Map(board.items.map(item => [item.number, item] as const));
   const refused = new Set(boardMergeDecisions(board).filter(decision => !decision.eligible && decision.reason === 'merge_order').map(decision => decision.pr));

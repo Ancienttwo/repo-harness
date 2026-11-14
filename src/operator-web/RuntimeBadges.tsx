@@ -5,7 +5,8 @@ import { useObservationRefresh } from './useObservationRefresh';
 import { formatRelativeAge, type OperatorTranslate, type OperatorMessageKey } from './i18n';
 
 /** The repair steps of `HcVersionMismatchError`, in its order: update a client below the floor, else restart the core. */
-export const hcRepairCommands = (min: string) => [`hc update --version ${min}`, 'hc server restart'] as const;
+export const HC_RESTART_COMMAND = 'hc server restart';
+export const hcRepairCommands = (min: string) => [`hc update --version ${min}`, HC_RESTART_COMMAND] as const;
 
 export type RuntimeOverlayReader = (signal: AbortSignal) => Promise<RuntimeOverlay>;
 export async function fetchRuntimeOverlay(signal: AbortSignal): Promise<RuntimeOverlay> {
