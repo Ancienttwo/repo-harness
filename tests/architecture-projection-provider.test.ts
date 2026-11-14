@@ -1788,12 +1788,14 @@ describe('ArchContext maintenance reminders', () => {
     const harnessRoot = join(globalRoot, 'node_modules', 'repo-harness');
     mkdirSync(harnessRoot, { recursive: true });
     writeFileSync(join(harnessRoot, 'package.json'), JSON.stringify({ dependencies: { archctx: ARCHCTX_REQUIRED_VERSION } }));
-    symlinkSync(join(f.consumerRoot, 'node_modules', 'archctx'), join(globalRoot, 'node_modules', 'archctx'), 'dir');
+    const selectedRoot = join(globalRoot, 'node_modules', 'node_modules', 'archctx');
+    mkdirSync(join(globalRoot, 'node_modules', 'node_modules'), { recursive: true });
+    symlinkSync(join(f.consumerRoot, 'node_modules', 'archctx'), selectedRoot, 'dir');
     writeFileSync(f.binary, `console.log(JSON.stringify({schemaVersion:'archcontext.envelope/v1',ok:true,data:{running:false}}));`);
     const env = { ...process.env, BUN_INSTALL: bunRoot };
     expect(existsSync(join(harnessRoot, 'node_modules', 'archctx'))).toBe(false);
     expect(() => ARCHITECTURE_SETUP_PROVIDER.verifyDaemon(f.repoRoot, env)).not.toThrow();
-    rmSync(join(globalRoot, 'node_modules', 'archctx'));
+    rmSync(selectedRoot);
     expect(() => ARCHITECTURE_SETUP_PROVIDER.verifyDaemon(f.repoRoot, env)).toThrow();
   });
 

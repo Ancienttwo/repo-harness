@@ -1,4 +1,3 @@
-import { dirname } from 'node:path';
 import { ARCHCONTEXT_NODE_RANGE, productVersionManifest } from 'archctx-contracts';
 import { ARCHITECTURE_CONTRACT_VERSION, type ArchitectureSetupPort, type ManagedArchctxReadback } from '../../core/architecture/contracts';
 import { archctxCapabilities, inspectArchitectureProjectionReadiness, verifyArchctxDaemonRuntime } from '../../effects/architecture/archctx-provider';
@@ -66,12 +65,10 @@ function verifyDaemon(cwd: string, env: NodeJS.ProcessEnv): void {
   if (archctxRoot === null) {
     throw new Error(`mandatory dependency is missing: archctx@${requiredVersion}`);
   }
-  // Anchor module resolution at the node_modules directory that owns this package.
-  const consumerRoot = dirname(dirname(archctxRoot));
   verifyArchctxDaemonRuntime(cwd, {
-    consumerRoot, env,
+    consumerRoot: globalPackageRoot, env,
     policy: { provider: 'archctx', applyMode: 'manual', requiredVersion, timeoutMs: 10_000 },
-  });
+  }, archctxRoot);
 }
 
 /** The setup provider that only the CLI root registers, and only when the architecture plugin is selected. */
