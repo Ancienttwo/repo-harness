@@ -603,10 +603,7 @@ function* checkEvidence(
   }
   const attemptsJobs = linkedJobs as AttemptJob[];
   const checkFailed = attemptsJobs.some(jobFailed);
-  // Only a check that concluded success in every attempt may exit with no
-  // evidence; a skipped, neutral or unknown attempt without failure evidence
-  // reaches the fail-closed assessment.
-  const succeededEveryAttempt = attemptsJobs.every(job => job.conclusion === 'success' && !jobFailed(job));
+  const succeededEveryAttempt = !checkFailed && attemptsJobs.every(job => job.conclusion === 'success');
   const otherFailed = pages.flatMap((page, index) =>
     page.filter(job => job.id !== attemptsJobs[index]!.id && FAILED_ATTEMPT_CONCLUSIONS.has(job.conclusion)));
 
@@ -674,8 +671,10 @@ function* checkEvidence(
       return job === undefined ? [] : [attemptObservation(job, index + 1, runUrl, link, annotations.get(job.id))];
     }),
   }));
-  // Each child name comes from a failed provider job.
-  if (succeededEveryAttempt && children.length === 0) return null;
+  // Each child name comes from a failed provider job. Without failure evidence
+  // a check that is not green now stays blocked by its bucket; a green check
+  // with an attempt that did not succeed reaches the fail-closed assessment.
+  if (children.length === 0 && !checkFailed && (succeededEveryAttempt || check.bucket !== 'pass')) return null;
   if (attemptsJobs.length > 1 && attemptsJobs[attemptsJobs.length - 1]!.conclusion === 'success') {
     const latestTestExecution = (yield { test_execution: {
       repository: identity.repo_name_with_owner,
