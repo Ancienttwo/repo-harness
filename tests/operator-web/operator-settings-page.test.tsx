@@ -656,7 +656,9 @@ describe('language controls', () => {
     await click(document.querySelector<HTMLElement>('[data-language-control="report"] [data-language-option="en"]')!);
     const banner = document.querySelector('[data-language-control="report"] [data-save-result="report_language_edited"]')!;
     expect(banner.textContent).toContain('differs from every released block');
-    expect(banner.textContent).toContain('both markers');
+    expect(banner.textContent).toContain('both marker lines');
+    expect(banner.textContent!.indexOf('move your own rules')).toBeGreaterThan(-1);
+    expect(banner.textContent!.indexOf('move your own rules')).toBeLessThan(banner.textContent!.indexOf('delete the block'));
   });
 
   test('the repository documentation language loads, saves and shows the init command for a missing policy', async () => {

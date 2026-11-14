@@ -41,7 +41,7 @@ export function reportingLanguageWriteRoute(adapter?: OperatorLanguageSettingsAd
         execute: async () => {
           const result = requireLanguageSettings(adapter).setReportingLanguage(preset!);
           if (result.status === 'skipped' && result.edited) throw new OperatorWriteRefusal(409, 'report_language_edited', result.detail,
-            'Delete the managed block with both markers from the named rules file, then save the reporting language again.');
+            'First move your own rules outside the markers in the named rules file. Then delete the block with both marker lines. Then save the reporting language again, and the console writes a fresh block.');
           if (result.status === 'skipped') throw new OperatorWriteRefusal(409, 'report_language_refused', result.detail,
             'Repair the reported rules file or path, then save the reporting language again.');
           // Apply can fail after one host changed. The write run must mark this
