@@ -1,6 +1,7 @@
-import { readdirSync, readFileSync, statSync } from 'fs';
-import { join } from 'path';
+import { readdirSync, readFileSync, realpathSync, statSync } from 'fs';
+import { join, resolve } from 'path';
 import { hcGet } from '../terminal/herdr-core';
+import { piAgentDir } from '../pi-agent-dir';
 import { osAccountHome } from '../runtime/os-account-home';
 import { errorMessage } from '../../core/evidence/error-message';
 import {
@@ -8,6 +9,7 @@ import {
 } from './review-publish';
 
 const MARKER = 'RECEIPT-JSON';
+const RECEIPT_KIND = 'repo-harness-review-publish-receipt';
 
 export interface ReviewCollectInput extends ReviewPublishInput {
   /** The Pi review seat's `hc` terminal address. */
@@ -16,9 +18,9 @@ export interface ReviewCollectInput extends ReviewPublishInput {
 
 const invalid = (message: string) => new ReviewPublishError('review_receipt_invalid', message, 2);
 
-/** Pi names a session directory after the worktree path: `--` + path without its leading `/`, `/` as `-`, + `--`. */
-function sessionDirectory(root: string, cwd: string): string {
-  return join(root, '--' + cwd.replace(/^\/+/, '').replace(/\/+/g, '-') + '--');
+/** The directory pi-coding-agent's `getDefaultSessionDirPath` names: agent dir, `sessions`, then the cwd without its leading separator, `/`, `\\` and `:` as `-`, wrapped in `--`. */
+function sessionDirectory(agentDir: string, cwd: string): string {
+  return join(agentDir, 'sessions', '--' + resolve(cwd).replace(/^[/\\]/, '').replace(/[/\\:]/g, '-') + '--');
 }
 
 function newestSession(directory: string): string {
@@ -46,25 +48,39 @@ function assistantTexts(path: string): string[] {
   return texts;
 }
 
-/** Decode the first JSON value after the last marker; the decoder, not a fence regex, finds where it ends. */
-function lastReceiptValue(texts: readonly string[]): unknown {
-  const text = texts.filter((entry) => entry.includes(MARKER)).at(-1);
-  if (text === undefined) throw invalid('the seat session has no ' + MARKER + ' block');
-  const rest = text.slice(text.lastIndexOf(MARKER) + MARKER.length);
-  const start = rest.indexOf('{');
-  if (start < 0) throw invalid('the ' + MARKER + ' block has no JSON object');
-  const body = rest.slice(start);
-  // The object ends at a closing brace; try each from the end until it decodes, so trailing prose or a closing fence is ignored.
-  for (let end = body.lastIndexOf('}'); end >= 0; end = body.lastIndexOf('}', end - 1)) {
-    try { return JSON.parse(body.slice(0, end + 1)); } catch { /* try a shorter prefix */ }
+/** The JSON value that starts right after a marker (past an optional code fence); the decoder, not a fence regex, finds where it ends. */
+function decodeAfterMarker(text: string, markerEnd: number): unknown {
+  const rest = text.slice(markerEnd).replace(/^\s*(```[a-z]*)?\s*/, '');
+  if (!rest.startsWith('{') && !rest.startsWith('[')) return undefined;
+  for (let end = 0; end < rest.length; end++) {
+    if (rest[end] !== '}' && rest[end] !== ']') continue;
+    try { return JSON.parse(rest.slice(0, end + 1)); } catch { /* the value ends later */ }
   }
-  throw invalid('the ' + MARKER + ' block does not decode as JSON');
+  return undefined;
+}
+
+/** The last value after any marker that decodes to a receipt object; a marker inside a string decodes to nothing and is skipped. */
+function lastReceiptValue(texts: readonly string[]): unknown {
+  let marked = false;
+  let found: unknown;
+  for (const text of texts) {
+    for (let at = text.indexOf(MARKER); at >= 0; at = text.indexOf(MARKER, at + MARKER.length)) {
+      marked = true;
+      const value = decodeAfterMarker(text, at + MARKER.length);
+      if (value !== null && typeof value === 'object' && !Array.isArray(value) && (value as { kind?: unknown }).kind === RECEIPT_KIND) found = value;
+    }
+  }
+  if (!marked) throw invalid('the seat session has no ' + MARKER + ' block');
+  if (found === undefined) throw invalid('no ' + MARKER + ' block decodes to a ' + RECEIPT_KIND + ' object');
+  return found;
 }
 
 export function collectReview(input: ReviewCollectInput): ReviewPublishResult {
   const cwd = hcGet(input.seat).cwd;
   if (cwd == null) throw invalid('terminal ' + input.seat + ' reports no working directory');
-  const session = newestSession(sessionDirectory(join(osAccountHome(), '.pi', 'agent', 'sessions'), cwd));
+  let realCwd: string;
+  try { realCwd = realpathSync(cwd); } catch (error) { throw invalid('the seat working directory is unreadable: ' + errorMessage(error)); }
+  const session = newestSession(sessionDirectory(piAgentDir(osAccountHome()), realCwd));
   const receipt = parseReceipt(lastReceiptValue(assistantTexts(session)));
   return publishReceipt(input, receipt);
 }

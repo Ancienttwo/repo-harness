@@ -1,7 +1,8 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { taskReviewRunner } from '../../src/effects/review-runner/task-review-runner';
 import { buildReviewCommand, pullRequestSelectionFromOptions } from '../../src/cli/commands/review';
@@ -513,37 +514,43 @@ test('the optional PR selection is all-or-none and admission identity alone is n
     .toEqual({ repository: 'example/repo-harness', provider_repository_id: '1001', pr_number: 42, expected_base_sha: 'b'.repeat(40) });
 });
 
-const SEAT_CWD = '/tmp/example-wt-collect';
-
-/** A fake Pi session record; `texts` are assistant text parts. */
-function collectFixture(texts: readonly string[] | null) {
+function seatFixture(texts: readonly string[] | null, options: { agentDir?: string; symlinkCwd?: boolean } = {}) {
   const fixture = publishFixture();
   const home = join(fixture.root, 'home');
-  const directory = join(home, '.pi', 'agent', 'sessions', '--tmp-example-wt-collect--');
+  const real = join(fixture.root, 'seat-real');
+  mkdirSync(real, { recursive: true });
+  const realCwd = realpathSync(real);
+  let cwd = real;
+  if (options.symlinkCwd) { cwd = join(fixture.root, 'seat-link'); symlinkSync(real, cwd); }
+  const agentDir = options.agentDir ?? join(home, '.pi', 'agent');
+  const directory = join(agentDir, 'sessions', '--' + realCwd.replace(/^[/\\]/, '').replace(/[/\\:]/g, '-') + '--');
   if (texts !== null) {
     mkdirSync(directory, { recursive: true });
     const lines = texts.map((text) => JSON.stringify({ type: 'message', message: { role: 'assistant', content: [{ type: 'text', text }] } }));
     writeFileSync(join(directory, 'a.jsonl'), lines.join('\n') + '\n');
   }
-  return { ...fixture, home };
+  return { ...fixture, home, cwd, directory };
 }
 
-async function runCollect(fixture: ReturnType<typeof collectFixture>) {
-  const hc = spyOn(herdrCore, 'hcGet').mockReturnValue({ cwd: SEAT_CWD } as never);
+async function runCollect(fixture: ReturnType<typeof seatFixture>, agentDir?: string) {
+  const hc = spyOn(herdrCore, 'hcGet').mockReturnValue({ cwd: fixture.cwd } as never);
   const previous = process.env.REPO_HARNESS_GH_BIN;
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.REPO_HARNESS_GH_BIN = fixture.gh.bin;
+  if (agentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = agentDir;
   try {
     return await runReview(fixture.home, ['collect', '--repo', fixture.root, '--seat', 't9', '--pr', String(PUBLISH_PR), '--json']);
   } finally {
     hc.mockRestore();
     if (previous === undefined) delete process.env.REPO_HARNESS_GH_BIN; else process.env.REPO_HARNESS_GH_BIN = previous;
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
   }
 }
 
 const receiptBlock = (receipt: unknown) => 'Done.\nRECEIPT-JSON\n```json\n' + JSON.stringify(receipt, null, 2) + '\n```\n';
 
 test('collect publishes the last RECEIPT-JSON block of the seat session', async () => {
-  const fixture = collectFixture([receiptBlock(publishReceipt({ subject_sha: 'b'.repeat(40) })), receiptBlock(publishReceipt())]);
+  const fixture = seatFixture([receiptBlock(publishReceipt({ subject_sha: 'b'.repeat(40) })), receiptBlock(publishReceipt())]);
   const result = await runCollect(fixture);
   expect(result.status, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, pr: PUBLISH_PR, head_sha: PUBLISH_HEAD, round: 1, threads: 1 });
@@ -553,16 +560,44 @@ test('collect fails closed on a missing record, block, bad JSON, invalid receipt
   const cases: [string, readonly string[] | null, string, string][] = [
     ['missing session', null, 'review_receipt_invalid', 'session record is missing'],
     ['no block', ['no receipt here'], 'review_receipt_invalid', 'no RECEIPT-JSON block'],
-    ['bad JSON', ['RECEIPT-JSON\n{"protocol": '], 'review_receipt_invalid', 'does not decode'],
-    ['invalid receipt', ['RECEIPT-JSON\n{"protocol": 1}'], 'review_receipt_invalid', ''],
+    ['bad JSON', ['RECEIPT-JSON\n{"protocol": '], 'review_receipt_invalid', 'decodes to a repo-harness-review-publish-receipt object'],
+    ['not a receipt', ['RECEIPT-JSON\n{"protocol": 1}'], 'review_receipt_invalid', 'decodes to a repo-harness-review-publish-receipt object'],
+    ['top-level array', ['RECEIPT-JSON\n' + JSON.stringify([publishReceipt()])], 'review_receipt_invalid', 'decodes to a repo-harness-review-publish-receipt object'],
+    ['invalid receipt', ['RECEIPT-JSON\n' + JSON.stringify(publishReceipt({ protocol: 2 }))], 'review_receipt_invalid', ''],
     ['stale subject', [receiptBlock(publishReceipt({ subject_sha: 'b'.repeat(40) }))], 'review_subject_stale', ''],
   ];
   for (const [label, texts, code, message] of cases) {
-    const fixture = collectFixture(texts);
+    const fixture = seatFixture(texts);
     const result = await runCollect(fixture);
     expect(result.status, label).toBe(2);
     expect(JSON.parse(result.stdout), label).toMatchObject({ ok: false, error: code, posted: [] });
     expect(JSON.parse(result.stdout).message, label).toContain(message);
     expect(fixture.gh.calls().some((args) => args.includes('POST')), label).toBe(false);
   }
+});
+
+test('collect finds the session directory from the realpath of the seat cwd and the Pi agent dir', async () => {
+  const viaLink = seatFixture([receiptBlock(publishReceipt())], { symlinkCwd: true });
+  const linked = await runCollect(viaLink);
+  expect(linked.status, linked.stderr).toBe(0);
+
+  const agentDir = join(mkdtempSync(join(tmpdir(), 'rh-pi-agent-')), 'agent');
+  try {
+    const moved = seatFixture([receiptBlock(publishReceipt())], { agentDir });
+    const result = await runCollect(moved, agentDir);
+    expect(result.status, result.stderr).toBe(0);
+    // Without the override the same seat has no record, and the error names the directory looked for.
+    const missing = await runCollect(moved);
+    expect(JSON.parse(missing.stdout).message).toContain(join(moved.home, '.pi', 'agent', 'sessions'));
+  } finally {
+    rmSync(join(agentDir, '..'), { recursive: true, force: true });
+  }
+});
+
+test('collect skips a RECEIPT-JSON marker inside a string and takes the last receipt object', async () => {
+  const quoted = publishReceipt({ summary: 'See RECEIPT-JSON { "kind": "x" } for the format.' });
+  const fixture = seatFixture([receiptBlock(quoted), 'The block is below.\nRECEIPT-JSON is the marker.']);
+  const result = await runCollect(fixture);
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, head_sha: PUBLISH_HEAD });
 });
