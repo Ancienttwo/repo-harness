@@ -7,7 +7,7 @@ export const RETIRED_CLI_NAME = 'repo-harness';
 /**
  * The persisted protocol lines that start with the package name, each a whole line: the comment headers of
  * `assets/skills/repo-harness-issue-flow/references/templates.md`, the review start markers and the
- * Slack review lines. A test keeps this list equal to the header constants.
+ * Slack review lines. A test keeps this list a superset of the header constants.
  */
 export const RETIRED_CLI_PROTOCOL_HEADERS: readonly string[] = [
   'repo-harness issue claim status', 'repo-harness issue claim', 'repo-harness boundary question', 'repo-harness scope change',
@@ -18,9 +18,10 @@ export const RETIRED_CLI_PROTOCOL_HEADERS: readonly string[] = [
   'repo-harness merge hold released', 'repo-harness merge hold',
 ];
 
-const URL_TEXT = /\b[a-z][a-z\d+.-]*:\/\/\S*/giu;
+/** A URL ends at whitespace, a shell metacharacter or a quote, so a command after `;`, `&&` or `|` stays visible. */
+const URL_TEXT = /\b[a-z][a-z\d+.-]*:\/\/[^\s;&|()<>`'"]*/giu;
 /** `repo-harness` as one shell word; after npx or bunx, `-p`/`--package` takes it as a package specifier. */
-const WORD = /(?<![\w./@~=$-])(?<!\b(?:npx|bunx)[ \t](?:.*[ \t])?(?:-p|--package)[ \t]+)repo-harness(?![\w./@-])/u;
+const WORD = /(?<![\w.@~$-])(?<!\b(?:npx|bunx)[ \t](?:.*[ \t])?(?:-p|--package)[ \t]+)repo-harness(?![\w./@-])/u;
 /** npx and bunx run `repo-harness@<spec>` through its bin unless `-p` or `--package` names the bin. */
 const PACKAGE_RUN = /(?<![\w./-])(?:npx|bunx)(?:[ \t]+-(?!p(?![\w-])|-package(?![\w-]))\S+)*[ \t]+repo-harness@/u;
 
