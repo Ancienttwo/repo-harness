@@ -85,7 +85,7 @@ Each candidate gives its kind, subject, risk, confidence, uncertainty,
 `kind`, a `totalCount`, a `truncated` flag and the first items. Module
 statistics are files, lines, fan-in, fan-out, cycles, direction violations
 (filled only when the model declares constraints) and unresolved imports.
-archctx 0.9.1 does not measure instability or test files, so they are not shown.
+repo-harness does not show instability or test file counts in module statistics.
 A suggestion recorded by an earlier scan has `snapshot: "earlier"` and its own
 `baselineSnapshotDigest`. It keeps its recorded metrics and evidence and shows
 no module statistics, because the current scan measured a different snapshot.
