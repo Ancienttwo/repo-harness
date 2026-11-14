@@ -946,8 +946,13 @@ pi_install_factor_factory() {
 
   mkdir -p "$factors_dir/promoted" "$cache_dir"
   # The factor cache is a scaffold-only path, so it stays outside the init-managed block.
-  touch "$target_dir/.gitignore"
-  grep -Fxq ".claude/.factor-cache/" "$target_dir/.gitignore" || printf '%s\n' ".claude/.factor-cache/" >> "$target_dir/.gitignore"
+  local gitignore="$target_dir/.gitignore"
+  touch "$gitignore"
+  if ! grep -Fxq ".claude/.factor-cache/" "$gitignore"; then
+    # A last line without a newline would join the rule.
+    [[ -s "$gitignore" && -n "$(tail -c 1 "$gitignore")" ]] && printf '\n' >> "$gitignore"
+    printf '%s\n' ".claude/.factor-cache/" >> "$gitignore"
+  fi
 
   if [[ -f "$registry_template" ]]; then
     cp "$registry_template" "$factors_dir/registry.json"

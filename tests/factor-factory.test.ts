@@ -37,6 +37,12 @@ describe("Factor Factory", () => {
       expect(existsSync(join(planGCwd, ".ai/harness/scripts/factor-lab-new.sh"))).toBe(false);
       expect(existsSync(join(planGCwd, ".claude/factor-factory/hypothesis.template.md"))).toBe(true);
 
+      // A last line without a newline stays its own rule, and a reapply appends nothing.
+      writeFileSync(join(planGCwd, ".gitignore"), "private-notes/");
+      const install = `. "${join(ROOT, "scripts/lib/project-init-lib.sh")}" && pi_install_factor_factory "$PWD" "$PWD/none" "$PWD/none"`;
+      for (let i = 0; i < 2; i += 1) expect(spawnSync("bash", ["-c", install], { cwd: planGCwd }).status).toBe(0);
+      expect(readFileSync(join(planGCwd, ".gitignore"), "utf8")).toBe("private-notes/\n.claude/.factor-cache/\n");
+
       expect(existsSync(join(planCCwd, "tasks/factors"))).toBe(false);
       expect(existsSync(join(planCCwd, ".ai/harness/scripts/factor-lab-new.sh"))).toBe(false);
     } finally {

@@ -208,12 +208,13 @@ const BASH_WRITERS = ['pi_ensure_task_sync', 'pi_default_runtime_block', 'pi_wri
 
 /**
  * Since #2734 the bash scaffold writes no managed value: `rh init` is the only writer. A tag
- * qualifies only when every bash writer is gone; a partial removal fails closed in the readers.
+ * qualifies only when its lib names no bash writer at all, so no declaration form can hide one.
+ * Any mention sends the tag to the readers, which fail closed on a shape they do not know.
  */
 function bashWritesNoManagedValue(tree: TagTree): boolean {
   if (!tree.has(BASH_INIT_LIB)) return true;
   const lib = tree.read(BASH_INIT_LIB);
-  return BASH_WRITERS.every((name) => bashFunctionSource(lib, name) === null);
+  return BASH_WRITERS.every((name) => !new RegExp(`(?<![A-Za-z0-9_])${name}(?![A-Za-z0-9_])`).test(lib));
 }
 
 /**
