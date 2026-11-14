@@ -145,7 +145,7 @@ describe('language settings routes', () => {
     writeFileSync(paths[1]!, 'Personal rule.\n\n<!-- BEGIN: repo-harness global-working-rules -->\nunknown\n<!-- END: repo-harness global-working-rules -->\n');
     const before = paths.map(path => readFileSync(path, 'utf8'));
     const refused = await send(h, reportPath, { preset: 'en' });
-    expect([refused.status, (await refused.json()).error.code]).toEqual([409, 'report_language_refused']);
+    expect([refused.status, (await refused.json()).error.code]).toEqual([409, 'report_language_edited']);
     expect(paths.map(path => readFileSync(path, 'utf8'))).toEqual(before);
     // The repair that the refusal names: delete the block with both markers, then save again.
     writeFileSync(paths[1]!, 'Personal rule.\n');

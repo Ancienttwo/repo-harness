@@ -647,6 +647,18 @@ describe('language controls', () => {
     expect(banner.textContent).toContain('Repair the file named in the host list');
   });
 
+  test('an edited managed block refusal names the cause and the deletion repair', async () => {
+    await mount({
+      ...props(server(settings(), [])),
+      readReportingLanguage: async (): Promise<LanguageRead<readonly ReportingHost[]>> => ({ state: 'ok', value: [host('codex', null, 'managed-stale')] }),
+      writeReportingLanguage: async () => refused('report_language_edited', 'Server text.'),
+    });
+    await click(document.querySelector<HTMLElement>('[data-language-control="report"] [data-language-option="en"]')!);
+    const banner = document.querySelector('[data-language-control="report"] [data-save-result="report_language_edited"]')!;
+    expect(banner.textContent).toContain('differs from every released block');
+    expect(banner.textContent).toContain('both markers');
+  });
+
   test('the repository documentation language loads, saves and shows the init command for a missing policy', async () => {
     const writes: unknown[] = [];
     let stored: DocumentationLanguage = 'follow-user';

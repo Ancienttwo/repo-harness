@@ -404,6 +404,8 @@ export interface GlobalContextFilePlan {
   /** The content to write; set only when `outcome` is `write`. */
   readonly next: string | null;
   readonly detail: string;
+  /** True when the managed block differs from every released block and sync keeps it. */
+  readonly edited?: true;
 }
 
 /**
@@ -419,7 +421,7 @@ export function formatGlobalContextWrite(path: string, current: string | null, m
   return `${current === null ? 'created' : current.includes(GLOBAL_RULES_BEGIN) ? 'updated' : 'appended'}:${path}${edited}`;
 }
 
-export const GLOBAL_RULES_EDITED = 'the managed block differs from every released block, so sync keeps it; move personal rules outside the markers, then delete the block with both markers and try again to get the current one';
+export const GLOBAL_RULES_EDITED = 'the managed block differs from every released block, so sync keeps it; move personal rules outside the markers, then delete the block with both markers and run `rh update --report-language follow|zh-CN|en` to get the current one';
 
 /**
  * The instruction file must be reached without a symlink under HOME. The
@@ -519,7 +521,7 @@ export function planGlobalContextFile(
     { path, state: inspection.state, outcome, current, next, detail }
   );
   const write = (merged: MergedManagedBlock): GlobalContextFilePlan => merged.status === 'kept-edited'
-    ? plan('skipped', `skipped-edited:${path} (${GLOBAL_RULES_EDITED})`)
+    ? { ...plan('skipped', `skipped-edited:${path} (${GLOBAL_RULES_EDITED})`), edited: true }
     : plan('write', formatGlobalContextWrite(path, current, merged), merged.content);
   const withFlag = (): MergedManagedBlock => mergeManagedBlock(current ?? '', renderGlobalRulesBlock(sourceRoot, reportLanguageFromFlag(flag!)), sourceRoot);
   switch (inspection.state) {
@@ -565,10 +567,10 @@ export function setReportingLanguage(
   sourceRoot: string,
   hosts: readonly GlobalContextHost[],
   preset: ReportLanguageFlag,
-): GlobalContextRefresh & { readonly changed_hosts: readonly GlobalContextHost[] } {
+): GlobalContextRefresh & { readonly changed_hosts: readonly GlobalContextHost[]; readonly edited?: true } {
   const plan = preflightGlobalContextRefresh(sourceRoot, home, hosts, preset);
   const refused = plan.files.find(file => file.outcome === 'skipped');
-  if (refused) return { status: 'skipped', detail: refused.detail, changed_hosts: [] };
+  if (refused) return { status: 'skipped', detail: refused.detail, changed_hosts: [], ...(refused.edited && { edited: true as const }) };
   const block = renderGlobalRulesBlock(sourceRoot, reportLanguageFromFlag(preset));
   const files = plan.files.map(file => {
     const merged = mergeManagedBlock(file.current ?? '', block, sourceRoot);
