@@ -756,6 +756,9 @@ const OTHER_FAILURES = {
   'skipped-static-matrix-need': { summary: 'skipped', job: 'Lint (ubuntu-latest)',
     workflow: workflowDefinition('', '[selection, verify, lint]', ['  lint:', '    name: Lint', ...LINT_MATRIX]) },
   'skipped-transitive-need': { summary: 'skipped', job: 'Setup', workflow: workflowDefinition('setup', undefined, SETUP_JOB) },
+  // #2759: a required job with no needs and a failed job that no workflow job produces.
+  'no-needs-unmapped-failure': { summary: 'success', job: 'Unmapped job', workflow: workflowDefinition('', '[]') },
+  'no-needs-skipped-unmapped-failure': { summary: 'skipped', job: 'Unmapped job', workflow: workflowDefinition('', '[]') },
 } satisfies Record<string, OtherFailure>;
 
 type EvidenceScenario = 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'association-unknown'
@@ -919,7 +922,8 @@ test('a failed job outside the needs is failure evidence only beside a failed at
 test.each(['transitive-need', 'missing-nested-need', 'skipped-transitive-need', 'workflow-changed-on-base',
   'quoted-block-need', 'scalar-need-next-line', 'format-name-collision', 'reusable-name-collision',
   'reusable-callee-template', 'deep-indent-body', 'deep-indent-matrix', 'static-starts-with-prefix',
-  'prefix-starts-with-static', 'name-outside-domain', ...Object.keys(OTHER_FAILURES).filter(key => key.startsWith('r4-')) as `r4-${string}`[]])(
+  'prefix-starts-with-static', 'name-outside-domain', 'no-needs-unmapped-failure', 'no-needs-skipped-unmapped-failure',
+  ...Object.keys(OTHER_FAILURES).filter(key => key.startsWith('r4-')) as `r4-${string}`[]])(
   'an old failure that may sit in the needs graph stays on the fail-closed path: %s', (scenario) => {
     expect(() => evidenceVerdict(scenario)).toThrow('RequiredCheckObservation has no failed attempt');
   });

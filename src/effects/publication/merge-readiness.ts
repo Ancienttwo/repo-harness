@@ -627,7 +627,8 @@ function* checkEvidence(
     if (placement !== null && [...placement.failed.values()].every(where => where === 'outside')
       && attemptsJobs.every(job => job.conclusion === 'success' && !jobFailed(job))) return null;
     const needed = otherFailed.filter(job => placement?.failed.get(job.name) === 'needed');
-    if (placement?.direct) {
+    // A check with no needs owns the failure only when one of its own attempts failed.
+    if (placement?.direct && attemptsJobs.some(jobFailed)) {
       association = 'direct';
     } else if (needed.length > 0) {
       association = 'declared_needs';
