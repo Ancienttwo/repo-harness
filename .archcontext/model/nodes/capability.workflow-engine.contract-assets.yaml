@@ -9,6 +9,7 @@ responsibilities:
   - Own the fleet persona assets and their installer.
   - Own the package workflow contract body and the repo opt-in marker.
   - "Own policy seeders, capability authority, and the projected standalone resolver helper file."
+  - "Own the list of managed values that each release rendered, and the check that rebuilds it from the release tags."
   - "Own isolated worktree start and cleanup, branch-only PR shipping, the spec, triage and factor-lab helpers listed by the package contract."
 source:
   include:
@@ -16,6 +17,8 @@ source:
     - .codex/agents/**
     - scripts/install-agent-fleet.sh
     - assets/workflow-contract.v1.json
+    - assets/released-managed-values.v1.json
+    - scripts/check-released-managed-values.ts
     - .ai/context/**
     - .archcontext/model/nodes/**
     - scripts/capability-resolver.ts

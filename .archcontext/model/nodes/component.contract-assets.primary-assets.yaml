@@ -11,5 +11,6 @@ responsibilities:
 source:
   include:
     - assets/workflow-contract.v1.json
+    - assets/released-managed-values.v1.json
     - assets/AGENTS.md
     - assets/CLAUDE.md
