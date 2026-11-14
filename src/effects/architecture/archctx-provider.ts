@@ -190,8 +190,9 @@ export function runPackageLocalArchctxJson(
   options: ArchctxProviderOptions = {},
   maximumMs = 120_000,
   allowErrorEnvelope = false,
+  packageRoot?: string,
 ): { resolved: ResolvedArchctxPackage; value: unknown } {
-  const client = new ArchctxClient(repoRoot, requiredVersion, options);
+  const client = new ArchctxClient(repoRoot, requiredVersion, options, packageRoot);
   return { resolved: client.resolved, value: client.json(args, maximumMs, allowErrorEnvelope) };
 }
 
@@ -227,10 +228,10 @@ function readArchitectureCodeFacts(client: ArchctxClient, maximumMs: number): Do
   return { state: facts.state, issues };
 }
 
-export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOptions = {}): { resolved: ResolvedArchctxPackage; capabilities: ArchctxCapabilitiesV1 } {
+export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOptions = {}, packageRoot?: string): { resolved: ResolvedArchctxPackage; capabilities: ArchctxCapabilitiesV1 } {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
-  const { resolved, value } = runPackageLocalArchctxJson(repoRoot, policy.requiredVersion, ['capabilities', '--json'], options, Math.min(policy.timeoutMs, 10_000));
+  const { resolved, value } = runPackageLocalArchctxJson(repoRoot, policy.requiredVersion, ['capabilities', '--json'], options, Math.min(policy.timeoutMs, 10_000), false, packageRoot);
   try { assertArchctxVersion(value, policy.requiredVersion); }
   catch (error) { throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISMATCH', action: 'update-repo-harness', message: error instanceof Error ? error.message : String(error) }); }
   return { resolved, capabilities: value as ArchctxCapabilitiesV1 };

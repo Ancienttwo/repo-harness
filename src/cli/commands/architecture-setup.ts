@@ -48,7 +48,7 @@ function readManagedPackages(globalPackageRoot: string, cwd: string, env: NodeJS
       consumerRoot: globalPackageRoot,
       env,
       policy: { provider: 'archctx', applyMode: 'manual', requiredVersion: String(dependencies.archctx), timeoutMs: 10_000 },
-    });
+    }, archctxRoot);
   } catch (error) {
     return { status: 'runtime-mismatch', detail: error instanceof Error ? error.message : String(error) };
   }
