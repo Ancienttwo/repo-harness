@@ -480,7 +480,8 @@ test('Pi isolation fixture links native configuration without storing credential
   expect(prepareWith({ fixture: apiKey, other: oauth(soon) }, { defaultProvider: 'fixture' })).toThrow('review_pi_model_unnamed');
   // The host repeats the admission check from the owner's launch file just before the pi session start.
   const control = join(root, `control-${randomUUID()}`); mkdirSync(control);
-  const lateDeadline = Date.now() + 1500, late = prepareWith({ fixture: oauth(inOneHour()) }, named, lateDeadline)();
+  const late = prepareWith({ fixture: oauth(inOneHour()) }, named)();
+  const lateDeadline = Date.now() + 1500;
   const hostSpec = { kind: 'pi', controlDirectory: control, options: { model: late.model } } as ReviewHostSpec;
   const launchAt = (deadline: number) => writeSessionArtifact(join(control, 'launch-deadline.json'), { deadline, pi: { model: late.model, ...late.credential } }, false);
   launchAt(lateDeadline);
@@ -1286,7 +1287,16 @@ import {reviewRuntime,OarReviewHost,runHostFileRequest,openNativeSession} from $
 const dir=${JSON.stringify(root)},agent=${JSON.stringify(agent)};
 const options={cwd:dir,model:'openai/gpt-4o',env:{PI_CODING_AGENT_DIR:agent,OAR_PI_AGENT_DIR:agent}};
 let deadline,observed;
-if(${JSON.stringify(stage)}==='start'){deadline=Date.now()+1500;observed=await openNativeSession(reviewRuntime('pi',${JSON.stringify(fixture)}),{kind:'available',via:'bundled'},options,deadline).catch(error=>String(error))}
+if(${JSON.stringify(stage)}==='start'){
+// Hold the deadline timer until the native tree is ready and the start is still pending.
+const controlledDeadline={valueOf:()=>deadline??Date.now()+2140000000},realSetTimeout=globalThis.setTimeout;let fire,settled=false,msCaptured,expected;
+globalThis.setTimeout=(fn,ms,...args)=>{if(ms>2000000000){msCaptured=ms;expected=Number(controlledDeadline)-Date.now();fire=()=>fn(...args);return realSetTimeout(()=>{},2140000000)}return realSetTimeout(fn,ms,...args)};
+const opening=openNativeSession(reviewRuntime('pi',${JSON.stringify(fixture)}),{kind:'available',via:'bundled'},options,controlledDeadline);
+globalThis.setTimeout=realSetTimeout;opening.then(()=>{settled=true},()=>{settled=true});
+while(!existsSync(${JSON.stringify(pids)})||!existsSync(${JSON.stringify(work)})||!existsSync(${JSON.stringify(spawned)})){if(settled)throw new Error('native start settled before tree was ready');await new Promise(resolve=>realSetTimeout(resolve,10))}
+if(settled||!fire)throw new Error('native start or deadline timer was not pending');
+if(Math.abs(msCaptured-expected)>1000)throw new Error('deadline delay '+msCaptured+' differs from expected '+expected);
+deadline=Date.now();fire();observed=await opening.catch(error=>String(error));}
 else{const host=new OarReviewHost(await reviewRuntime('pi',${JSON.stringify(fixture)}).session({kind:'available',via:'bundled'},options),()=>{});
 if(${JSON.stringify(stage)}==='stuck disposal')host.dispose=()=>new Promise(()=>{});
 const content='[fixture pending ack]',request={protocol:2,task:'fixture',role:'deep-reasoner',round:1,request_id:randomUUID(),context_ref:join(dir,'context-1.txt'),source_ref:'fixture',result_ref:join(dir,'result-1.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename'}};
