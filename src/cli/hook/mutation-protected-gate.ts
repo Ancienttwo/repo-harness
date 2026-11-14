@@ -534,7 +534,7 @@ function commands(tokens: readonly Token[], violations: string[]): Step[] {
 // Programs (rule 6) and recursion (rule 8)
 // ---------------------------------------------------------------------------
 
-const READ_ONLY = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'rg', 'ls', 'stat', 'file', 'du', 'diff', 'cmp', 'cut', 'tr', 'jq', 'echo',
+export const READ_ONLY = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'rg', 'ls', 'stat', 'file', 'du', 'diff', 'cmp', 'cut', 'tr', 'jq', 'echo',
   'printf', 'test', 'pwd', 'basename', 'dirname', 'realpath', 'readlink', 'which', 'type', 'cd', 'find', 'sort', 'git', 'gh']);
 /**
  * The git read subcommands and the exact options each one takes. git takes a unique prefix of a long option (`--textc` is
@@ -552,7 +552,7 @@ const DIFF = '-p --patch -s --no-patch --stat --stat= --shortstat --numstat --na
   + '--unified= -w --ignore-all-space -b --ignore-space-change --word-diff --word-diff= -M --find-renames --no-renames --minimal '
   + '--relative --no-ext-diff --no-textconv --no-color --color=';
 const COUNT = /^-n?\d+$/;
-const GIT_READ = new Map<string, GitRead>([
+export const GIT_READ = new Map<string, GitRead>([
   ['log', { options: options(REVISIONS, PRETTY, DIFF), glued: /^-n?\d+$|^-U\d+$/ }],
   ['show', { options: options(PRETTY, DIFF), glued: /^-U\d+$/ }],
   ['diff', { options: options(DIFF, '--cached --staged --quiet --exit-code --check --merge-base'), glued: /^-U\d+$/ }],
@@ -575,8 +575,12 @@ const GIT_READ = new Map<string, GitRead>([
 ]);
 /** Options that run a configured program; a prefix of one is an abbreviation even where the option is not listed. */
 const GIT_RUNS = ['--textconv', '--ext-diff', '--output', '--show-signature', '--filters'];
-/** Format placeholders that run the configured signature verifier (`gpg.program`). */
-const GIT_SIGNATURE = /%G|%\(signature/;
+/**
+ * Format placeholders that run the configured signature verifier (`gpg.program`), also with a `+`, `-` or space modifier after `%`.
+ * Only a format option value holds placeholders; `--date=format:%G` is a strftime year.
+ */
+const GIT_SIGNATURE = /%[-+ ]?G|%\(signature/;
+const GIT_FORMAT = /^--(?:format|pretty)=/;
 const GIT_FLAGS = new Set(['--no-pager', '-P', '--no-optional-locks', '--literal-pathspecs', '--glob-pathspecs', '--noglob-pathspecs',
   '--icase-pathspecs']);
 const GH_READ = new Set(['pr view', 'pr diff', 'pr list', 'pr checks', 'pr status', 'issue view', 'issue list', 'issue status',
@@ -599,23 +603,7 @@ function gitInvocation(args: readonly Word[]): { dirs: Word[]; at: number } | nu
   return i < args.length ? { dirs, at: i } : null;
 }
 
-function readOnly(args: readonly Word[]): boolean {
-  const program = args[0]!.value;
-  const rest = args.slice(1).map(word => word.value);
-  if (!READ_ONLY.has(program) || args[0]!.quoted) return false;
-  switch (program) {
-    case 'find': return !rest.some(value => FIND_WRITES.test(value));
-    case 'sort': return !rest.some(value => /^-[^-]*o/.test(value) || value.startsWith('--output'));
-    case 'rg': return !rest.some(value => value === '--pre' || value.startsWith('--pre='));
-    case 'file': return !rest.some(value => value === '-C' || value === '--compile');
-    case 'git': {
-      const git = gitInvocation(args);
-      return git !== null && GIT_READ.has(args[git.at]!.value) && gitOptionFinding(args, git.at, STRICT) === null;
-    }
-    case 'gh': return GH_READ.has(`${rest[0]} ${rest[1]}`);
-    default: return true;
-  }
-}
+const readOnly = (args: readonly Word[]): boolean => programFinding(args, true, 1) === null;
 
 /** Rule 8: whole-repository recursion, with or without a protected name. */
 function recursionFinding(args: readonly Word[], dirs: Dirs, resolver: Resolver): string | null {
@@ -705,7 +693,7 @@ function gitOptionFinding(args: readonly Word[], at: number, unlisted: string): 
   for (const word of args.slice(at + 1)) {
     const value = word.value;
     if (value === '--') break;
-    if (GIT_SIGNATURE.test(value)) {
+    if (GIT_FORMAT.test(value) && GIT_SIGNATURE.test(value)) {
       return finding(`passes ${value} to git ${sub}, a format that runs the signature verifier`, 'Remove the %G and %(signature) placeholders: they run gpg.program.');
     }
     if (word.expand || word.glob) {
@@ -715,10 +703,16 @@ function gitOptionFinding(args: readonly Word[], at: number, unlisted: string): 
     const equals = value.indexOf('=');
     if (read.options.has(value) || (equals > 0 && read.options.has(value.slice(0, equals + 1))) || read.glued?.test(value)) continue;
     const name = equals > 0 ? value.slice(0, equals) : value;
-    const full = [...read.options, ...GIT_RUNS].map(option => option.replace(/=$/, '')).filter(option => option !== name && option.startsWith(name));
-    if (name.startsWith('--') && full.length) {
-      return finding(`passes ${value} to git ${sub}, an abbreviation of ${full.join(' or ')}`,
-        'Write the full option name: git takes a unique prefix of a long option, and the gate reads only full names.');
+    if (name.startsWith('--')) {
+      const admitted = [...new Set([...read.options].map(option => option.replace(/=$/, '')))].filter(option => option !== name && option.startsWith(name));
+      if (admitted.length) {
+        return finding(`passes ${value} to git ${sub}, an abbreviation of ${admitted.join(' or ')}`,
+          `Write the full option name (${admitted.join(' or ')}): git takes a unique prefix of a long option, and the gate reads only full names.`);
+      }
+      const runs = GIT_RUNS.filter(option => option.startsWith(name));
+      if (runs.length) {
+        return finding(`passes ${value} to git ${sub}, an abbreviation of ${runs.join(' or ')}, which runs a configured program`, `Remove ${value} from the git ${sub} command.`);
+      }
     }
     return finding(`passes ${value} to git ${sub}, an option outside the read list`, unlisted);
   }
@@ -736,37 +730,69 @@ function optionValues(words: readonly Word[], long: string, short: string): stri
 
 const MESSAGE_FILE = 'Write the message to a file on its own command line, then pass it with git commit -F <file> or git tag -F <file>.';
 
-/** Rule 6: a program that is not read-only on a command line that names a protected directory. The fix names the usual way out. */
-function programFinding(args: readonly Word[], named: boolean, commands: number): Finding {
-  const program = args[0]!.value;
+const GIT_GLOBAL = 'Remove the git global option: only -C <dir>, --no-pager, -P, --no-optional-locks and the pathspec flags pass.';
+
+/** Rule 6 for git: null for a listed read subcommand with listed options. */
+function gitFinding(args: readonly Word[], split: boolean, commands: number): Finding | null {
+  const git = gitInvocation(args);
+  if (git && GIT_READ.has(args[git.at]!.value)) {
+    const sub = args[git.at]!.value;
+    return gitOptionFinding(args, git.at, split ? SPLIT : `Pass git ${sub} only options of its read list, or read with rg, cat or ls.`);
+  }
+  const sub = git ? args[git.at]!.value : null;
+  const global = git ? undefined : args.slice(1).find((word, n) => word.value.startsWith('-') && word.value !== '-C' && !GIT_FLAGS.has(word.value)
+    && args[n]!.value !== '-C');
+  const reason = sub ? `runs git ${sub}, which is not a read-only program`
+    : global ? `runs git with the global option ${global.value}, which is not listed` : 'runs git with no subcommand';
+  if (sub === 'grep') return finding(reason, 'Use rg to search: git grep -O runs a command on the matched files.');
+  if (sub === 'cat-file') return finding(reason, 'Use git show <rev>:<path>: git cat-file --textconv and --filters run configured programs.');
+  if (sub === 'for-each-ref') return finding(reason, 'Use git show-ref or git log: git for-each-ref %(signature) formats run gpg.program.');
+  if (split) return finding(reason, SPLIT);
+  if (sub === 'commit' || sub === 'tag') return finding(reason, MESSAGE_FILE);
+  if (!sub) return finding(reason, global ? GIT_GLOBAL : 'Give git a read subcommand, such as git log, git show or git status.');
+  return finding(reason, commands > 1 ? SPLIT : STRICT);
+}
+
+/** Rule 6 for gh: null for a listed read subcommand. */
+function ghFinding(args: readonly Word[], split: boolean): Finding | null {
+  const sub = args.slice(1).find(word => !word.value.startsWith('-'))?.value;
+  if (GH_READ.has(`${args[1]?.value} ${args[2]?.value}`)) return null;
+  const reason = `runs gh ${sub ?? ''}`.trim() + ', which is not a read-only program';
+  if (split) return finding(reason, SPLIT);
+  if (optionValues(args, '--title', '-t').some(wordNamesProtected)) {
+    return finding(reason, 'Keep _ops and _ref out of the title: gh reads only the body from a file (--body-file <file>).');
+  }
+  if (sub === 'api') {
+    return finding(reason, 'Keep _ops and _ref out of the gh api endpoint; pass a request body that names them with gh api --input <file>, written on its own command line.');
+  }
+  return finding(reason, 'Write the body to a file on its own command line, then pass it with gh --body-file <file>.');
+}
+
+/**
+ * Rule 6: null for a read-only program; else the finding, whose fix names the usual way out. One decision serves admission and the
+ * denial text. The lexer already removed quotes and backslashes from the program word, so every lookup reads the name the shell
+ * runs; a read-only program admits only its plain spelling.
+ */
+function programFinding(args: readonly Word[], named: boolean, commands: number): Finding | null {
+  const word = args[0]!;
+  const program = word.value;
   const split = !named && commands > 1;
-  if (program === 'git') {
-    const git = gitInvocation(args);
-    const sub = git ? args[git.at]!.value : null;
-    if (git && sub && GIT_READ.has(sub)) {
-      return gitOptionFinding(args, git.at, split ? SPLIT : `Pass git ${sub} only options of its read list, or read with rg, cat or ls.`)!;
-    }
-    const reason = sub ? `runs git ${sub}, which is not a read-only program` : 'runs git with a global option that is not listed (only -C and flags with no value)';
-    if (sub === 'grep') return finding(reason, 'Use rg to search: git grep -O runs a command on the matched files.');
-    if (sub === 'cat-file') return finding(reason, 'Use git show <rev>:<path>: git cat-file --textconv and --filters run configured programs.');
-    if (sub === 'for-each-ref') return finding(reason, 'Use git show-ref or git log: git for-each-ref %(signature) formats run gpg.program.');
-    if (split) return finding(reason, SPLIT);
-    if (sub === 'commit' || sub === 'tag') return finding(reason, MESSAGE_FILE);
-    return finding(reason, commands > 1 ? SPLIT : STRICT);
+  const rest = args.slice(1).map(arg => arg.value);
+  const notRead = finding(`runs ${program}, which is not a read-only program`, commands > 1 ? SPLIT : STRICT);
+  if (word.expand || !READ_ONLY.has(program)) return notRead;
+  const denies = (test: (value: string) => boolean) => rest.some(test) ? notRead : null;
+  let result: Finding | null;
+  switch (program) {
+    case 'git': result = gitFinding(args, split, commands); break;
+    case 'gh': result = ghFinding(args, split); break;
+    case 'find': result = denies(value => FIND_WRITES.test(value)); break;
+    case 'sort': result = denies(value => /^-[^-]*o/.test(value) || value.startsWith('--output')); break;
+    case 'rg': result = denies(value => value === '--pre' || value.startsWith('--pre=')); break;
+    case 'file': result = denies(value => value === '-C' || value === '--compile'); break;
+    default: result = null;
   }
-  if (program === 'gh') {
-    const sub = args.slice(1).find(word => !word.value.startsWith('-'))?.value;
-    const reason = `runs gh ${sub ?? ''}`.trim() + ', which is not a read-only program';
-    if (split) return finding(reason, SPLIT);
-    if (optionValues(args, '--title', '-t').some(wordNamesProtected)) {
-      return finding(reason, 'Keep _ops and _ref out of the title: gh reads only the body from a file (--body-file <file>).');
-    }
-    if (sub === 'api') {
-      return finding(reason, 'Keep _ops and _ref out of the gh api endpoint; pass a request body that names them with gh api --input <file>, written on its own command line.');
-    }
-    return finding(reason, 'Write the body to a file on its own command line, then pass it with gh --body-file <file>.');
-  }
-  return finding(`runs ${program}, which is not a read-only program`, commands > 1 ? SPLIT : STRICT);
+  if (result || !word.quoted) return result;
+  return finding(`writes the program name ${program} with a quote or a backslash`, `Write ${program} as a plain word: the gate admits a read-only program only in its plain spelling.`);
 }
 
 export interface GateDecision {
@@ -835,6 +861,7 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
       const args = cmd.words;
       const program = args[0];
       recursion ??= recursionFinding(args, dirs, resolver);
+      let decision: Finding | null = null;
 
       if (program) {
         if (program.expand) violations.push('a substitution in the program position');
@@ -842,7 +869,8 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
         if (args.some(word => !word.quoted && RESERVED.has(word.value) && (word === program || ['{', '}', '!'].includes(word.value)))) {
           violations.push('a compound command or reserved word');
         }
-        const known = !program.expand && readOnly(args);
+        decision = programFinding(args, named, list.length);
+        const known = decision === null;
         const cp = program.value === 'cp' && !program.quoted;
         const operands = args.slice(1);
         if (!known && operands.some(word => word.expand)) violations.push(`an expanded word for ${program.value}`);
@@ -850,13 +878,13 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
           if (operands.some(word => /^-[^-]*t|^--target-directory/.test(word.value))) findings.push(finding('cp with a target-directory option'));
           const destination = operands.filter(word => !word.value.startsWith('-')).at(-1);
           if (destination && resolver.mayReachProtected(destination.pattern, dirs)) findings.push(finding(`cp to ${destination.value}`));
-        } else if (!known) findings.push(programFinding(args, named, list.length));
+        } else if (decision) findings.push(decision);
       }
       for (const redirect of cmd.redirects) {
         const target = redirect.target;
         if (!target) continue;
         if (redirect.op.endsWith('<<<')) {
-          if (target.expand && !(program && readOnly(args))) violations.push('an expanded here-string');
+          if (target.expand && !(program && decision === null)) violations.push('an expanded here-string');
           continue;
         }
         const duplicate = /^\d*(?:>&|<&)$/.test(redirect.op);
