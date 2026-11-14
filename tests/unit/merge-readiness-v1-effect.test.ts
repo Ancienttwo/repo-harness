@@ -714,6 +714,8 @@ interface OtherFailure {
   readonly workflow: string;
   /** The workflow text at the base; the head text when absent. */
   readonly base?: string;
+  /** Attempt 2 of the summary is still running or was skipped; attempt 2 passes when absent. */
+  readonly rerun?: 'pending' | 'skipped';
 }
 
 const OTHER_FAILURES = {
@@ -762,6 +764,10 @@ const OTHER_FAILURES = {
   'neutral-attempt': { summary: 'neutral', job: null, workflow: workflowDefinition() },
   'no-needs-skipped-attempt': { summary: 'skipped', job: null, workflow: workflowDefinition('', '[]') },
   'no-needs-neutral-attempt': { summary: 'neutral', job: null, workflow: workflowDefinition('', '[]') },
+  'no-needs-sibling-failure-rerun-pending': { summary: 'success', job: PROJECTION_JOB,
+    workflow: workflowDefinition('', '[]'), rerun: 'pending' },
+  'no-needs-sibling-failure-rerun-skipped': { summary: 'success', job: PROJECTION_JOB,
+    workflow: workflowDefinition('', '[]'), rerun: 'skipped' },
 } satisfies Record<string, OtherFailure>;
 
 type EvidenceScenario = 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'association-unknown'
@@ -771,8 +777,10 @@ type EvidenceScenario = 'passed-rerun' | 'failed-check' | 'missing-previous-job'
 function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadinessInput['gh_runner']> {
   const source = fakeGh();
   const failing = scenario === 'failed-check';
+  const other: OtherFailure | null = scenario in OTHER_FAILURES ? OTHER_FAILURES[scenario as keyof typeof OTHER_FAILURES] : null;
   const skipping = scenario === 'single-attempt-skipping';
-  const rerunning = scenario === 'rerun-in-progress';
+  const skippedRerun = other?.rerun === 'skipped';
+  const rerunning = scenario === 'rerun-in-progress' || other?.rerun === 'pending';
   const firstAttempt = failing || skipping;
   const run = {
     path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD,
@@ -785,14 +793,13 @@ function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadines
     steps: [{ name: step, number: 1, status: 'completed', conclusion }],
     check_run_url: checkRun,
   });
-  const other: OtherFailure | null = scenario in OTHER_FAILURES ? OTHER_FAILURES[scenario as keyof typeof OTHER_FAILURES] : null;
   const annotationRun = scenario === 'no-annotations' ? null
     : 'https://api.github.com/repos/example/repo-harness/check-runs/77';
   return (args) => {
     const path = args[1] ?? '';
     if (args[0] === 'pr' && args[1] === 'checks') {
       return { status: failing ? 1 : 0, stdout: JSON.stringify([{
-        name: SUMMARY_JOB, bucket: failing ? 'fail' : skipping ? 'skipping' : rerunning ? 'pending' : 'pass',
+        name: SUMMARY_JOB, bucket: failing ? 'fail' : skipping || skippedRerun ? 'skipping' : rerunning ? 'pending' : 'pass',
         link: `https://github.com/example/repo-harness/actions/runs/123/job/${firstAttempt ? 456 : 789}`,
       }]) };
     }
@@ -808,7 +815,7 @@ function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadines
     }
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/2/jobs?per_page=100') {
       return { status: 0, stdout: JSON.stringify({ total_count: 3, jobs: [
-        job(789, SUMMARY_JOB, rerunning ? null : 'success', SUMMARY_STEP),
+        job(789, SUMMARY_JOB, rerunning ? null : skippedRerun ? 'skipped' : 'success', SUMMARY_STEP),
         job(760, SHARD_ONE, 'success', SHARD_STEP),
         job(761, SHARD_TWO, 'success', SHARD_STEP),
       ] }) };
@@ -935,7 +942,9 @@ test.each(['transitive-need', 'missing-nested-need', 'skipped-transitive-need', 
     expect(() => evidenceVerdict(scenario)).toThrow('RequiredCheckObservation has no failed attempt');
   });
 
-test.each([['single-attempt-skipping', 'checks_failed'], ['rerun-in-progress', 'checks_pending']] as const)(
+test.each([['single-attempt-skipping', 'checks_failed'], ['rerun-in-progress', 'checks_pending'],
+  ['no-needs-sibling-failure-rerun-pending', 'checks_pending'],
+  ['no-needs-sibling-failure-rerun-skipped', 'checks_failed']] as const)(
   'a required check that is not green and has no failure evidence stays blocked by its bucket: %s', (scenario, blocker) => {
     const verdict = evidenceVerdict(scenario);
     expect(verdict.ready).toBe(false);

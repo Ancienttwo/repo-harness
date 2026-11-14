@@ -629,13 +629,11 @@ function* checkEvidence(
     if (placement !== null && [...placement.failed.values()].every(where => where === 'outside')
       && succeededEveryAttempt) return null;
     const needed = otherFailed.filter(job => placement?.failed.get(job.name) === 'needed');
-    // A check with no needs owns the failure only when one of its own attempts failed.
-    if (placement?.direct && checkFailed) {
-      association = 'direct';
-    } else if (needed.length > 0) {
+    if (needed.length > 0) {
       association = 'declared_needs';
       for (const job of needed) childAssociations.set(job.name, 'declared_needs');
-    } else {
+    } else if (!(placement?.direct && checkFailed)) {
+      // A check with no needs stays direct only when one of its own attempts failed.
       association = 'unknown';
       for (const job of otherFailed) childAssociations.set(job.name, 'unknown');
     }
@@ -671,10 +669,11 @@ function* checkEvidence(
       return job === undefined ? [] : [attemptObservation(job, index + 1, runUrl, link, annotations.get(job.id))];
     }),
   }));
-  // Each child name comes from a failed provider job. Without failure evidence
-  // a check that is not green now stays blocked by its bucket; a green check
-  // with an attempt that did not succeed reaches the fail-closed assessment.
-  if (children.length === 0 && !checkFailed && (succeededEveryAttempt || check.bucket !== 'pass')) return null;
+  // Without failure evidence of its own or of a declared need, a check that is
+  // not green now stays blocked by its bucket; a green check with an attempt
+  // that did not succeed reaches the fail-closed assessment.
+  if (!checkFailed && association !== 'declared_needs'
+    && (check.bucket !== 'pass' || (children.length === 0 && succeededEveryAttempt))) return null;
   if (attemptsJobs.length > 1 && attemptsJobs[attemptsJobs.length - 1]!.conclusion === 'success') {
     const latestTestExecution = (yield { test_execution: {
       repository: identity.repo_name_with_owner,
