@@ -56,7 +56,7 @@ export function preparePiAgentDirectory(output: string, sourceHome: string, runW
   const models = join(source, 'models.json'), destination = join(directory, 'models.json');
   let loopbackPorts: readonly number[] = [];
   if (existsSync(models)) {
-    const bytes = readAuthBytes(models);
+    const bytes = readNativeConfigBytes(models);
     try { loopbackPorts = piModelLoopbackPorts(bytes); } finally { bytes.fill(0); }
     if (!existsSync(destination)) symlinkSync(models, destination);
     if (!lstatSync(destination).isSymbolicLink() || readlinkSync(destination) !== models) throw new Error('review_pi_models_changed');
@@ -64,7 +64,7 @@ export function preparePiAgentDirectory(output: string, sourceHome: string, runW
   const settings = preparePiSettings(directory, source);
   const auth = join(source, 'auth.json'), link = join(directory, 'auth.json');
   if (existsSync(auth)) {
-    const bytes = readAuthBytes(auth);
+    const bytes = readNativeConfigBytes(auth);
     try { assertAccessWindow(piAuthExpiries(bytes, settings.defaultProvider), runWindowMs); } finally { bytes.fill(0); }
     if (!existsSync(link)) symlinkSync(auth, link);
     if (!lstatSync(link).isSymbolicLink() || readlinkSync(link) !== auth) throw new Error('review_pi_auth_changed');
@@ -79,7 +79,7 @@ function preparePiSettings(directory: string, source: string): Readonly<Record<s
   const native = join(source, 'settings.json'), destination = join(directory, 'settings.json');
   let settings: Record<string, unknown> = {};
   if (existsSync(native)) {
-    const bytes = readAuthBytes(native);
+    const bytes = readNativeConfigBytes(native);
     try {
       const parsed: unknown = JSON.parse(bytes.toString('utf8'));
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
@@ -123,7 +123,7 @@ export function inside(path: string, directory: string): boolean {
 }
 
 function ownedOutput(output: string): string {
-  if (!isAbsolute(output) || lstatSync(output).isSymbolicLink() || !lstatSync(output).isDirectory()) throw new Error('review_codex_home_unsafe');
+  if (!isAbsolute(output) || lstatSync(output).isSymbolicLink() || !lstatSync(output).isDirectory()) throw new Error('review_output_unsafe');
   return realpathSync(output);
 }
 /** A credential expiry in epoch milliseconds, or 'none' for a credential that does not expire (an API key). */
@@ -164,7 +164,8 @@ function piAuthExpiries(bytes: Buffer, defaultProvider: unknown): CredentialExpi
     throw new Error(`review_pi_auth_shape_unknown: provider ${JSON.stringify(provider)}`);
   });
 }
-function readAuthBytes(path: string): Buffer {
+/** One bounded read of a native credential or configuration file (auth.json, models.json, settings.json); never follows a link. */
+function readNativeConfigBytes(path: string): Buffer {
   let fd: number;
   try { fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW); }
   catch { throw new Error('review_auth_source_unavailable'); }
@@ -186,13 +187,13 @@ export function prepareCodexHome(output: string, sourceHome: string, runWindowMs
     if (reuse) {
       const stat = lstatSync(destination);
       if (!stat.isFile() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o600) throw new Error('review_auth_copy_unsafe');
-      const bytes = readAuthBytes(destination);
+      const bytes = readNativeConfigBytes(destination);
       try { assertAccessWindow(codexAuthExpiry(bytes), runWindowMs); } finally { bytes.fill(0); }
       return { home, auth_copied: true, mode: '0600' };
     }
     const sourceDirectory = join(realpathSync(sourceHome), '.codex');
     if (lstatSync(sourceDirectory).isSymbolicLink() || !lstatSync(sourceDirectory).isDirectory()) throw new Error('review_auth_source_unsafe');
-    const bytes = readAuthBytes(join(sourceDirectory, 'auth.json'));
+    const bytes = readNativeConfigBytes(join(sourceDirectory, 'auth.json'));
     let fd: number | undefined; let created = false;
     try {
       assertAccessWindow(codexAuthExpiry(bytes), runWindowMs);
