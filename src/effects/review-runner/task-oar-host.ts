@@ -6,7 +6,7 @@ import type { PromptRunOptions } from '@botiverse/oar/observe';
 import { scriptedRuntime } from '@botiverse/oar/testing';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { processIdentity, readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
@@ -57,25 +57,12 @@ export class OarReviewHost {
     await this.session.dispose();
     this.unsubscribe(); this.disposed = true;
   }
-  /**
-   * The round-deadline stop. OAR's owned disposal stops the native process even while the prompt
-   * ack is pending: it records the process tree by pid and start time, kills the process group and
-   * the recorded descendants, and awaits the root's exit. Its stdin-EOF grace (10 s default) would
-   * let a native pi that ignores EOF keep its credential use running, so the grace here is 0.
-   * The host process ends after this stop. Then the host awaits the exit of each process that it
-   * recorded before the stop, by the same pid and start time, so no reused pid matches.
-   */
-  async stopAtDeadline(): Promise<void> {
-    const tree = descendantProcesses(process.pid);
-    process.env.OAR_KILL_GRACE_MS = '0';
-    await this.dispose();
-    for (const end = Date.now() + DEADLINE_STOP_EXIT_MS; ;) {
-      const live = new Set(processTable().map(entry => `${entry.pid} ${entry.start}`));
-      const left = tree.filter(entry => live.has(`${entry.pid} ${entry.start}`));
-      if (left.length === 0) return;
-      if (Date.now() >= end) throw new Error(`OAR_HOST_DEADLINE_STOP_INCOMPLETE: native reviewer processes ${left.map(entry => entry.pid).join(',')} still run; end them, then cancel the review`);
-      await new Promise(resolve => setTimeout(resolve, 25));
-    }
+  /** Set when a deadline stop could not prove that the native tree ended: the host writes no disposal receipt. */
+  stopIncomplete = false;
+  /** The round-deadline stop of a pending turn: the owned tree, then disposal and the turn, all bounded from `deadline`. */
+  async stopAtDeadline(deadline: number, turn: Promise<unknown>): Promise<void> {
+    try { await stopOwnedTree(deadline, async () => { await this.dispose(); await turn.catch(() => undefined); }); }
+    catch (error) { this.stopIncomplete = true; throw error; }
   }
   get sessionId(): string { return this.session.id; }
   model(kind: string): string | null {
@@ -83,23 +70,79 @@ export class OarReviewHost {
   }
 }
 
-/** The bound for the deadline-stopped native tree to exit after SIGKILL. */
-const DEADLINE_STOP_EXIT_MS = 5000;
+/** Resolves to HOST_DEADLINE_STOP at the absolute `deadline` unless `work` settles first. */
+async function untilDeadline<T>(deadline: number, work: Promise<T>): Promise<T | typeof HOST_DEADLINE_STOP> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const fired = new Promise<typeof HOST_DEADLINE_STOP>(resolve => { timer = setTimeout(() => resolve(HOST_DEADLINE_STOP), Math.max(0, deadline - Date.now())); });
+  try { return await Promise.race([work, fired]); } finally { clearTimeout(timer); }
+}
+
+/** The bound of the whole deadline stop, from the deadline: freeze, SIGKILL, disposal and the exit wait. */
+const DEADLINE_STOP_MS = 5000;
+/**
+ * The deadline stop of every process that this host started. OAR's own disposal records the tree
+ * once and then signals it, so a descendant in another process group that forks after that record
+ * escapes. Here a SIGSTOPped process cannot fork, so the host freezes the tree top-down, then
+ * SIGKILLs the frozen set. Then `settle` (OAR disposal and the pending work) runs with a zero kill
+ * grace, and the host awaits the exit of each frozen process by pid and start time. A process that
+ * reparented to launchd before the stop is not in the tree. The whole stop ends at
+ * `deadline + DEADLINE_STOP_MS`; past that bound it throws OAR_HOST_DEADLINE_STOP_INCOMPLETE.
+ */
+async function stopOwnedTree(deadline: number, settle: () => Promise<unknown>): Promise<void> {
+  const end = deadline + DEADLINE_STOP_MS, grace = process.env.OAR_KILL_GRACE_MS;
+  // OAR reads the grace when it stops a child; only this stop runs without it.
+  process.env.OAR_KILL_GRACE_MS = '0';
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const frozen = freezeOwnedTree(end);
+    for (const entry of frozen) signalProcess(entry.pid, 'SIGKILL');
+    const expired = new Promise<false>(resolve => { timer = setTimeout(resolve, Math.max(0, end - Date.now()), false); });
+    const settled = await Promise.race([settle().then(() => true, () => true), expired]);
+    for (; ;) {
+      const live = new Set(processTable(end).map(identityKey));
+      const left = frozen.filter(entry => live.has(identityKey(entry)));
+      if (settled && left.length === 0) return;
+      if (!settled || Date.now() >= end) {
+        throw new Error(`OAR_HOST_DEADLINE_STOP_INCOMPLETE: the native reviewer stop did not end within ${DEADLINE_STOP_MS} ms of the round deadline${
+          left.length > 0 ? `; processes ${left.map(entry => entry.pid).join(',')} still run` : ''}; end them, then cancel the review`);
+      }
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  } finally {
+    clearTimeout(timer);
+    if (grace === undefined) delete process.env.OAR_KILL_GRACE_MS; else process.env.OAR_KILL_GRACE_MS = grace;
+  }
+}
+
 interface ProcessEntry { pid: number; ppid: number; start: string }
-function processTable(): ProcessEntry[] {
-  return execFileSync('ps', ['-A', '-o', 'pid=,ppid=,lstart='], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } }).split('\n').flatMap(line => {
+const identityKey = (entry: ProcessEntry) => `${entry.pid} ${entry.start}`;
+/** The process table without the ps process itself, bounded by `end`. */
+function processTable(end: number): ProcessEntry[] {
+  const ps = spawnSync('ps', ['-A', '-o', 'pid=,ppid=,lstart='], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' }, timeout: Math.max(1, end - Date.now()) });
+  if (ps.status !== 0) throw new Error(`OAR_HOST_DEADLINE_STOP_INCOMPLETE: ps could not read the process table (${ps.error?.message ?? `status ${ps.status}`}); end the native reviewer processes, then cancel the review`);
+  return ps.stdout.split('\n').flatMap(line => {
     const match = /^\s*(\d+)\s+(\d+)\s+(\S.*?)\s*$/.exec(line);
-    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), start: match[3]! }] : [];
+    return match && Number(match[1]) !== ps.pid ? [{ pid: Number(match[1]), ppid: Number(match[2]), start: match[3]! }] : [];
   });
 }
-function descendantProcesses(root: number): ProcessEntry[] {
-  const table = processTable(), found: ProcessEntry[] = [];
-  for (let parents = new Set([root]); parents.size > 0;) {
-    const children = table.filter(entry => parents.has(entry.ppid));
-    found.push(...children);
-    parents = new Set(children.map(entry => entry.pid));
+function signalProcess(pid: number, signal: NodeJS.Signals): void {
+  try { process.kill(pid, signal); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+}
+/**
+ * Each pass stops only the children of the host and of processes frozen in an earlier pass. Such a
+ * pid cannot be reused before the signal: a stopped parent cannot reap its child, and this host
+ * reaps its own children only on an event-loop turn, which a synchronous pass does not yield.
+ * The passes repeat until no child of the host or of a frozen process is unfrozen.
+ */
+function freezeOwnedTree(end: number): ProcessEntry[] {
+  const frozen = new Map<string, ProcessEntry>();
+  for (; ;) {
+    const parents = new Set([process.pid, ...[...frozen.values()].map(entry => entry.pid)]);
+    const next = processTable(end).filter(entry => parents.has(entry.ppid) && !frozen.has(identityKey(entry)));
+    if (next.length === 0) return [...frozen.values()];
+    if (Date.now() >= end) throw new Error(`OAR_HOST_DEADLINE_STOP_INCOMPLETE: the native reviewer tree did not freeze within ${DEADLINE_STOP_MS} ms of the round deadline; end it, then cancel the review`);
+    for (const entry of next) { signalProcess(entry.pid, 'SIGSTOP'); frozen.set(identityKey(entry), entry); }
   }
-  return found;
 }
 
 /** Zero-model seam uses OAR's scriptedRuntime, not a hand-built adapter. */
@@ -130,33 +173,26 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
   if (round.request_id !== request.request_id || !Number.isSafeInteger(round.deadline)) throw new Error('OAR_HOST_DEADLINE_INVALID');
   const consumed_at = Date.now();
   if (round.deadline <= consumed_at) throw new Error('OAR_HOST_DEADLINE_PASSED');
-  // Armed before dispatch. OAR arms its own limits only after the prompt ack, and native pi can
-  // use its credential before that ack, so the deadline stops the native process itself.
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<typeof HOST_DEADLINE_STOP>(resolve => { timer = setTimeout(() => resolve(HOST_DEADLINE_STOP), round.deadline - consumed_at); });
-  let run;
-  try {
-    const inbox = consumePrePromptInbox({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId, host: spec.kind, now: consumed_at });
-    writeSessionArtifact(join(spec.controlDirectory, `ack-${request.round}.json`), { request_id: request.request_id });
-    // Fleet's RECOMMENDATION-first message is retained. Only the reviewer tool
-    // writes result_ref; the host never interprets/publishes root-turn text.
-    const turn = host.prompt(spec.kind, `TASK REQUEST: ${JSON.stringify(request)}\n\n${content}\n\n${inbox}`, { ...request, host: started.provider },
-      snapshot => {
-        writeSessionArtifact(join(spec.requestDirectory, oarObservationFile(request.round)), snapshot, false);
-        recordPrePromptInboxAccepted({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId,
-          host: spec.kind, consumed_at, observation: snapshot });
-      }, {});
-    const first = await Promise.race([turn, deadline]);
-    if (first === HOST_DEADLINE_STOP) {
-      await host.stopAtDeadline();
-      // The stopped turn settles on the native exit. Its outcome is not the round observation.
-      await turn.catch(() => undefined);
-      const stopped: HostRoundObservation = { request_id: request.request_id, kind: HOST_DEADLINE_STOP, outcome: null, actual_model: null };
-      writeSessionArtifact(join(spec.controlDirectory, `observed-${request.round}.json`), stopped);
-      return stopped;
-    }
-    run = first;
-  } finally { clearTimeout(timer); }
+  const inbox = consumePrePromptInbox({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId, host: spec.kind, now: consumed_at });
+  writeSessionArtifact(join(spec.controlDirectory, `ack-${request.round}.json`), { request_id: request.request_id });
+  // Fleet's RECOMMENDATION-first message is retained. Only the reviewer tool
+  // writes result_ref; the host never interprets/publishes root-turn text.
+  const turn = host.prompt(spec.kind, `TASK REQUEST: ${JSON.stringify(request)}\n\n${content}\n\n${inbox}`, { ...request, host: started.provider },
+    snapshot => {
+      writeSessionArtifact(join(spec.requestDirectory, oarObservationFile(request.round)), snapshot, false);
+      recordPrePromptInboxAccepted({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId,
+        host: spec.kind, consumed_at, observation: snapshot });
+    }, {});
+  // OAR arms its own limits only after the prompt ack, and native pi can use its credential
+  // before that ack, so the deadline stops the native process tree itself.
+  const run = await untilDeadline(round.deadline, turn);
+  if (run === HOST_DEADLINE_STOP) {
+    // The stopped turn's outcome is not the round observation.
+    await host.stopAtDeadline(round.deadline, turn);
+    const stopped: HostRoundObservation = { request_id: request.request_id, kind: HOST_DEADLINE_STOP, outcome: null, actual_model: null };
+    writeSessionArtifact(join(spec.controlDirectory, `observed-${request.round}.json`), stopped);
+    return stopped;
+  }
   if (run.kind !== 'rejected' && run.kind !== 'handled' && run.outcome.kind === 'failed' && run.outcome.failure === 'auth') throw new Error('OAR_REVIEW_AUTH_STOP');
   // Rejected and handled inputs have no turn outcome.
   const observation = { request_id: request.request_id, kind: run.kind,
@@ -202,8 +238,9 @@ export async function serveHostFileRequests(host: OarReviewHost, spec: ReviewHos
  * The owner admitted this launch until its round deadline. A native session that starts later
  * can find the pi token inside pi's refresh margin, so the host checks just before the start.
  * `claimed`: the host already wrote host-claim.json, so a repeated round cannot launch again.
+ * Returns the admitted round deadline.
  */
-export function assertHostLaunchAdmitted(spec: ReviewHostSpec, claimed: boolean): void {
+export function assertHostLaunchAdmitted(spec: ReviewHostSpec, claimed: boolean): number {
   const launch = readSessionArtifact<ReviewHostLaunch>(join(spec.controlDirectory, REVIEW_HOST_LAUNCH_FILE));
   if (!Number.isSafeInteger(launch.deadline) || (spec.kind === 'pi' ? launch.pi?.model !== spec.options.model : launch.pi !== null)) {
     throw new Error('OAR_HOST_LAUNCH_DEADLINE_INVALID');
@@ -213,6 +250,7 @@ export function assertHostLaunchAdmitted(spec: ReviewHostSpec, claimed: boolean)
       ? 'this host holds the claim, so cancel the review and start a new one' : 'repeat the round, then run its launch command'}`);
   }
   if (launch.pi) assertPiCredentialWindow(launch.pi, launch.deadline);
+  return launch.deadline;
 }
 
 export async function openReviewHost(spec: ReviewHostSpec, print: (event: unknown) => void): Promise<OarReviewHost> {
@@ -236,11 +274,23 @@ export async function openReviewHost(spec: ReviewHostSpec, print: (event: unknow
   process.env.TMPDIR = reviewHostTemporaryDirectory(spec.output);
   delete process.env.OAR_CODEX_SANDBOX; // Never inherit: stock OAR default under the admitted child profile.
   // Last check before the native session: a refusal here leaves no session-opening record behind.
-  assertHostLaunchAdmitted(spec, existsSync(join(spec.controlDirectory, 'host-claim.json')));
+  const deadline = assertHostLaunchAdmitted(spec, existsSync(join(spec.controlDirectory, 'host-claim.json')));
   // From here a native reviewer child can exist until disposal. Cleanup of an
   // unbound host that exits without disposed.json must stay pending.
   writeSessionArtifact(join(spec.controlDirectory, 'session-opening.json'), { pid: process.pid });
-  return new OarReviewHost(await reviewRuntime(spec.kind, spec.launcher).session(spec.installation, spec.options), print);
+  return new OarReviewHost(await openNativeSession(reviewRuntime(spec.kind, spec.launcher), spec.installation, spec.options, deadline), print);
+}
+
+/**
+ * The native session start under the round deadline. OAR pi starts the native process and awaits
+ * its get_state reply here, so the deadline stops a start that crosses it, the same way as a turn.
+ */
+export async function openNativeSession(runtime: Runtime, installation: ReviewHostSpec['installation'], options: SessionOptions, deadline: number): Promise<Session> {
+  const opening = runtime.session(installation, options);
+  const session = await untilDeadline(deadline, opening);
+  if (session !== HOST_DEADLINE_STOP) return session;
+  await stopOwnedTree(deadline, () => opening.then(late => late.dispose()));
+  throw new Error('OAR_HOST_DEADLINE_STOP: the round deadline passed during the native session start; cancel the review and start a new one');
 }
 
 async function main(): Promise<void> {
@@ -300,9 +350,12 @@ async function main(): Promise<void> {
     if (spec.mode === 'review') writeSessionArtifact(join(spec.controlDirectory, 'error.json'), { error: String(error) });
     throw error;
   } finally {
-    await close();
-    writeSessionArtifact(disposedFile, { disposed: true, fixture: spec.mode === 'scripted' });
-    console.log('OAR_HOST_DISPOSED');
+    // After an incomplete deadline stop, native processes may still run: no disposal receipt, so cancel stays pending.
+    if (!host.stopIncomplete) {
+      await close();
+      writeSessionArtifact(disposedFile, { disposed: true, fixture: spec.mode === 'scripted' });
+      console.log('OAR_HOST_DISPOSED');
+    }
     process.removeListener('SIGTERM', signal); process.removeListener('SIGINT', signal); process.removeListener('SIGHUP', signal);
   }
 }

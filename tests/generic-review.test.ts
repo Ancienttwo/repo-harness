@@ -1253,16 +1253,20 @@ console.log(JSON.stringify({calls,passed:true,model:null}));}finally{await close
   expect(result.calls).toBe(1); expect(result.passed).toBe(true);
 });
 
-test('OAR host: at the round deadline the native pi tree is gone while the prompt ack is pending', async () => {
+test.each(['turn', 'start', 'stuck disposal'] as const)('OAR host: at the round deadline the native pi tree is gone (pending %s)', async stage => {
   const { pathToFileURL } = await import('node:url');
-  const root = tmpWorkspace('oar-deadline-stop'); roots.push(root);
+  const root = tmpWorkspace(`oar-deadline-stop-${stage}`); roots.push(root);
   const agent = join(root, 'agent'), work = join(root, 'preflight.log'), pids = join(root, 'pids.json'), fixture = join(root, 'fixture-pi.cjs');
+  const spawner = join(root, 'spawner.cjs'), spawned = join(root, 'spawned.log');
   mkdirSync(agent);
   writeFileSync(join(agent, 'auth.json'), JSON.stringify({ openai: { type: 'api_key', key: 'fixture-key-no-provider-call' } }));
   writeFileSync(join(agent, 'settings.json'), '{"defaultProvider":"openai","defaultModel":"gpt-4o"}');
   const node = resolveNode24(), piCli = realpathSync(join(import.meta.dir, '../node_modules/@earendil-works/pi-coding-agent/dist/cli.js'));
-  // The native pi never acknowledges the prompt. It starts a credential-using preflight descendant
-  // that writes a timestamp every 20 ms, and it ignores stdin EOF and SIGTERM.
+  // A descendant in its own process group that starts a new process group every 5 ms: a recorded tree misses the latest ones.
+  writeFileSync(spawner, `const cp=require('node:child_process'),fs=require('node:fs');let n=0;
+const timer=setInterval(()=>{if(++n>400)return clearInterval(timer);fs.appendFileSync(${JSON.stringify(spawned)},cp.spawn('/bin/sleep',['1000'],{detached:true,stdio:'ignore'}).pid+'\\n')},5);`);
+  // The native pi never acknowledges the prompt (turn) or the get_state request (start). It starts a
+  // credential-using preflight descendant that writes a timestamp every 20 ms and the spawner, and it ignores stdin EOF and SIGTERM.
   writeFileSync(fixture, `#!${node}
 const cp=require('node:child_process'),fs=require('node:fs'),readline=require('node:readline');
 const argv=process.argv.slice(2);
@@ -1270,35 +1274,53 @@ const pi=cp.spawn(process.execPath,[${JSON.stringify(piCli)},...argv],{stdio:arg
 pi.on('exit',code=>process.exit(code??1));
 if(!argv.includes('--version')){process.on('SIGTERM',()=>{});
 readline.createInterface({input:process.stdin}).on('line',line=>{let type;try{type=JSON.parse(line).type}catch{}
-if(type!=='prompt'){pi.stdin.write(line+'\\n');return}
+if(type!==${JSON.stringify(stage === 'start' ? 'get_state' : 'prompt')}){pi.stdin.write(line+'\\n');return}
 const preflight=cp.spawn(process.execPath,['-e','setInterval(()=>require("node:fs").appendFileSync(${JSON.stringify(work)},Date.now()+"\\\\n"),20)'],{stdio:'ignore'});
-fs.writeFileSync(${JSON.stringify(pids)},JSON.stringify([process.pid,pi.pid,preflight.pid]));}).on('close',()=>{});}
+const group=cp.spawn(process.execPath,[${JSON.stringify(spawner)}],{detached:true,stdio:'ignore'});
+fs.writeFileSync(${JSON.stringify(pids)},JSON.stringify([process.pid,pi.pid,preflight.pid,group.pid]));}).on('close',()=>{});}
 `); chmodSync(fixture, 0o700);
   const entry = pathToFileURL(realpathSync(join(import.meta.dir, '../dist/oar-review-host.js'))).href;
   const worker = join(root, 'deadline.mjs');
   writeFileSync(worker, `import {existsSync,readFileSync,writeFileSync} from 'node:fs';import {join} from 'node:path';import {createHash,randomUUID} from 'node:crypto';
-import {reviewRuntime,OarReviewHost,runHostFileRequest} from ${JSON.stringify(entry)};
+import {reviewRuntime,OarReviewHost,runHostFileRequest,openNativeSession} from ${JSON.stringify(entry)};
 const dir=${JSON.stringify(root)},agent=${JSON.stringify(agent)};
-const host=new OarReviewHost(await reviewRuntime('pi',${JSON.stringify(fixture)}).session({kind:'available',via:'bundled'},{cwd:dir,model:'openai/gpt-4o',env:{PI_CODING_AGENT_DIR:agent,OAR_PI_AGENT_DIR:agent}}),()=>{});
+const options={cwd:dir,model:'openai/gpt-4o',env:{PI_CODING_AGENT_DIR:agent,OAR_PI_AGENT_DIR:agent}};
+let deadline,observed;
+if(${JSON.stringify(stage)}==='start'){deadline=Date.now()+1500;observed=await openNativeSession(reviewRuntime('pi',${JSON.stringify(fixture)}),{kind:'available',via:'bundled'},options,deadline).catch(error=>String(error))}
+else{const host=new OarReviewHost(await reviewRuntime('pi',${JSON.stringify(fixture)}).session({kind:'available',via:'bundled'},options),()=>{});
+if(${JSON.stringify(stage)}==='stuck disposal')host.dispose=()=>new Promise(()=>{});
 const content='[fixture pending ack]',request={protocol:2,task:'fixture',role:'deep-reasoner',round:1,request_id:randomUUID(),context_ref:join(dir,'context-1.txt'),source_ref:'fixture',result_ref:join(dir,'result-1.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename'}};
 writeFileSync(request.context_ref,content);
 writeFileSync(join(dir,'started-1.json'),JSON.stringify({request_id:request.request_id,provider:{pid:process.pid,identity:'fixture-host'}}));
-const deadline=Date.now()+1500;writeFileSync(join(dir,'deadline-1.json'),JSON.stringify({request_id:request.request_id,deadline}));
-const observed=await runHostFileRequest(host,{kind:'pi',requestDirectory:dir,output:dir,controlDirectory:dir,timeoutMs:1500},request);
-const returned=Date.now(),alive=JSON.parse(readFileSync(${JSON.stringify(pids)},'utf8')).map(pid=>{try{process.kill(pid,0);return true}catch{return false}});
+deadline=Date.now()+1500;writeFileSync(join(dir,'deadline-1.json'),JSON.stringify({request_id:request.request_id,deadline}));
+observed=await runHostFileRequest(host,{kind:'pi',requestDirectory:dir,output:dir,controlDirectory:dir,timeoutMs:1500},request).catch(error=>String(error));
+observed={observed,stopIncomplete:host.stopIncomplete,record:existsSync(join(dir,'observed-1.json'))};}
+const returned=Date.now(),alive=pid=>{try{process.kill(pid,0);return true}catch{return false}};
+const tree=JSON.parse(readFileSync(${JSON.stringify(pids)},'utf8')).map(alive);
+const escaped=readFileSync(${JSON.stringify(spawned)},'utf8').trim().split('\\n').map(Number).filter(alive);
+for(const pid of escaped)process.kill(pid,'SIGKILL');
 await new Promise(resolve=>setTimeout(resolve,300));
 const last=Math.max(...readFileSync(${JSON.stringify(work)},'utf8').trim().split('\\n').map(Number));
-console.log(JSON.stringify({observed,returnedAfter:returned-deadline,lastWorkAfter:last-deadline,alive,result:existsSync(request.result_ref)}));
+console.log(JSON.stringify({observed,returnedAfter:returned-deadline,lastWorkAfter:last-deadline,tree,escaped:escaped.length,result:existsSync(join(dir,'result-1.json')),grace:process.env.OAR_KILL_GRACE_MS??null}));
+process.exit(0);
 `);
   const result = spawnSync(node, [worker], { encoding: 'utf8', timeout: 30000, env: { PATH: process.env.PATH, HOME: root } });
   expect(result.status, result.stderr).toBe(0);
   const run = JSON.parse(result.stdout.trim().split('\n').at(-1)!);
-  expect(run.observed).toEqual({ request_id: expect.any(String), kind: 'deadline_stop', outcome: null, actual_model: null });
-  // The host returned only after the wrapper, pi and the preflight exited.
-  expect(run.alive).toEqual([false, false, false]);
-  expect(run.returnedAfter).toBeGreaterThanOrEqual(0); expect(run.returnedAfter).toBeLessThan(1000);
+  expect(run.observed).toEqual({
+    turn: { observed: { request_id: expect.any(String), kind: 'deadline_stop', outcome: null, actual_model: null }, stopIncomplete: false, record: true },
+    start: expect.stringContaining('OAR_HOST_DEADLINE_STOP: the round deadline passed during the native session start'),
+    // The stop is bounded from the deadline: no round record, and main writes no disposal receipt.
+    'stuck disposal': { observed: expect.stringContaining('OAR_HOST_DEADLINE_STOP_INCOMPLETE'), stopIncomplete: true, record: false },
+  }[stage]);
+  // The host returned only after the wrapper, pi, the preflight, the spawner and each process group that it started exited.
+  expect(run.tree).toEqual([false, false, false, false]);
+  expect(run.escaped).toBe(0);
+  expect(run.returnedAfter).toBeGreaterThanOrEqual(stage === 'stuck disposal' ? 5000 : 0); expect(run.returnedAfter).toBeLessThan(stage === 'stuck disposal' ? 6000 : 1000);
   expect(run.lastWorkAfter).toBeLessThan(500);
   expect(run.result).toBe(false);
+  // The zero kill grace belongs to the stop only.
+  expect(run.grace).toBeNull();
 }, 60000);
 
 darwinTest('OAR host: a request without started-N.json is partial; no read, no ack until it is published', async () => {
