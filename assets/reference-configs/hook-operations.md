@@ -41,7 +41,7 @@ Other documents link here. They do not copy this table.
 | `SessionStart.default` | all sessions | Claude, Codex | `session-context` | Emit the Effective State section first, then the edit-guard-scope, architecture-debt and pending-plan sections under one budget. |
 | `PreToolUse.edit` | `Edit\|Write` | Claude, Codex | `mutation-guard` | Block an `Edit`, `Write` or Codex `apply_patch` target outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. Bash writes skip it; see [Edit guard coverage](#edit-guard-coverage). |
 | `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract and standing orders to a Claude `Agent` prompt. |
-| `PreToolUse.bash` | `Bash` | Claude | `bash-mutation-guard` | Check literal write destinations under `_ops/`, `_ref/` or outside the repository. Unsupported shell syntax remains unchecked. |
+| `PreToolUse.bash` | `Bash` | Claude | `bash-mutation-guard` | Deny a literal write destination under `_ops/`, `_ref/` or outside the repository, and whole-repository recursion (`git clean -x`, `find -delete`, `rm -r` of the root). A command that names `_ops` or `_ref` runs only as simple read-only commands; any other shell form is denied. |
 | `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `agent-notice` | Deliver architecture debt on Codex; Claude emits nothing. |
 | `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context and standing orders. |
 | `Stop.default` | session stop | Claude, Codex | `stop` | Publish the evidence checkpoint and render handoff and resume. Report protected path changes. Claude can get architecture debt. |

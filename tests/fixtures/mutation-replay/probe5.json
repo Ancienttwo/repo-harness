@@ -1,0 +1,1 @@
+["$(true) rm -rf _ops","$(true)rm -rf _ops","`true` rm -rf _ops","\"$(true)\" rm -rf _ops","$X rm -rf _ops","$(echo rm) -rf _ops"]

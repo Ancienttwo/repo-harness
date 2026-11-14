@@ -4,7 +4,9 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { execFileSync, spawnSync } from 'child_process';
+import { runBashMutationGuard } from '../src/cli/hook/mutation-bash';
 import { runMutationGuard } from '../src/cli/hook/mutation-guard';
+import { protectedNameGate } from '../src/cli/hook/mutation-protected-gate';
 import { getRoute } from '../src/cli/hook/route-registry';
 import { buildHookCommand } from '../src/cli/installer/managed-entries';
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
@@ -100,9 +102,8 @@ describe('Bash write tripwire host route', () => {
         'echo value > src/file.txt', `echo value > '${cwd}/src/file.txt'`,
         'echo value > "$TARGET"', 'python3 generator.py', 'echo value > /dev/null',
         'echo value > /dev/fd/2', 'echo value > /dev/tty', 'cp _ops/input safe.txt "2">/dev/null',
-        'cd src && echo value > _ops/local.txt', 'cd "$TARGET" && rm _ops/file',
+        'cd src && echo value > _ops/local.txt',
         'cd _ops | cat; echo value > report.txt',
-        'cd $(printf src)\necho value > _ops/local.txt',
         "printf '%s\\n' 'example:\nrm -rf /tmp/example\n'",
         'cat <<"$D" > report.txt\nrm -rf /tmp/example\n$D',
         'cat <<A > a.txt; cat <<B > b.txt\nx\nA\nrm -rf /tmp/example\nB',
@@ -113,12 +114,26 @@ describe('Bash write tripwire host route', () => {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 0 });
       }
+      // A command that names a protected directory must keep the strict form: an unknown directory or a substitution denies it.
+      for (const command of ['cd "$TARGET" && rm _ops/file', 'cd $(printf src)\necho value > _ops/local.txt']) {
+        const result = invokeBash(command);
+        expect({ command, status: result.status }).toEqual({ command, status: 2 });
+        expect(result.stderr).toContain('[ProtectedNameGuard]');
+      }
       expect(invokeBash('echo value > _ops/local.txt', join(cwd, 'src')).status).toBe(0);
       expect(invokeBash('echo value > ../_ops/a.env', join(cwd, 'src')).status).toBe(2);
       expect(existsSync(join(cwd, '_ops'))).toBe(false);
       writePolicy(cwd, ['_ops/dispatch']);
       // The allowlist is for structured tools; Bash targets are inferred from text.
       expect(invokeBash('echo value > _ops/dispatch/plan.md').status).toBe(2);
+      // The protected-name gate allows a literal target inside a listed directory; the evaluator still denies a redirect into it.
+      expect(invokeBash('touch _ops/dispatch/new.md').status).toBe(0);
+      expect(invokeBash('touch _ops/other.md').status).toBe(2);
+      // A cd operand never takes the exemption, and a write after a cd, pushd or popd does not take it either (owner F1).
+      for (const command of ['cd _ops/dispatch/work && touch ../../other.md', 'cd _ops/dispatch/sub && find ../.. -delete',
+        'cd _ops/dispatch/sub && touch ../../env/x', 'cd src && touch ../_ops/dispatch/new.md']) {
+        expect({ command, status: invokeBash(command).status }).toEqual({ command, status: 2 });
+      }
       // A glob that can match a protected directory, or a symlink on either side of _ops, is judged by where the write can land.
       const outside = realpathSync(mkdtempSync('/tmp/bash-write-guard-outside-'));
       try {
@@ -156,6 +171,29 @@ describe('Bash write tripwire host route', () => {
         }
       } finally { rmSync(outside, { recursive: true, force: true }); }
     } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 60_000);
+
+  test('the protected-name gate denies the #2369 catch corpus and allows the ordinary corpus', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'bash-name-gate-')));
+    const cwd = join(root, 'repo');
+    const managed = join(root, 'managed');
+    const worktreeRoot = process.env.REPO_HARNESS_WORKTREE_ROOT;
+    try {
+      mkdirSync(cwd); mkdirSync(managed);
+      initRepo(cwd);
+      for (const dir of ['src/a', '_ops/env', '_ref']) mkdirSync(join(cwd, dir), { recursive: true });
+      symlinkSync('_ops', join(cwd, 'lnk'));
+      process.env.REPO_HARNESS_WORKTREE_ROOT = managed;
+      const corpus = JSON.parse(readFileSync(join(import.meta.dir, 'fixtures/mutation-replay/corpus.json'), 'utf8')) as { catch: string[]; ordinary: string[] };
+      const decide = (command: string) => runBashMutationGuard({ repoRoot: cwd, payload: { tool_input: { command }, cwd }, identity: hookIdentity() }).exitCode;
+      expect(corpus.catch.filter(command => decide(command) === 0)).toEqual([]);
+      // A row such as `constructor x; touch _ops/env/x` must reach a rule, not the gate's own error path.
+      expect(corpus.catch.filter(command => protectedNameGate(command, cwd, cwd).denial?.reason.includes('gate failed'))).toEqual([]);
+      expect(corpus.ordinary.map(row => row.replaceAll('${MANAGED}', managed)).filter(command => decide(command) !== 0)).toEqual([]);
+    } finally {
+      if (worktreeRoot === undefined) delete process.env.REPO_HARNESS_WORKTREE_ROOT; else process.env.REPO_HARNESS_WORKTREE_ROOT = worktreeRoot;
+      rmSync(root, { recursive: true, force: true });
+    }
   }, 60_000);
 
   test('git worktree add outside the managed root is denied with the start command; literal managed targets and unresolved forms pass', () => {

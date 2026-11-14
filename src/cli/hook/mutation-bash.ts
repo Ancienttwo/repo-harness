@@ -1,18 +1,19 @@
 /** A literal tripwire, not a shell interpreter. No state or process reads; `git worktree add` also reads the managed root. */
-import { lstatSync, readlinkSync, realpathSync } from 'fs';
-import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'path';
+import { realpathSync } from 'fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { isManagedWorktreePath, managedWorktreeRoot } from '../../effects/git/managed-worktree';
 import { payloadString } from './hook-input';
-import { runMutationDenial, runMutationPathGuard, type Denial, type MutationGuardInput, type MutationGuardResult } from './mutation-guard';
 import { PROTECTED_REPO_DIRS } from './mutation-protected-dirs';
+import { runMutationDenial, runMutationPathGuard, type Denial, type MutationGuardInput, type MutationGuardResult } from './mutation-guard';
+import {
+  BRACE_LIMIT, escapePattern, expandBraces, globIndex, protectedNameGate, protectedPath, segmentMatches, unescapePattern, writeThroughPath,
+} from './mutation-protected-gate';
 
 /** `pattern` is `value` with each quoted or escaped glob, brace or tilde character escaped by a backslash. */
 interface Word { value: string; pattern: string; literal: boolean; operator?: true }
 
 /** A glob, brace or tilde form is expanded or bounded later; a parameter or command substitution is not. */
 const pathOperand = (word: Word) => word.literal || !/[$`]/.test(word.value);
-const escapePattern = (text: string) => text.replace(/[\\*?[\]{},~]/g, '\\$&');
-const unescapePattern = (pattern: string) => pattern.replace(/\\(.)/gs, '$1');
 
 /** Quotes are removed only to locate literal operands. Expansions stay unresolved. */
 function words(line: string): Word[] | null {
@@ -190,126 +191,6 @@ function walkCommands(command: string, cwd: string, visit: CommandVisitor): void
   if (unparsed) visit.unparsed?.();
 }
 
-/** Shell pattern match of one path segment; a pattern that does not compile matches, so the guard fails closed. */
-function segmentMatches(pattern: string, name: string): boolean {
-  let source = '';
-  for (let i = 0; i < pattern.length; i++) {
-    const ch = pattern[i]!;
-    const negated = ch === '[' && (pattern[i + 1] === '!' || pattern[i + 1] === '^');
-    // A `]` right after `[` or `[!` is a member of the bracket expression, not its end.
-    const close = ch === '[' ? pattern.indexOf(']', i + (negated ? 3 : 2)) : -1;
-    if (ch === '\\') source += (pattern[++i] ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    else if (ch === '*') source += '.*';
-    else if (ch === '?') source += '.';
-    // A nested `[` (a POSIX class such as [[:lower:]]) is outside this grammar, so the pattern matches.
-    else if (close > 0 && pattern.slice(i + 1, close).includes('[')) return true;
-    else if (close > 0) {
-      source += `[${negated ? '^' : ''}${unescapePattern(pattern.slice(i + (negated ? 2 : 1), close)).replace(/[\\\]]/g, '\\$&')}]`;
-      i = close;
-    } else source += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-  // A match with or without case counts: the shell glob is case-sensitive, but `nocaseglob` and the filesystem are not.
-  // `u` folds `ſ` to `s` as APFS does.
-  try { return new RegExp(`^${source}$`, 'u').test(name) || new RegExp(`^${source}$`, 'iu').test(name); } catch { return true; }
-}
-
-/** Index of the first unescaped glob character of a pattern, or -1. */
-function globIndex(pattern: string): number {
-  for (let i = 0; i < pattern.length; i++) {
-    if (pattern[i] === '\\') i++;
-    else if ('*?['.includes(pattern[i]!)) return i;
-  }
-  return -1;
-}
-
-/** macOS and Windows filesystems ignore case by default, so `_OPS/x` writes into `_ops`. The result uses the protected spelling. */
-function protectedPath(rel: string): string | null {
-  const dir = PROTECTED_REPO_DIRS.find(name => rel.slice(0, name.length).toUpperCase() === name.toUpperCase()
-    && (rel.length === name.length || rel[name.length] === '/'));
-  return dir ? dir + rel.slice(dir.length) : null;
-}
-
-const BRACE_LIMIT = 1024;
-class BraceLimit extends Error {}
-
-/** The words of a `{a..b[..step]}` sequence, or null when the text is not one. */
-function braceSequence(inner: string): string[] | null {
-  const match = /^(?:(-?\d+)\.\.(-?\d+)|([A-Za-z])\.\.([A-Za-z]))(?:\.\.(-?\d+))?$/.exec(inner);
-  if (!match) return null;
-  const [, a, b, c, d, increment] = match;
-  const start = a !== undefined ? Number(a) : c!.charCodeAt(0);
-  const end = a !== undefined ? Number(b) : d!.charCodeAt(0);
-  const step = (Math.abs(Number(increment ?? 1)) || 1) * (start <= end ? 1 : -1);
-  if (![start, end, step].every(Number.isSafeInteger) || Math.abs(end - start) / Math.abs(step) >= BRACE_LIMIT) throw new BraceLimit();
-  // A leading zero pads every number to the wider bound, sign included.
-  const width = a !== undefined && (/^-?0\d/.test(a) || /^-?0\d/.test(b!)) ? Math.max(a.length, b!.length) : 0;
-  const format = (n: number) => a === undefined ? String.fromCharCode(n)
-    : n < 0 ? `-${String(-n).padStart(width - 1, '0')}` : String(n).padStart(width, '0');
-  const items: string[] = [];
-  for (let n = start; step > 0 ? n <= end : n >= end; n += step) items.push(format(n));
-  return items;
-}
-
-/** The patterns from the first expandable unescaped brace pair, or null when the pattern has none. */
-function braceAlternatives(word: string): string[] | null {
-  for (let open = 0; open < word.length; open++) {
-    if (word[open] === '\\') { open++; continue; }
-    if (word[open] !== '{') continue;
-    const commas: number[] = [];
-    let depth = 0, close = -1;
-    for (let i = open; i < word.length && close < 0; i++) {
-      if (word[i] === '\\') i++;
-      else if (word[i] === '{') depth++;
-      else if (word[i] === '}' && --depth === 0) close = i;
-      else if (word[i] === ',' && depth === 1) commas.push(i);
-    }
-    if (close < 0) continue;
-    const items = commas.length
-      ? [open, ...commas].map((at, n) => word.slice(at + 1, [...commas, close][n]))
-      : braceSequence(word.slice(open + 1, close));
-    if (items) return items.map(item => word.slice(0, open) + item + word.slice(close + 1));
-  }
-  return null;
-}
-
-/** Brace expansion of one pattern, which the shell runs before tilde and glob expansion; null above the word limit. */
-function expandBraces(word: string): string[] | null {
-  const done: string[] = [];
-  const pending = [word];
-  try {
-    while (pending.length) {
-      const current = pending.pop()!;
-      const items = braceAlternatives(current);
-      if (items) pending.push(...items); else done.push(current);
-      if (done.length + pending.length > BRACE_LIMIT) return null;
-    }
-  } catch (error) {
-    if (error instanceof BraceLimit) return null;
-    throw error;
-  }
-  return done;
-}
-
-/** The path the kernel writes through: every symlink is followed, a dangling one too, before the next `..`. Throws when it cannot resolve. */
-function writeThroughPath(path: string): string {
-  const split = (value: string) => value.slice(parse(value).root.length).split(sep === '/' ? '/' : /[\\/]/);
-  const pending = split(path);
-  let current = parse(path).root;
-  for (let links = 0; pending.length;) {
-    const part = pending.shift()!;
-    if (!part || part === '.') continue;
-    if (part === '..') { current = dirname(current); continue; }
-    const next = join(current, part);
-    if (!lstatSync(next, { throwIfNoEntry: false })?.isSymbolicLink()) { current = next; continue; }
-    if (++links > 40) throw Object.assign(new Error(`too many symbolic links: ${path}`), { code: 'ELOOP' });
-    // The raw link target is walked part by part, so a link inside it is followed before its `..`.
-    const link = readlinkSync(next);
-    pending.unshift(...split(link));
-    if (isAbsolute(link)) current = parse(link).root;
-  }
-  return current;
-}
-
 interface BashWriteTargets {
   readonly paths: readonly string[];
   /** Targets whose write-through path could not be resolved, with the error code. */
@@ -485,6 +366,6 @@ export function runBashMutationGuard(opts: MutationGuardInput): MutationGuardRes
     const result = runMutationPathGuard(opts, paths);
     if (result.exitCode !== 0) return result;
   }
-  const denial = worktreeAddDenial(command, cwd);
+  const denial = worktreeAddDenial(command, cwd) ?? protectedNameGate(command, opts.repoRoot, cwd).denial;
   return denial ? runMutationDenial(opts, denial) : { exitCode: 0, stdout: '', stderr: '' };
 }
