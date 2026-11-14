@@ -41,6 +41,7 @@ import { architectureModelReady, readArchitectureNativeContext, readArchitecture
 import { trustedNodeCandidates } from '../src/effects/runtime/node-candidates';
 import { selectCompatibleNode } from '../src/effects/runtime/node-runtime';
 import { buildArchitectureProjectionCommand } from '../src/cli/commands/architecture-projection';
+import { ARCHITECTURE_SETUP_PROVIDER } from '../src/cli/commands/architecture-setup';
 import { architectureProjectionExitCode, humanActionLine } from '../src/cli/commands/architecture-projection-actions';
 import { applyArchitectureProjection } from '../src/effects/architecture/projection-apply';
 import { architectureWriterArgs, followArchitectureWriter, WRITER_RESTART_EXIT_CODE } from '../src/effects/architecture/projection-writer';
@@ -1780,6 +1781,22 @@ describe('package-local ArchContext projection provider', () => {
 
 
 describe('ArchContext maintenance reminders', () => {
+  test('managed daemon check finds a hoisted Bun global install and fails when missing', () => {
+    const f = fixture();
+    const bunRoot = join(f.root, '.bun');
+    const globalRoot = join(bunRoot, 'install', 'global');
+    const harnessRoot = join(globalRoot, 'node_modules', 'repo-harness');
+    mkdirSync(harnessRoot, { recursive: true });
+    writeFileSync(join(harnessRoot, 'package.json'), JSON.stringify({ dependencies: { archctx: ARCHCTX_REQUIRED_VERSION } }));
+    symlinkSync(join(f.consumerRoot, 'node_modules', 'archctx'), join(globalRoot, 'node_modules', 'archctx'), 'dir');
+    writeFileSync(f.binary, `console.log(JSON.stringify({schemaVersion:'archcontext.envelope/v1',ok:true,data:{running:false}}));`);
+    const env = { ...process.env, BUN_INSTALL: bunRoot };
+    expect(existsSync(join(harnessRoot, 'node_modules', 'archctx'))).toBe(false);
+    expect(() => ARCHITECTURE_SETUP_PROVIDER.verifyDaemon(f.repoRoot, env)).not.toThrow();
+    rmSync(join(globalRoot, 'node_modules', 'archctx'));
+    expect(() => ARCHITECTURE_SETUP_PROVIDER.verifyDaemon(f.repoRoot, env)).toThrow();
+  });
+
   const incompatible = {
     schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.status',
     data: { running: true, versionUnsupported: {

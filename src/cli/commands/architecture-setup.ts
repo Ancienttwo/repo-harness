@@ -1,3 +1,4 @@
+import { dirname } from 'node:path';
 import { ARCHCONTEXT_NODE_RANGE, productVersionManifest } from 'archctx-contracts';
 import { ARCHITECTURE_CONTRACT_VERSION, type ArchitectureSetupPort, type ManagedArchctxReadback } from '../../core/architecture/contracts';
 import { archctxCapabilities, inspectArchitectureProjectionReadiness, verifyArchctxDaemonRuntime } from '../../effects/architecture/archctx-provider';
@@ -57,10 +58,16 @@ function readManagedPackages(globalPackageRoot: string, cwd: string, env: NodeJS
 }
 
 function verifyDaemon(cwd: string, env: NodeJS.ProcessEnv): void {
-  const consumerRoot = bunGlobalPackageRoot(env);
-  if (!consumerRoot) throw new Error('unable to resolve Bun global package root');
-  const requiredVersion = recordValue(readPackageManifest(consumerRoot).dependencies).archctx;
+  const globalPackageRoot = bunGlobalPackageRoot(env);
+  if (!globalPackageRoot) throw new Error('unable to resolve Bun global package root');
+  const requiredVersion = recordValue(readPackageManifest(globalPackageRoot).dependencies).archctx;
   if (typeof requiredVersion !== 'string') throw new Error('managed archctx dependency version is unavailable');
+  const archctxRoot = findInstalledPackageRoot(globalPackageRoot, 'archctx');
+  if (archctxRoot === null) {
+    throw new Error(`mandatory dependency is missing: archctx@${requiredVersion}`);
+  }
+  // Anchor module resolution at the node_modules directory that owns this package.
+  const consumerRoot = dirname(dirname(archctxRoot));
   verifyArchctxDaemonRuntime(cwd, {
     consumerRoot, env,
     policy: { provider: 'archctx', applyMode: 'manual', requiredVersion, timeoutMs: 10_000 },
