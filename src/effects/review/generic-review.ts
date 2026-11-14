@@ -9,7 +9,7 @@ import { shellQuote } from '../../core/shell-quote';
 import { REVIEW_MAX_ROUNDS, REVIEW_TIMEOUT_MS, validateReviewOutput, type ReviewOutput } from '../../core/review/generic-review';
 import { composeReviewPacket } from '../../core/review/review-packet';
 import type { ReviewHostSpec, HostRoundObservation } from '../../core/review/runner-port';
-import { REVIEW_HOST_LAUNCH_FILE, type ReviewHostLaunch } from '../../core/review/runner-port';
+import { HOST_DEADLINE_STOP, REVIEW_HOST_LAUNCH_FILE, type ReviewHostLaunch } from '../../core/review/runner-port';
 import type { ReviewerRunner, TaskClaimReference, TaskCleanupResult, TaskRequest } from '../../core/review/runner-port';
 import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError, withCallerLock } from '../locking/exclusive-directory-lock';
 import { taskRepository } from '../git/task-repository';
@@ -142,6 +142,9 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     const timeout = options.timeoutMs ?? REVIEW_TIMEOUT_MS;
     if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > REVIEW_TIMEOUT_MS) throw new Error('review_invalid_timeout');
     if (!options.verification) throw new Error('review_requires_explicit_verification_report');
+    // One PATH pi per round: the version gate, the model resolver and the launch run the same executable.
+    let roundPi: string | undefined;
+    const piCommand = () => roundPi ??= client.piExecutable() ?? (() => { throw new Error('review_provider_executable_missing_or_unsupported'); })();
     const context = await acceptanceContext({ root, authority: options.authority, verification: options.verification! });
     const identity = contextIdentity(context);
     let session: ReviewSession<Endpoint>;
@@ -171,7 +174,7 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
       // integration is checked: the reviewer Pi uses an isolated PI_CODING_AGENT_DIR, and the
       // terminal status comes from the OAR host's own OSC 7501 report.
       if (actual === 'pi') {
-        const blocker = client.piReviewLaunchBlocker(client.piExecutable()!);
+        const blocker = client.piReviewLaunchBlocker(piCommand());
         if (blocker) throw new Error(`review_pi_launch_not_ready: ${blocker}${blocker === 'PI_HOST_UNSUPPORTED_VERSION' ? `; ${PI_UPGRADE_HINT}` : ''}`);
       }
       options.admitSession();
@@ -222,7 +225,7 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     if (session.actual_harness === 'pi') {
       piOutput = outbox;
       const prepared = preparePiAgentDirectory(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir, deadline,
-        (agentDirectory, reference) => client.resolvePiModel(client.piExecutable()!, agentDirectory, reference));
+        (agentDirectory, reference) => client.resolvePiModel(piCommand(), agentDirectory, reference));
       runtimeHome = prepared.directory; piLoopbackPorts = prepared.loopbackPorts; piModel = prepared.model; piCredential = prepared.credential;
     }
     // Isolation admission precedes any SDK/native Session creation.
@@ -238,7 +241,7 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
       const installation = await client.installation(session.actual_harness);
       if (installation.kind !== 'available') throw new Error('review_provider_executable_missing_or_unsupported');
       if (session.actual_harness === 'pi' ? installation.via !== 'bundled' : installation.via !== 'executable') throw new Error('review_provider_executable_required');
-      const vendorExecutable = session.actual_harness === 'pi' ? client.piExecutable() : installation.via === 'executable' ? installation.command : null;
+      const vendorExecutable = session.actual_harness === 'pi' ? piCommand() : installation.via === 'executable' ? installation.command : null;
       if (!vendorExecutable) throw new Error('review_provider_executable_missing_or_unsupported');
       const launcher = prepareReviewLauncher(dir, profilePath, vendorExecutable);
       const isolatedInstallation = await client.installation(session.actual_harness, launcher);
@@ -302,6 +305,10 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
       // The host writes observed after the turn ends, and the reviewer writes
       // the Result during the turn. A missing Result at this point is final.
       if (existsSync(join(dir, `observed-${request.round}.json`))) {
+        // The host stopped the turn at the deadline; a Result from that turn is not accepted.
+        if (readSessionArtifact<HostRoundObservation>(join(dir, `observed-${request.round}.json`)).kind === HOST_DEADLINE_STOP) {
+          throw new Error('review_round_timeout; the host stopped the reviewer at the round deadline; cancel the review and start a new one');
+        }
         collected = await client.collect(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, request.round, undefined, taskAuthority);
         if (!collected) throw new Error('review_result_missing; inspect the same request; do not resend');
         break;

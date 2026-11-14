@@ -96,7 +96,12 @@ export interface ReviewHostLaunch {
   /** The canonical `provider/model` of the admission, the native auth.json and the provider of its entry. */
   pi: { model: string; auth: string; provider: string } | null;
 }
-/** The host writes one observation for each ended turn. */
+/**
+ * The observation kind of a turn that the host stopped at its round deadline. The host writes it
+ * only after the native reviewer process tree has exited; the owner accepts no Result from it.
+ */
+export const HOST_DEADLINE_STOP = 'deadline_stop';
+/** The host writes one observation for each ended or deadline-stopped turn. */
 export interface HostRoundObservation {
   request_id: string;
   kind: string;
