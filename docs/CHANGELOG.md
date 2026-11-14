@@ -2,6 +2,45 @@
 
 All notable changes to this skill are documented here.
 
+## [0.33.0] - 2026-11-14
+
+### Breaking
+
+- The CLI command is `rh`. The `repo-harness` command is retired with no alias: `package.json` `bin` declares `rh` and `repo-harness-hook`, and `rh --help` names the program `rh`. The npm package name `repo-harness`, the hook command `repo-harness-hook`, the hook configuration, `~/.repo-harness`, the `REPO_HARNESS_*` variables and the `repo-harness.*` herdr labels do not change. Persisted record headers such as `repo-harness plan` and `repo-harness acceptance record` stay byte-equal. Every packaged invocation (skills, seat argv, reference configs, templates, generated package scripts, release scripts, docs) now calls `rh <command>`. (#2700)
+
+### Added
+
+- `rh review collect --seat <terminal> --pr <n> [--owner-record <url>] [--json]` publishes a Pi review receipt from the seat session record. It refuses a missing or invalid receipt and a receipt for an old PR head. (#2737)
+
+### Changed
+
+- The managed `archctx` and `archctx-contracts` pins move from 0.13.0 to 0.14.1. Projection readiness requires manifest v4. Module freshness follows rendered target changes, and an old archctx daemon needs `archctx daemon upgrade`. (#2686)
+- Operator collectors use one GitHub owner/name grammar. A stored slug that the grammar rejects no longer decodes, and unsupported package metadata remote forms no longer resolve a repository. (#2702)
+- `rh init`, `rh update` and the bash scaffold change or delete a managed value only when it equals a value that a release wrote, or the current value. The released values come from `assets/released-managed-values.v1.json`, which `scripts/check-released-managed-values.ts` rebuilds from the release tags. The surfaces are the managed and retired package script keys, the reference-config stubs, the managed block in the project `.gitignore` and in the user-level Git excludes, and the Global Working Rules block and its unmarked sections in `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`. Any other value stays and gets a notice: an init warning `customized-managed-value`, an update step detail, or a `skipped-edited` rules detail. A stub marker or a section heading alone no longer starts a replacement (#2708).
+- `rh board merge` and `rh board review` no longer refuse a parent without a plan that has two children or fewer. Blocked-by order applies to it. A parent with more than two children and no plan stays refused as `plan_unavailable`, with the detail `the plan is absent and #<parent> has N children; a parent with more than two children needs a plan` (#2725).
+- `rh init` is the only writer of scaffold seed files and managed project scripts, reference stubs and the `.gitignore` block. Run `rh init --repo <target>` after the scaffold. The scaffold no longer discovers existing context blocks; register each with `rh run capability-config add --repo <repo> --prefix <dir>`. (#2734, #2753)
+
+### Fixed
+
+- The Bash guard applies one protected-name gate when a command line names `_ops` or `_ref`. It checks the whole line and denies unsafe writes and unsupported shell forms. For git reads it admits only listed options, denies expandable `-C` paths and signature formats that can run a verifier, and gives a fix with each denial. The gate does not track data passed through stored state between commands. (#2369, #2748, #2757)
+- The daily architecture freshness lane starts its 3 h lag clock at the first commit after the newest manifest commit that changes an input of a differing target, as archctx at HEAD declares it: the archctx version, the architecture model, and the declared source footprint of the target's capability, or every declared footprint for a whole-model target. The committed manifest row type sets the target class. Without such a commit the clock starts at the manifest commit. Under projection manifest v4 the manifest changes only with a render, so the former clock gave a false stale after a quiet period (#2375).
+- In registry mode with a projection manifest, capability readers use the manifest for module page paths. A malformed manifest fails closed. Without a manifest, registry values still apply. (#2707)
+- Pi reviews use the canonical model from Pi and record the actual model. A missing provider credential, a non-canonical model or a credential that can expire during the review fails closed. The review sandbox permits the Pi `auth.json.lock` directory and stops the owned process tree at the round deadline. (#2732)
+- Worktree and scaffold scripts drain first-match pipeline input, so a long input does not cause a SIGPIPE failure under `pipefail`. (#2740, #2744)
+- `rh run contract-worktree start` uses the base branch upstream for a new or attached branch and prints its ref and commit. It fails if the upstream cannot resolve. Fetch before starting the worktree. (#2746)
+- Merge readiness ignores a failed job outside the required check’s transitive needs only when the workflow proves the relationship and the required check succeeded in every attempt. A non-passing check stays blocked, and an unproven result fails closed. (#2749, #2759)
+
+### Upgrade
+
+- Run `repo-harness update` once from 0.32.x. Update removes a launcher only on an exact proof: a symlink whose realpath equals the installed CLI entry. Every other launcher file gets a notice and no change. Update refreshes the user-level files that it manages (skills, global working rules, agent fleet). As its last step, and only when every other step passed, it removes `~/.bun/bin/repo-harness` when that symlink resolves to the installed CLI entry. On Windows, `repo-harness.exe` and `repo-harness.bunx` stay; update prints the PowerShell `Remove-Item` command for them. Update writes no project file. It lists each line in `~/.claude/CLAUDE.md`, `~/.claude/settings.json` and `~/.codex/AGENTS.md` that still calls `repo-harness <command>`, and it names the registered repositories with pending project work and the apply command `rh upgrade --registered --apply --expected-revision <digest>`. That apply runs `rh init` in each repository. Init keeps its existing contract: it writes the four managed package scripts (`check:brain`, `check:context-files`, `check:deploy-sql`, `sync:brain`) with their `rh` values, and it rewrites the reference-config stubs and the `.gitignore` block by their markers, and the apply refreshes an unchanged 0.32 root `CLAUDE.md`/`AGENTS.md`. `rh upgrade` reports user-owned calls of the retired command (other package scripts, an edited root context, `tasks/lessons.md`, the policy `sync_script`) and does not edit them. `rh doctor` warns while `repo-harness` stays on PATH. Rollback: run `rh update --version 0.32.0`, or `bun add -g repo-harness@0.32.0` and then `repo-harness update`. The `rh` launcher then stays and runs 0.32.0 until a 0.33.0 update. (#2700)
+- Update herdr-core to 0.1.21 with `hc update`. The minimum supported version is now 0.1.21. (#2724)
+- Immediately after installing 0.33.0, run `npm i -g @earendil-works/pi-coding-agent@1.5.2`. `MIN_PI_VERSION` is 1.5.2; the Pi extension blocks edit, write and bash on an older Pi. Pi review launches also refuse an older Pi. (#2732)
+- From 0.32.0, run `bun add -g repo-harness@0.33.0 --no-cache`, then install Pi 1.5.2 as above, then run `repo-harness update --version 0.33.0`. The update retires the old launcher when it can prove ownership; use `rh` for later commands. In `~/.claude/settings.json`, change the permission `Bash(repo-harness run *)` to `Bash(rh run *)`. Apply the registered project changes that `rh upgrade` reports. (#2700)
+
+### Rollback
+
+- To return to 0.32.0, run `rh update --version 0.32.0`, or run `bun add -g repo-harness@0.32.0 --no-cache && repo-harness update --version 0.32.0`. Restore `Bash(repo-harness run *)` in `~/.claude/settings.json` and use `repo-harness` for commands. The `rh` launcher remains until a later 0.33.0 update. (#2700)
+
 ## [0.32.0] - 2026-11-13
 
 ### Breaking
