@@ -13,6 +13,53 @@ import { join } from 'path';
 const [checkout = process.cwd(), baseRef = 'origin/main', headRef = 'HEAD', probeArg] = process.argv.slice(2);
 const corpusOnly = probeArg === '--corpus';
 const probe = corpusOnly ? undefined : probeArg;
+// REPLAY_JOBS=n splits the rows over n processes; each child runs every n-th row from REPLAY_SHARD=i/n.
+const jobs = Number(process.env.REPLAY_JOBS ?? 1);
+const [shard, shards] = (process.env.REPLAY_SHARD ?? '0/1').split('/').map(Number) as [number, number];
+
+interface Summary {
+  total: number; baseDeny: number; headDeny: number; stricter: number; seconds: number; base: string; head: string;
+  loosened: string[]; unexplained: string[]; caught: string[]; newOrdinary: string[];
+  guards: Record<string, number>; acceptedAllowed: Record<string, number>;
+  sizes: { catch: number; ordinary: number; docs: number; hand: number; accepted: Record<string, number> };
+}
+
+function report(summary: Summary): never {
+  const s = summary;
+  console.log(`base ${baseRef} ${s.base}\nhead ${headRef} ${s.head}`);
+  console.log(`rows=${s.total} base_deny=${s.baseDeny} head_deny=${s.headDeny} head_only_deny=${s.stricter} main_deny_head_allow=${s.loosened.length} seconds=${s.seconds.toFixed(0)}`);
+  console.log(`A2 catch=${s.sizes.catch} catch_allowed=${s.caught.length} accepted_allowed=${JSON.stringify(Object.fromEntries(Object.entries(s.sizes.accepted).map(([c, n]) => [c, `${s.acceptedAllowed[c] ?? 0}/${n}`])))}`);
+  console.log(`A3 ordinary=${s.sizes.ordinary} (docs ${s.sizes.docs}, hand ${s.sizes.hand}) new_denials=${s.newOrdinary.length}`);
+  console.log(`A4 head_only_guards=${JSON.stringify(s.guards)} unexplained=${s.unexplained.length}`);
+  for (const row of s.loosened) console.log(`LOOSENED ${row}`);
+  for (const row of s.unexplained) console.log(`UNEXPLAINED ${row}`);
+  for (const row of s.caught) console.log(`CATCH-ALLOWED ${row}`);
+  for (const row of s.newOrdinary) console.log(`ORDINARY-DENIED ${row}`);
+  process.exit(s.loosened.length || s.unexplained.length || s.caught.length || s.newOrdinary.length ? 1 : 0);
+}
+
+if (jobs > 1 && !process.env.REPLAY_SHARD && !probe) {
+  const started = performance.now();
+  const children = Array.from({ length: jobs }, (_, i) => Bun.spawn([process.execPath, import.meta.path, ...process.argv.slice(2)], {
+    env: { ...process.env, REPLAY_SHARD: `${i}/${jobs}` }, stdout: 'pipe', stderr: 'inherit',
+  }));
+  const parts = await Promise.all(children.map(async child => {
+    const text = await new Response(child.stdout).text();
+    await child.exited;
+    const line = text.split('\n').find(l => l.startsWith('SUMMARY '));
+    if (!line) throw new Error(`a replay shard printed no summary:\n${text}`);
+    return JSON.parse(line.slice(8)) as Summary;
+  }));
+  const sum = parts.reduce((a, b) => ({
+    ...a, total: a.total + b.total, baseDeny: a.baseDeny + b.baseDeny, headDeny: a.headDeny + b.headDeny, stricter: a.stricter + b.stricter,
+    loosened: [...a.loosened, ...b.loosened], unexplained: [...a.unexplained, ...b.unexplained], caught: [...a.caught, ...b.caught],
+    newOrdinary: [...a.newOrdinary, ...b.newOrdinary],
+    guards: Object.fromEntries([...new Set([...Object.keys(a.guards), ...Object.keys(b.guards)])].map(k => [k, (a.guards[k] ?? 0) + (b.guards[k] ?? 0)])),
+    acceptedAllowed: Object.fromEntries([...new Set([...Object.keys(a.acceptedAllowed), ...Object.keys(b.acceptedAllowed)])]
+      .map(k => [k, (a.acceptedAllowed[k] ?? 0) + (b.acceptedAllowed[k] ?? 0)])),
+  }));
+  report({ ...sum, seconds: (performance.now() - started) / 1000 });
+}
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'rh2082-replay-')));
 
 function extract(ref: string, name: string): { dir: string; sha: string } {
@@ -37,6 +84,9 @@ writeFileSync(join(repo, '.ai/harness/workflow-contract.json'), '{}\n');
 writeFileSync(join(repo, 'a'), 'a\n');
 symlinkSync('_ops', join(repo, 'lnk'));
 symlinkSync('..', join(repo, 'src/up'));
+// Each denial appends a failure record; the record does not change a decision, so it goes to /dev/null.
+mkdirSync(join(repo, '.ai/harness/failures'), { recursive: true });
+symlinkSync('/dev/null', join(repo, '.ai/harness/failures/latest.jsonl'));
 git(repo, 'init', '-q', '-b', 'main');
 git(repo, '-c', 'user.email=r@example.com', '-c', 'user.name=r', 'commit', '-q', '--allow-empty', '-m', 'seed');
 process.env.REPO_HARNESS_WORKTREE_ROOT = managed;
@@ -188,7 +238,9 @@ const guards = new Map<string, number>();
 const acceptedAllowed = new Map<string, number>();
 let total = 0, baseDeny = 0, headDeny = 0, stricter = 0;
 const started = performance.now();
+let index = -1;
 for (const command of rows) for (const cwd of [repo, join(repo, 'src')]) {
+  if (++index % shards !== shard) continue;
   const run = (fn: typeof decide.base) => fn({ repoRoot: repo, payload: { tool_input: { command }, cwd }, identity });
   const b = run(decide.base).exitCode !== 0, result = run(decide.head), h = result.exitCode !== 0;
   const where = `${JSON.stringify(command)} cwd=${cwd === repo ? 'repo' : 'repo/src'}`;
@@ -205,15 +257,14 @@ for (const command of rows) for (const cwd of [repo, join(repo, 'src')]) {
   if (cwd === repo && accepted.has(command) && !h) acceptedAllowed.set(accepted.get(command)!, (acceptedAllowed.get(accepted.get(command)!) ?? 0) + 1);
   if (probe) console.log(`${b ? 'deny ' : 'allow'} -> ${h ? 'deny ' : 'allow'} cwd=${cwd === repo ? 'repo' : 'src'} ${JSON.stringify(command)}`);
 }
-const seconds = (performance.now() - started) / 1000;
-console.log(`base ${baseRef} ${base.sha}\nhead ${headRef} ${head.sha}`);
-console.log(`rows=${total} base_deny=${baseDeny} head_deny=${headDeny} head_only_deny=${stricter} main_deny_head_allow=${loosened.length} seconds=${seconds.toFixed(0)}`);
-console.log(`A2 catch=${catchRows.size} catch_allowed=${caught.length} accepted=${JSON.stringify(Object.fromEntries(Object.entries(corpus.accepted).map(([c, l]) => [c, `${acceptedAllowed.get(c) ?? 0}/${l.length} allowed`])))}`);
-console.log(`A3 ordinary=${ordinary.size} (docs ${docLines.size}, hand ${corpus.ordinary.length}) new_denials=${newOrdinary.length}`);
-console.log(`A4 head_only_guards=${JSON.stringify(Object.fromEntries(guards))} unexplained=${unexplained.length}`);
-for (const row of loosened) console.log(`LOOSENED ${row}`);
-for (const row of unexplained) console.log(`UNEXPLAINED ${row}`);
-for (const row of caught) console.log(`CATCH-ALLOWED ${row}`);
-for (const row of newOrdinary) console.log(`ORDINARY-DENIED ${row}`);
+const summary: Summary = {
+  total, baseDeny, headDeny, stricter, seconds: (performance.now() - started) / 1000, base: base.sha, head: head.sha,
+  loosened, unexplained, caught, newOrdinary, guards: Object.fromEntries(guards), acceptedAllowed: Object.fromEntries(acceptedAllowed),
+  sizes: {
+    catch: catchRows.size, ordinary: ordinary.size, docs: docLines.size, hand: corpus.ordinary.length,
+    accepted: Object.fromEntries(Object.entries(corpus.accepted).map(([c, l]) => [c, l.length])),
+  },
+};
 rmSync(scratch, { recursive: true, force: true });
-process.exit(loosened.length || unexplained.length || caught.length || newOrdinary.length ? 1 : 0);
+if (process.env.REPLAY_SHARD) { console.log(`SUMMARY ${JSON.stringify(summary)}`); process.exit(0); }
+report(summary);
