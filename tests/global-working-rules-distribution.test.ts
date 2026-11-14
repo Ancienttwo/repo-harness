@@ -156,7 +156,7 @@ describe("global working rules distribution", () => {
     expect(codex).toContain("user content");
     expect(codex).toContain("<!-- BEGIN: repo-harness global-working-rules -->");
     expect(codex).toContain(
-      "<!-- repo-harness manages this block; edits inside are overwritten on sync. Keep personal rules outside the markers. -->",
+      "<!-- repo-harness manages this block; sync keeps an edited block unchanged. Keep personal rules outside the markers. -->",
     );
     expect(codex).toContain("- Use Chinese to report to user.");
     expect(codex).toContain(

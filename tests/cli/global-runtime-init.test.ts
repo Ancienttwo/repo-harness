@@ -19,7 +19,7 @@ import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
 import { applyInstallSelection, beginInstallHostTransaction, installProfileHostMutationPaths, managedInstallSurfaceIsCurrent, readInstallState, recordRefreshedInstallOwnership, loadSkillSurfaceCatalog, rollbackInstallHostTransaction, versions } from '../../src/cli/installer/install-profile';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { MANAGED_AGENTS } from '../../src/effects/terminal/task-role-profiles';
-import { applyGlobalContextRefresh, GLOBAL_RULES_EDITED, inspectGlobalContext, preflightGlobalContextRefresh, renderGlobalRulesBlock, setReportingLanguage } from '../../src/cli/installer/global-context';
+import { applyGlobalContextRefresh, GLOBAL_RULES_EDITED, GLOBAL_RULES_END, inspectGlobalContext, preflightGlobalContextRefresh, renderGlobalRulesBlock, setReportingLanguage } from '../../src/cli/installer/global-context';
 import { CandidateRequestProtocolRetiredError, encodeCandidateRequest, parseCandidateRequest, type CandidateReconciliationRequest } from '../../src/cli/commands/candidate-reconciliation';
 import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 
@@ -992,6 +992,10 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       mkdirSync(join(home, '.codex'), { recursive: true });
       // Host-file notice path: each call and the prose line give a notice; the exclusions and the managed rules block that update writes do not.
       const agents = join(home, '.codex', 'AGENTS.md');
+      // The refresh renders the rules block from the source template.
+      const template = join(source, 'assets', 'reference-configs', 'global-working-rules.md');
+      mkdirSync(dirname(template), { recursive: true });
+      copyFileSync(join(ROOT, 'assets', 'reference-configs', 'global-working-rules.md'), template);
       const userText = [...RETIRED_CLI_LINES.calls, RETIRED_CLI_LINES.prose, ...RETIRED_CLI_LINES.excluded].join('\n');
       const managedBlock = renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' });
       writeFileSync(agents, `${userText}\n${managedBlock}`);
@@ -1004,6 +1008,13 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       expect(result.steps.find((step) => step.step === 'find repo-harness command calls in user files')?.detail).toBe(
         `${named} line(s) in files that you own name repo-harness; update does not change them. Change each line that calls it to rh: ${Array.from({ length: named }, (_, index) => `${agents}:${index + 1}`).join(', ')}.`);
       expect(readFileSync(agents, 'utf8')).toStartWith(userText);
+      // Update keeps an edited rules block, so the scan reads it as user text.
+      const call = RETIRED_CLI_LINES.calls[0]!;
+      const editedBlock = managedBlock.replace(GLOBAL_RULES_END, `${call}\n${GLOBAL_RULES_END}`);
+      writeFileSync(agents, editedBlock);
+      expect(update({ plugins: FULL_PLUGINS }).steps.find((step) => step.step === 'find repo-harness command calls in user files')?.detail)
+        .toContain(`${agents}:${editedBlock.split('\n').indexOf(call) + 1}`);
+      expect(readFileSync(agents, 'utf8')).toBe(editedBlock);
       // A file at the link path without the exact proof stays, with its removal command.
       writeFileSync(retiredLink, 'owner file');
       const retireDetail = () => update({ plugins: FULL_PLUGINS }).steps.find((step) => step.step === 'retire the repo-harness command link')?.detail;

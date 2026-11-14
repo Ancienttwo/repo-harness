@@ -19,7 +19,11 @@ import { assertConfigurationPath } from './configuration-ownership';
 export const GLOBAL_RULES_BEGIN = '<!-- BEGIN: repo-harness global-working-rules -->';
 export const GLOBAL_RULES_END = '<!-- END: repo-harness global-working-rules -->';
 const GLOBAL_RULES_SELF_NOTE =
+  '<!-- repo-harness manages this block; sync keeps an edited block unchanged. Keep personal rules outside the markers. -->';
+/** The self-note of v0.8.5 to v0.32.0; a released block with it still records its reporting language. */
+const RELEASED_GLOBAL_RULES_SELF_NOTE =
   '<!-- repo-harness manages this block; edits inside are overwritten on sync. Keep personal rules outside the markers. -->';
+const isSelfNote = (line: string | undefined): boolean => line === GLOBAL_RULES_SELF_NOTE || line === RELEASED_GLOBAL_RULES_SELF_NOTE;
 const REPORTING_LANGUAGE_PREFIX = '<!-- repo-harness reporting-language: ';
 const REPORTING_LANGUAGE_SUFFIX = ' -->';
 const COMPLETION_SUMMARY_LABEL_EN = 'Next cut';
@@ -292,7 +296,7 @@ export interface MergedManagedBlock {
  */
 function managedBlockProved(block: string, sourceRoot: string): boolean {
   const lines = block.split('\n');
-  const language = lines[1] === GLOBAL_RULES_SELF_NOTE ? decodeReportingLanguage(lines[2]) : null;
+  const language = isSelfNote(lines[1]) ? decodeReportingLanguage(lines[2]) : null;
   if (language !== null && block === renderGlobalRulesBlock(sourceRoot, language).trimEnd()) return true;
   return isReleasedGlobalRulesBlock(block, language?.preset === 'custom' ? language.instruction : null);
 }
@@ -384,7 +388,7 @@ export function inspectGlobalContext(content: string | null, sourceRoot: string)
   if (layout.kind === 'unbalanced') return unsynced('unbalanced');
   if (layout.kind === 'none') return unsynced(legacySpan ? 'legacy-unmanaged' : 'no-rules');
   const blockLines = content.slice(layout.start, layout.end).split(/\r?\n/);
-  const language = blockLines[1] === GLOBAL_RULES_SELF_NOTE ? decodeReportingLanguage(blockLines[2]) : null;
+  const language = isSelfNote(blockLines[1]) ? decodeReportingLanguage(blockLines[2]) : null;
   if (language === null) return unsynced('managed-unrecorded');
   const synced = mergeManagedBlock(content, renderGlobalRulesBlock(sourceRoot, language), sourceRoot);
   const current = synced.status !== 'kept-edited' && synced.content === content;
