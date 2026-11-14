@@ -665,6 +665,7 @@ const SHARD_ONE = 'Affected tests (shard 1/3)';
 const SHARD_TWO = 'Affected tests (shard 2/3)';
 const SUMMARY_STEP = 'Consume the single candidate verification';
 const SHARD_STEP = 'Run the shard tests';
+const PROJECTION_JOB = 'Projection provider (windows-latest)';
 
 /** The real ci.yml shape: a summary required job and the matrix shards it needs. */
 const WORKFLOW_DEFINITION = [
@@ -677,13 +678,16 @@ const WORKFLOW_DEFINITION = [
   '  verify:',
   '    name: Affected tests (shard ${{ matrix.shard }}/3)',
   '    needs: selection',
+  '  projection:',
+  '    name: Projection provider (${{ matrix.os }})',
   '  required:',
   '    name: Required / CI',
   '    needs: [selection, verify]',
 ].join('\n');
 
 type EvidenceScenario = 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'association-unknown'
-  | 'evidence-unavailable' | 'original-test-skipped' | 'original-test-not-executed' | 'no-annotations';
+  | 'evidence-unavailable' | 'original-test-skipped' | 'original-test-not-executed' | 'no-annotations'
+  | 'unneeded-failure' | 'unneeded-failure-summary-failed';
 
 function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadinessInput['gh_runner']> {
   const source = fakeGh();
@@ -699,6 +703,8 @@ function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadines
     steps: [{ name: step, number: 1, status: 'completed', conclusion }],
     check_run_url: checkRun,
   });
+  // Run 43571531818: attempt 1 failed only a job outside the summary's needs.
+  const unneeded = scenario === 'unneeded-failure' || scenario === 'unneeded-failure-summary-failed';
   const annotationRun = scenario === 'no-annotations' ? null
     : 'https://api.github.com/repos/example/repo-harness/check-runs/77';
   return (args) => {
@@ -711,10 +717,12 @@ function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadines
     }
     if (path === 'repos/example/repo-harness/actions/runs/123') return { status: 0, stdout: JSON.stringify(run) };
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/1/jobs?per_page=100') {
-      return { status: 0, stdout: JSON.stringify({ total_count: 3, jobs: [
-        job(456, scenario === 'missing-previous-job' ? 'renamed summary job' : SUMMARY_JOB, 'failure', SUMMARY_STEP),
-        job(460, SHARD_ONE, 'failure', SHARD_STEP, annotationRun),
+      return { status: 0, stdout: JSON.stringify({ total_count: unneeded ? 4 : 3, jobs: [
+        job(456, scenario === 'missing-previous-job' ? 'renamed summary job' : SUMMARY_JOB,
+          scenario === 'unneeded-failure' ? 'success' : 'failure', SUMMARY_STEP),
+        job(460, SHARD_ONE, unneeded ? 'success' : 'failure', SHARD_STEP, annotationRun),
         job(461, SHARD_TWO, 'success', SHARD_STEP),
+        ...unneeded ? [job(462, PROJECTION_JOB, 'failure', 'Run projection tests')] : [],
       ] }) };
     }
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/2/jobs?per_page=100') {
@@ -821,6 +829,23 @@ test('an unproven dependency keeps the summary failure and attributes no child',
   expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false,
     reason: 'failed_test_identifier_unavailable' });
   expect(evidence!.cause).toBe('unknown');
+});
+
+test('a failed job outside the needs of a check that passed in each attempt is not failure evidence', () => {
+  const verdict = evidenceVerdict('unneeded-failure');
+  expect(verdict.ready).toBe(true);
+  expect(verdict.blockers).toEqual([]);
+  expect(verdict.check_failures).toEqual([]);
+});
+
+test('a check that failed in an earlier attempt keeps its evidence beside a failed unneeded job', () => {
+  const verdict = evidenceVerdict('unneeded-failure-summary-failed');
+  expect(verdict.ready).toBe(true);
+  const [evidence] = verdict.check_failures;
+  expect(evidence!.association).toBe('unknown');
+  expect(evidence!.failed).toMatchObject({ attempt: 1, job_id: 456, job_name: SUMMARY_JOB, steps: [SUMMARY_STEP] });
+  expect(evidence!.failed_children).toEqual([expect.objectContaining({
+    association: 'unknown', failure: expect.objectContaining({ job_id: 462, job_name: PROJECTION_JOB }) })]);
 });
 
 test('a passing rerun without test execution evidence is not revalidated', () => {

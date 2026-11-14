@@ -533,6 +533,11 @@ function annotationEvidence(value: unknown): AnnotationEvidence {
 
 const FAILED_ATTEMPT_CONCLUSIONS: ReadonlySet<AttemptConclusion> = new Set(['failure', 'timed_out', 'cancelled']);
 
+/** A job failed when its conclusion or one of its steps failed. */
+function jobFailed(job: AttemptJob): boolean {
+  return FAILED_ATTEMPT_CONCLUSIONS.has(job.conclusion) || job.steps.some(step => FAILED_ATTEMPT_CONCLUSIONS.has(step.conclusion));
+}
+
 const WORKFLOW_PATH = /^\.github\/workflows\/[A-Za-z0-9._-]+\.ya?ml$/u;
 
 /** The workflow file content at the run revision; null when it is unavailable or unreadable. */
@@ -623,12 +628,17 @@ function* checkEvidence(
       const needJobs = entry.needs
         .map(id => workflow.jobs.find(job => job.id === id))
         .filter((job): job is WorkflowJobV1 => job !== undefined);
-      const proven = needJobs.length === entry.needs.length
+      const needsResolved = needJobs.length === entry.needs.length;
+      const proven = needsResolved
         ? otherFailed.filter(job => needJobs.some(need => workflowJobMatchesName(need, job.name)))
         : [];
       if (proven.length > 0) {
         association = 'declared_needs';
         for (const job of proven) childAssociations.set(job.name, 'declared_needs');
+      } else if (needsResolved && !attemptsJobs.some(jobFailed)) {
+        // Every failed job is outside the resolved needs and the check passed in
+        // each attempt: those failures are not evidence for this check.
+        association = 'direct';
       } else {
         association = 'unknown';
         for (const job of otherFailed) childAssociations.set(job.name, 'unknown');
@@ -682,7 +692,7 @@ function* checkEvidence(
       return job === undefined ? [] : [attemptObservation(job, index + 1, runUrl, link, annotations.get(job.id))];
     }),
   }));
-  const hasFailure = attempts.some(attempt => FAILED_ATTEMPT_CONCLUSIONS.has(attempt.conclusion) || attempt.steps.length > 0)
+  const hasFailure = attemptsJobs.some(jobFailed)
     || children.some(child => child.attempts.some(attempt =>
       FAILED_ATTEMPT_CONCLUSIONS.has(attempt.conclusion) || attempt.steps.length > 0));
   if (!hasFailure) return null;
