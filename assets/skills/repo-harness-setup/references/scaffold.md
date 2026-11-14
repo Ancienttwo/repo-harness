@@ -8,8 +8,8 @@ Run the shared preflight in `../SKILL.md` first.
 1. Confirm the target parent path, project name, plan catalog entry, and package manager.
 2. Use the plan catalog A-K from `assets/plan-map.json`.
 3. If the app needs agent runtime structure, select `ai_native_profile` as an overlay; otherwise keep the default `none`.
-4. Run `scripts/init-project.sh` or the matching stack template path.
-5. Run `rh init --repo <target-repo>` to attach the tasks-first workflow and write the opt-in marker.
+4. Run `scripts/init-project.sh` or the matching stack template path. The scaffold writes no init-managed part.
+5. Run `rh init --repo <target-repo>`. It attaches the tasks-first workflow and writes the opt-in marker, the package scripts, the `.gitignore` managed block and the reference-config stubs. It is the only writer of these parts.
 6. Verify scaffold output and workflow checks.
 
 ## AI-native Overlay

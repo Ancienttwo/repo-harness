@@ -22,7 +22,6 @@ if [[ -f "$PI_LIB_DIR/project-init-lib.sh" ]]; then
     # shellcheck source=/dev/null
     . "$PI_LIB_DIR/project-init-lib.sh"
 fi
-ASSETS_REF_DIR="$SCRIPT_DIR/../assets/reference-configs"
 ASSETS_TEMPLATES_DIR="$SCRIPT_DIR/../assets/templates"
 ASSETS_FACTOR_FACTORY_DIR="$ASSETS_TEMPLATES_DIR/factor-factory"
 ASSETS_WORKFLOW_CONTRACT="$SCRIPT_DIR/../assets/workflow-contract.v1.json"
@@ -42,23 +41,6 @@ install_hook_settings_template() {
     pi_print_codex_hook_trust_notice
 }
 
-ensure_runtime_gitignore_block() {
-    local file_path="$1"
-    local extra_entries=""
-    if pi_should_enable_factor_factory "$(pi_plan_type "$STACK")"; then
-        extra_entries="$(pi_factor_factory_gitignore_entries)"
-    fi
-    pi_ensure_gitignore_block "$file_path" "" "$extra_entries" "apply"
-}
-
-ensure_gitignore_entry() {
-    local file_path="$1"
-    local entry="$2"
-    if ! grep -Fxq "$entry" "$file_path"; then
-        printf "%s\n" "$entry" >> "$file_path"
-    fi
-}
-
 install_hook_assets() {
     pi_install_hook_assets "$PWD" "apply"
     echo -e "${GREEN}Package helper guidance written to .ai/hooks/README.md${NC}"
@@ -69,12 +51,6 @@ create_contract_directories() {
         [ -z "$rel_dir" ] && continue
         mkdir -p "$rel_dir"
     done < <(pi_workflow_contract_query_lines "$ASSETS_WORKFLOW_CONTRACT" "artifacts.requiredDirectories")
-}
-
-ensure_task_sync_package_script() {
-    pi_ensure_task_sync "$PWD" "0" "apply" || {
-        echo -e "${YELLOW}Warning: task workflow script injection failed for package.json.${NC}"
-    }
 }
 
 # Check package manager
@@ -247,7 +223,6 @@ EOF
     if pi_should_enable_factor_factory "$(pi_plan_type "$STACK")"; then
         pi_install_factor_factory "$PWD" "$ASSETS_FACTOR_FACTORY_DIR" "$SCRIPT_DIR" "apply"
     fi
-    ensure_task_sync_package_script
     # Canonical harness state surface:
     # - .ai/context/context-map.json
     # - .ai/harness/brain-manifest.json
@@ -262,36 +237,8 @@ EOF
 
     install_hook_assets
 
-    if [ -d "$ASSETS_REF_DIR" ]; then
-        pi_install_reference_configs "$PWD" "$ASSETS_REF_DIR" "apply"
-    else
-        pi_write_reference_config_stub "docs/reference-configs/agentic-development-flow.md" "agentic-development-flow.md" "$SCRIPT_DIR/../assets/reference-configs"
-        pi_write_reference_config_stub "docs/reference-configs/external-tooling.md" "external-tooling.md" "$SCRIPT_DIR/../assets/reference-configs"
-    fi
-
-    # Update .gitignore with explicit entries only
-    touch .gitignore
-    ensure_gitignore_entry .gitignore "# Project-specific"
-    ensure_gitignore_entry .gitignore "artifacts/"
-    ensure_gitignore_entry .gitignore "coverage/"
-    ensure_gitignore_entry .gitignore "*.tar.gz"
-    ensure_gitignore_entry .gitignore "*.tgz"
-    ensure_gitignore_entry .gitignore ""
-    ensure_gitignore_entry .gitignore "# External references"
-    ensure_gitignore_entry .gitignore "_ref/"
-    ensure_gitignore_entry .gitignore ".codegraph/"
-    ensure_gitignore_entry .gitignore ""
-    ensure_gitignore_entry .gitignore "# Local operations state"
-    ensure_gitignore_entry .gitignore "_ops/"
-    ensure_gitignore_entry .gitignore ""
-    ensure_gitignore_entry .gitignore "# Environment"
-    ensure_gitignore_entry .gitignore ".env"
-    ensure_gitignore_entry .gitignore ".env.*"
-    ensure_gitignore_entry .gitignore "!.env.example"
-    ensure_gitignore_entry .gitignore ""
-    ensure_gitignore_entry .gitignore "# OS metadata"
-    ensure_gitignore_entry .gitignore ".DS_Store"
-    ensure_runtime_gitignore_block .gitignore
+    # Package scripts, the .gitignore managed block and the reference-config
+    # stubs come only from rh init (next steps), so this script writes none of them.
 
     touch deploy/env/.gitkeep
     touch deploy/scripts/.gitkeep
@@ -398,7 +345,7 @@ main() {
     echo "Next steps:"
     echo "  1. cd $PROJECT_NAME"
     echo "  2. Copy .env.example to .env and configure"
-    echo "  3. Run: rh init --repo . (writes the policy, CLAUDE.md, AGENTS.md and the workflow marker)"
+    echo "  3. Run: rh init --repo . (writes the policy, CLAUDE.md, AGENTS.md, the workflow marker, package scripts, the .gitignore block and the reference-config stubs)"
     echo "  4. Run: $PKG_MANAGER run dev"
     echo "  5. Open a GitHub issue for the first feature, then run: rh run contract-worktree start --issue <number>"
     echo ""

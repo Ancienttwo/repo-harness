@@ -6,6 +6,9 @@
 #   IMMUTABLE LAYER (资产层): specs, contracts, tests
 #   MUTABLE LAYER (厕纸层): src
 #   SUPPORTING (支撑层): docs, deploy, _ops, artifacts, tasks, plans
+#
+# The init-managed parts (package scripts, the .gitignore managed block and the
+# reference-config stubs) come only from `rh init --repo .`, which runs next.
 
 set -euo pipefail
 
@@ -16,17 +19,8 @@ if [[ -f "$PI_LIB_DIR/project-init-lib.sh" ]]; then
   . "$PI_LIB_DIR/project-init-lib.sh"
 fi
 ASSETS_TEMPLATES_DIR="$SCRIPT_DIR/../assets/templates"
-ASSETS_REF_DIR="$SCRIPT_DIR/../assets/reference-configs"
 ASSETS_FACTOR_FACTORY_DIR="$ASSETS_TEMPLATES_DIR/factor-factory"
 ASSETS_WORKFLOW_CONTRACT="$SCRIPT_DIR/../assets/workflow-contract.v1.json"
-
-write_runtime_gitignore_block() {
-  local extra_entries=""
-  if pi_should_enable_factor_factory "$(pi_plan_type)"; then
-    extra_entries="$(pi_factor_factory_gitignore_entries)"
-  fi
-  pi_ensure_gitignore_block ".gitignore" "$PI_DEFAULT_GITIGNORE_CONTENT" "$extra_entries" "apply"
-}
 
 write_templates() {
   pi_install_templates "$PWD" "$ASSETS_TEMPLATES_DIR" "apply"
@@ -47,10 +41,6 @@ create_contract_directories() {
 
 install_hook_assets() {
   pi_install_hook_assets "$PWD" "apply"
-}
-
-ensure_task_sync_package_script() {
-  pi_ensure_task_sync "$PWD" "1" "apply"
 }
 
 # ===== IMMUTABLE LAYER (资产层) =====
@@ -118,8 +108,6 @@ install_hook_assets
 if pi_should_enable_factor_factory "$(pi_plan_type)"; then
   pi_install_factor_factory "$PWD" "$ASSETS_FACTOR_FACTORY_DIR" "$SCRIPT_DIR" "apply"
 fi
-ensure_task_sync_package_script
-write_runtime_gitignore_block
 
 pi_print_codex_hook_trust_notice
 
@@ -174,13 +162,6 @@ bun test --watch      # Watch mode
 ```
 TESTS_README_EOF
 
-if [[ -d "$ASSETS_REF_DIR" ]]; then
-  pi_install_reference_configs "$PWD" "$ASSETS_REF_DIR" "apply"
-else
-  pi_write_reference_config_stub "docs/reference-configs/agentic-development-flow.md" "agentic-development-flow.md" "$SCRIPT_DIR/../assets/reference-configs"
-  pi_write_reference_config_stub "docs/reference-configs/external-tooling.md" "external-tooling.md" "$SCRIPT_DIR/../assets/reference-configs"
-fi
-
 touch deploy/env/.gitkeep
 touch deploy/scripts/.gitkeep
 touch deploy/submissions/.gitkeep
@@ -211,4 +192,4 @@ If `.ai/harness/policy.json` defines `operations.deploy_sql`, its roots, naming 
 Keep external upstream checkouts and source references in `_ref/`; `_ref/` is ignored and must stay out of commits.
 DEPLOY_README_EOF
 
-echo "Project directory structure created successfully."
+echo "Project directory structure created successfully. Next: rh init --repo ."

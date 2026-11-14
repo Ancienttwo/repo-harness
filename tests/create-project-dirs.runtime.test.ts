@@ -1,10 +1,11 @@
 import { describe, test, expect } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { defaultPolicy } from "../src/effects/adoption/standard-plan";
 import { planAdoption } from "../src/effects/adoption/plan";
+import { applyAdoptionPlan } from "../src/effects/fs-transaction";
 import { adoptionTemplateFile } from "../src/effects/adoption/manifest-templates";
 import { parseExternalSourcesPolicy } from "../src/effects/github/policy";
 import { ARCHCTX_REQUIRED_VERSION, readArchitectureProjectionPolicy } from "../src/core/architecture/projection";
@@ -54,21 +55,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".claude/templates/spec.template.md"))).toBe(true);
       expect(existsSync(join(cwd, ".claude/templates/implementation-notes.template.md"))).toBe(false);
       expect(existsSync(join(cwd, ".claude/templates/review.template.md"))).toBe(false);
-      expect(existsSync(join(cwd, "docs/reference-configs/spa-day-protocol.md"))).toBe(false);
-      expect(existsSync(join(cwd, "docs/reference-configs/handoff-protocol.md"))).toBe(false);
-      expect(existsSync(join(cwd, "docs/reference-configs/harness-overview.md"))).toBe(true);
-      expect(existsSync(join(cwd, "docs/reference-configs/hook-operations.md"))).toBe(false);
-      expect(existsSync(join(cwd, "docs/reference-configs/evaluator-rubric.md"))).toBe(false);
-      expect(existsSync(join(cwd, "docs/reference-configs/agentic-development-flow.md"))).toBe(true);
-      expect(existsSync(join(cwd, "docs/reference-configs/external-tooling.md"))).toBe(true);
-      expect(existsSync(join(cwd, "docs/reference-configs/sprint-contracts.md"))).toBe(false);
-      expect(existsSync(join(cwd, "docs/reference-configs/heartbeat-triage.md"))).toBe(true);
-      expect(existsSync(join(cwd, "docs/reference-configs/document-generation.md"))).toBe(true);
-      expect(existsSync(join(cwd, "docs/reference-configs/global-working-rules.md"))).toBe(true);
-      expect(existsSync(join(cwd, "docs/reference-configs/minimal-change-hooks.md"))).toBe(true);
-      expectReferenceConfigStub(cwd, "harness-overview");
-      expectReferenceConfigStub(cwd, "agentic-development-flow");
-      expectReferenceConfigStub(cwd, "external-tooling");
       expect(existsSync(join(cwd, "docs/brief.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/tech-stack.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/decisions.md"))).toBe(false);
@@ -89,26 +75,10 @@ describe("create-project-dirs runtime smoke", () => {
       // rh init (standard-plan.ts) is the only writer of root CLAUDE.md and AGENTS.md.
       expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
       expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
-      const gitignore = readFileSync(join(cwd, ".gitignore"), "utf-8");
-      expect(gitignore).not.toContain("tasks/.current.md.tmp.*");
-      expect(gitignore).not.toContain("tasks/current.md");
-      expect(gitignore).not.toContain(".claude/.plan-state/");
-      // These runtime rules live in the user-level runtime-state block, not the tracked block.
-      const runtimeState = readFileSync(join(ROOT, "assets/templates/runtime-state.gitignore"), "utf-8");
-      expect(runtimeState).toContain(".ai/harness/checks/*.latest.json");
-      expect(runtimeState).toContain(".ai/harness/checks/*.latest.md");
-      expect(runtimeState).toContain(".ai/harness/state/");
-      expect(gitignore).not.toContain(".ai/harness/state/");
-      expect(gitignore).toContain(".archcontext/");
-      expect(gitignore).not.toContain(".ai/harness/chatgpt/bridge-extension/");
-      expect(gitignore).toContain(".repo-harness/");
-      expect(gitignore).not.toContain(".repo-harness/chatgpt-browser.local.json");
-      expect(gitignore).not.toContain("# repo-harness generated helper wrappers");
-      expect(gitignore).not.toContain("scripts/check-task-workflow.sh");
-      expect(gitignore).not.toContain("scripts/prepare-codex-handoff.sh");
-      expect(gitignore).not.toContain("scripts/repo-harness/");
-      expect(gitignore).not.toContain("tasks/notes");
-      expect(gitignore).not.toContain("docs/researches");
+      // rh init is the only writer of the package scripts, the .gitignore block and the reference-config stubs.
+      expect(existsSync(join(cwd, "package.json"))).toBe(false);
+      expect(existsSync(join(cwd, ".gitignore"))).toBe(false);
+      expect(readdirSync(join(cwd, "docs/reference-configs"))).toEqual([]);
       expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/context/capabilities.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(false);
@@ -317,16 +287,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(ROOT, ".archcontext/model/nodes"))).toBe(true);
       expect(existsSync(join(ROOT, ".ai/context/capabilities.json"))).toBe(false);
 
-      const pkg = JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8"));
-      expect(pkg.scripts["check:context-files"]).toBe("rh run check-context-files");
-      expect(pkg.scripts["check:deploy-sql"]).toBe("rh run check-deploy-sql-order");
-      expect(pkg.scripts["check:architecture-sync"]).toBeUndefined();
-      expect(pkg.scripts["check:task-sync"]).toBeUndefined();
-      expect(pkg.scripts["check:task-workflow"]).toBeUndefined();
-      expect(pkg.scripts["check:brain"]).toBe("rh brain check");
-      expect(pkg.scripts["sync:brain"]).toBe("rh brain sync");
-      expect(pkg.scripts["check:brain-manifest"]).toBeUndefined();
-      expect(pkg.scripts["sync:brain-docs"]).toBeUndefined();
       expect(existsSync(join(cwd, "scripts/contract-worktree.sh"))).toBe(false);
       expect(existsSync(join(cwd, "scripts/ship-worktrees.sh"))).toBe(false);
     } finally {
@@ -608,6 +568,9 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "docs/tech-stack.md"))).toBe(true);
       expect(existsSync(join(cwd, "docs/decisions.md"))).toBe(true);
       expect(existsSync(join(cwd, "docs/api"))).toBe(true);
+      // rh init reads the same profile and writes the full reference-config stub set.
+      expect(spawnSync("git", ["init", "-q", "-b", "main"], { cwd }).status).toBe(0);
+      expect(applyAdoptionPlan(planAdoption({ repoRoot: cwd, mode: "standard", apply: true, env: { REPO_HARNESS_DOCUMENTATION_PROFILE: "full" } })).ok).toBe(true);
       expect(existsSync(join(cwd, "docs/reference-configs/spa-day-protocol.md"))).toBe(true);
       expect(existsSync(join(cwd, "docs/reference-configs/AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/reference-configs/CLAUDE.md"))).toBe(false);

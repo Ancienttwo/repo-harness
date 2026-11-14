@@ -4,6 +4,8 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { adoptionTemplateFile } from "../src/effects/adoption/manifest-templates";
+import { planAdoption } from "../src/effects/adoption/plan";
+import { applyAdoptionPlan } from "../src/effects/fs-transaction";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -61,7 +63,7 @@ describe("init-project settings runtime", () => {
     }
   }, 15000);
 
-  test("create_structure keeps canonical architecture sources trackable and caches ignored", () => {
+  test("create_structure then rh init keeps canonical architecture sources trackable and caches ignored", () => {
     const cwd = mkdtempSync(join(tmpdir(), "init-project-archcontext-"));
     try {
       expect(spawnSync("git", ["init", "-q"], { cwd }).status).toBe(0);
@@ -78,6 +80,8 @@ describe("init-project settings runtime", () => {
         { cwd, encoding: "utf-8" }
       );
       expect(res.status).toBe(0);
+      // The scaffold leaves the .gitignore block to rh init, which runs next.
+      expect(applyAdoptionPlan(planAdoption({ repoRoot: cwd, mode: "standard", apply: true })).ok).toBe(true);
 
       const sources = [".archcontext/manifest.yaml", ".archcontext/product.yaml", ".archcontext/model/nodes/example.yaml"];
       const cache = ".archcontext/cache/index.json";
