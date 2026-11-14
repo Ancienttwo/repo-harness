@@ -527,7 +527,7 @@ test('ordinary provider collector blocks decision changes after normalized empty
 
 // Provider commit responses come from real Git objects, including root and merge commits.
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -665,25 +665,102 @@ const SHARD_ONE = 'Affected tests (shard 1/3)';
 const SHARD_TWO = 'Affected tests (shard 2/3)';
 const SUMMARY_STEP = 'Consume the single candidate verification';
 const SHARD_STEP = 'Run the shard tests';
+const PROJECTION_JOB = 'Projection provider (windows-latest)';
 
 /** The real ci.yml shape: a summary required job and the matrix shards it needs. */
-const WORKFLOW_DEFINITION = [
-  'name: CI',
-  'on:',
-  '  pull_request:',
-  'jobs:',
-  '  selection:',
-  '    name: Select test coverage',
-  '  verify:',
-  '    name: Affected tests (shard ${{ matrix.shard }}/3)',
-  '    needs: selection',
-  '  required:',
-  '    name: Required / CI',
-  '    needs: [selection, verify]',
-].join('\n');
+function workflowDefinition(selectionNeeds = '', requiredNeeds = '[selection, verify]', extraJob: readonly string[] = []): string {
+  return [
+    'name: CI',
+    'on:',
+    '  pull_request:',
+    'jobs:',
+    '  selection:',
+    '    name: Select test coverage',
+    ...selectionNeeds === '' ? [] : [`    needs: ${selectionNeeds}`],
+    '  verify:',
+    '    name: Affected tests (shard ${{ matrix.shard }}/3)',
+    '    needs: selection',
+    '    strategy:',
+    '      matrix:',
+    '        shard: [1, 2, 3]',
+    '  projection:',
+    `    name: ${PROJECTION_JOB}`,
+    ...extraJob,
+    '  required:',
+    '    name: Required / CI',
+    `    needs: ${requiredNeeds}`,
+  ].join('\n');
+}
+
+const SETUP_JOB = ['  setup:', '    name: Setup'];
+const MATRIX_K = ['    strategy:', '      matrix:', '        k: [a]'];
+const LINT_MATRIX = ['    strategy:', '      matrix:', '        os: [ubuntu-latest]'];
+
+/** A matrix job in the needs and an unrelated static job named with the value as GitHub displays it. */
+function r4Probes(values: readonly (readonly [string, string])[]): Record<`r4-${string}`, OtherFailure> {
+  return Object.fromEntries(values.flatMap(([value, shown]) => [
+    [`r4-template ${value}`, `Build \${{ matrix.val }}`, `Build ${shown}`],
+    [`r4-suffix ${value}`, 'Build', `Build (${shown})`],
+  ].map(([scenario, name, job]) => [scenario, { summary: 'success', job, workflow: workflowDefinition('build', undefined, [
+    '  build:', `    name: ${name}`, '    strategy:', '      matrix:', `        val: [${value}]`, '  other:', `    name: ${job}`]) }])));
+}
+
+const MAIN_CI = readFileSync(join(import.meta.dir, '../../.github/workflows/ci.yml'), 'utf8');
+
+/** Attempt 1 fails one job beside the summary; attempt 2 passes. */
+interface OtherFailure {
+  readonly summary: 'success' | 'failure' | 'skipped';
+  readonly job: string;
+  readonly workflow: string;
+  /** The workflow text at the base; the head text when absent. */
+  readonly base?: string;
+}
+
+const OTHER_FAILURES = {
+  // Run 43571531818 on the main ci.yml: only a job outside the summary's needs failed.
+  'unneeded-failure': { summary: 'success', job: PROJECTION_JOB, workflow: MAIN_CI },
+  'unneeded-failure-summary-failed': { summary: 'failure', job: PROJECTION_JOB, workflow: workflowDefinition() },
+  'workflow-changed-on-base': { summary: 'success', job: PROJECTION_JOB, workflow: workflowDefinition(),
+    base: workflowDefinition('', '[selection, verify, projection]') },
+  'quoted-block-need': { summary: 'success', job: PROJECTION_JOB,
+    workflow: workflowDefinition("\n      - 'projection'") },
+  'scalar-need-next-line': { summary: 'success', job: PROJECTION_JOB,
+    workflow: workflowDefinition('\n      projection') },
+  'format-name-collision': { summary: 'success', job: 'Build ubuntu-latest', workflow: workflowDefinition('lint', undefined, [
+    '  lint:', "    name: ${{ format('Build {0}', matrix.os) }}", ...LINT_MATRIX,
+    '  build:', '    name: Build ${{ matrix.os }}', '    strategy:', '      matrix:', '        os: [windows-latest]']) },
+  'reusable-name-collision': { summary: 'success', job: 'verify / Build', workflow: workflowDefinition('lib', undefined, [
+    '  lib:', '    name: verify', '    uses: ./.github/workflows/lib.yml',
+    '  other:', '    name: verify / ${{ matrix.label }}', '    strategy:', '      matrix:', '        label: [Unrelated]']) },
+  'reusable-callee-template': { summary: 'success', job: 'Lint / eslint', workflow: workflowDefinition('lint', undefined, [
+    '  lint:', '    name: Lint', '    uses: ./.github/workflows/lint.yml',
+    '  lintx:', '    name: Lint ${{ inputs.target }}']) },
+  'deep-indent-body': { summary: 'success', job: 'Setup', workflow: workflowDefinition('gate', undefined, [
+    '  gate:', '      needs: setup', ...SETUP_JOB]) },
+  'deep-indent-matrix': { summary: 'success', job: 'Build (a)', workflow: workflowDefinition('build', undefined, [
+    '  build:', '    name: Build', '    strategy:', '        matrix:', '          k: [a]',
+    '  buildx:', '    name: Build ${{ inputs.k }}']) },
+  // GitHub keeps signed hex and octal as strings and wraps 32-bit values; Bun.YAML reads other integers.
+  ...r4Probes([['+0x10', '+0x10'], ['-0x10', '-0x10'], ['+0o10', '+0o10'], ['-0o7', '-0o7'],
+    ['0xFFFFFFFF', '-1'], ['0o37777777777', '-1'], ['0x80000000', '-2147483648']]),
+  'static-starts-with-prefix': { summary: 'success', job: 'Build x', workflow: workflowDefinition('build', undefined, [
+    '  build:', '    name: Build ${{ matrix.k }}', ...MATRIX_K, '  other:', '    name: Build x']) },
+  'prefix-starts-with-static': { summary: 'success', job: 'Lint', workflow: workflowDefinition('lintx', undefined, [
+    '  lintx:', '    name: Lint check ${{ matrix.k }}', ...MATRIX_K, '  other:', '    name: Lint']) },
+  'name-outside-domain': { summary: 'success', job: PROJECTION_JOB, workflow: workflowDefinition('', undefined, [
+    '  deploy:', '    name: Deploy!']) },
+  'transitive-need': { summary: 'success', job: 'Setup', workflow: workflowDefinition('setup', undefined, SETUP_JOB) },
+  'missing-nested-need': { summary: 'success', job: PROJECTION_JOB, workflow: workflowDefinition('ghost') },
+  'default-matrix-name': { summary: 'success', job: 'lint (ubuntu-latest)',
+    workflow: workflowDefinition('', '[selection, verify, lint]', ['  lint:', ...LINT_MATRIX]) },
+  'skipped-static-matrix-need': { summary: 'skipped', job: 'Lint (ubuntu-latest)',
+    workflow: workflowDefinition('', '[selection, verify, lint]', ['  lint:', '    name: Lint', ...LINT_MATRIX]) },
+  'skipped-transitive-need': { summary: 'skipped', job: 'Setup', workflow: workflowDefinition('setup', undefined, SETUP_JOB) },
+} satisfies Record<string, OtherFailure>;
 
 type EvidenceScenario = 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'association-unknown'
-  | 'evidence-unavailable' | 'original-test-skipped' | 'original-test-not-executed' | 'no-annotations';
+  | 'evidence-unavailable' | 'original-test-skipped' | 'original-test-not-executed' | 'no-annotations'
+  | keyof typeof OTHER_FAILURES | `r4-${string}`;
 
 function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadinessInput['gh_runner']> {
   const source = fakeGh();
@@ -699,6 +776,7 @@ function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadines
     steps: [{ name: step, number: 1, status: 'completed', conclusion }],
     check_run_url: checkRun,
   });
+  const other: OtherFailure | null = scenario in OTHER_FAILURES ? OTHER_FAILURES[scenario as keyof typeof OTHER_FAILURES] : null;
   const annotationRun = scenario === 'no-annotations' ? null
     : 'https://api.github.com/repos/example/repo-harness/check-runs/77';
   return (args) => {
@@ -711,10 +789,12 @@ function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadines
     }
     if (path === 'repos/example/repo-harness/actions/runs/123') return { status: 0, stdout: JSON.stringify(run) };
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/1/jobs?per_page=100') {
-      return { status: 0, stdout: JSON.stringify({ total_count: 3, jobs: [
-        job(456, scenario === 'missing-previous-job' ? 'renamed summary job' : SUMMARY_JOB, 'failure', SUMMARY_STEP),
-        job(460, SHARD_ONE, 'failure', SHARD_STEP, annotationRun),
+      return { status: 0, stdout: JSON.stringify({ total_count: other ? 4 : 3, jobs: [
+        job(456, scenario === 'missing-previous-job' ? 'renamed summary job' : SUMMARY_JOB,
+          other?.summary ?? 'failure', SUMMARY_STEP),
+        job(460, SHARD_ONE, other ? 'success' : 'failure', SHARD_STEP, annotationRun),
         job(461, SHARD_TWO, 'success', SHARD_STEP),
+        ...other ? [job(462, other.job, 'failure', 'Run job tests')] : [],
       ] }) };
     }
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/2/jobs?per_page=100') {
@@ -728,10 +808,11 @@ function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadines
       return { status: 0, stdout: JSON.stringify([{ title: 'session-runtime > chunk boundary',
         message: 'AssertionError: expected 200 but received 500' }]) };
     }
-    if (path === `repos/example/repo-harness/contents/.github/workflows/ci.yml?ref=${HEAD}`) {
+    for (const [ref, text] of [[HEAD, other?.workflow], [BASE, other?.base ?? other?.workflow]] as const) {
+      if (path !== `repos/example/repo-harness/contents/.github/workflows/ci.yml?ref=${ref}`) continue;
       if (scenario === 'association-unknown') return { status: 1, stdout: JSON.stringify({ status: '404', message: 'Not Found' }) };
       return { status: 0, stdout: JSON.stringify({ type: 'file', path: '.github/workflows/ci.yml',
-        encoding: 'base64', content: Buffer.from(WORKFLOW_DEFINITION).toString('base64') }) };
+        encoding: 'base64', content: Buffer.from(text ?? workflowDefinition()).toString('base64') }) };
     }
     return source(args);
   };
@@ -822,6 +903,34 @@ test('an unproven dependency keeps the summary failure and attributes no child',
     reason: 'failed_test_identifier_unavailable' });
   expect(evidence!.cause).toBe('unknown');
 });
+
+test('a failed job outside the needs is failure evidence only beside a failed attempt of the check', () => {
+  const passed = evidenceVerdict('unneeded-failure');
+  expect(passed.ready).toBe(true);
+  expect(passed.blockers).toEqual([]);
+  expect(passed.check_failures).toEqual([]);
+  const [evidence] = evidenceVerdict('unneeded-failure-summary-failed').check_failures;
+  expect(evidence!.association).toBe('unknown');
+  expect(evidence!.failed).toMatchObject({ attempt: 1, job_id: 456, job_name: SUMMARY_JOB, steps: [SUMMARY_STEP] });
+  expect(evidence!.failed_children).toEqual([expect.objectContaining({
+    association: 'unknown', failure: expect.objectContaining({ job_id: 462, job_name: PROJECTION_JOB }) })]);
+});
+
+test.each(['transitive-need', 'missing-nested-need', 'skipped-transitive-need', 'workflow-changed-on-base',
+  'quoted-block-need', 'scalar-need-next-line', 'format-name-collision', 'reusable-name-collision',
+  'reusable-callee-template', 'deep-indent-body', 'deep-indent-matrix', 'static-starts-with-prefix',
+  'prefix-starts-with-static', 'name-outside-domain', ...Object.keys(OTHER_FAILURES).filter(key => key.startsWith('r4-')) as `r4-${string}`[]])(
+  'an old failure that may sit in the needs graph stays on the fail-closed path: %s', (scenario) => {
+    expect(() => evidenceVerdict(scenario)).toThrow('RequiredCheckObservation has no failed attempt');
+  });
+
+test.each(['default-matrix-name', 'skipped-static-matrix-need'] as const)(
+  'a matrix instance name maps to its declared need: %s', (scenario) => {
+    const [evidence] = evidenceVerdict(scenario).check_failures;
+    expect(evidence!.association).toBe('declared_needs');
+    expect(evidence!.failed_children).toEqual([expect.objectContaining({ association: 'declared_needs',
+      failure: expect.objectContaining({ job_id: 462, job_name: OTHER_FAILURES[scenario].job }) })]);
+  });
 
 test('a passing rerun without test execution evidence is not revalidated', () => {
   const verdict = evidenceVerdict('evidence-unavailable');
