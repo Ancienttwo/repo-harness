@@ -580,9 +580,11 @@ gh pr view <p> --json state,isDraft,headRefOid,statusCheckRollup,closingIssuesRe
 
 ### 9.2 Merge order
 
-Use the plan block's merge order. A parent without a plan (two children
-or fewer) uses blocked-by order: a blocker lands before the issue it
-blocks. The Order column of the parent table is only a view.
+Use the plan block's merge order. A parent with two children or fewer
+and no plan uses blocked-by order: a blocker lands before the issue it
+blocks. `rh board merge` and `rh board review` refuse a parent with more
+than two children and no plan (`plan_unavailable`); post a plan first.
+The Order column of the parent table is only a view.
 
 ### 9.3 Board merge
 

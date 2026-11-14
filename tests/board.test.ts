@@ -1037,6 +1037,16 @@ test('board merge: no plan, a draft, plan holds, plan order for every linked ite
   expect(decision({ order: [1475, 1479], pulls: (data) => { data.repository.pr1491.body += '\nCloses #1479\n'; } }))
     .toMatchObject({ reason: 'merge_order', detail: 'earlier plan item #1475 is closed only by this PR; split the PR' });
   expect(decision({ pulls: (data) => { data.repository.pr1491.body += '\nRefs #1460\n'; } })).toMatchObject({ reason: 'item_off_board' });
+  // A parent with two children or fewer needs no plan: it merges in blocked-by order.
+  const planless = (blocker: string | null) => (data: Json) => {
+    const { issue } = data.repository;
+    issue.comments.nodes = issue.comments.nodes.filter((node: Json) => !node.body.startsWith('repo-harness plan'));
+    issue.subIssues.nodes = issue.subIssues.nodes.filter((node: Json) => [1475, 1479].includes(node.number));
+    if (blocker !== null) issueNode(data, 1475).blockedBy.nodes.push({ number: 1479, state: blocker });
+  };
+  expect([planless(null), planless('CLOSED'), planless('OPEN')].map(parent => mergeReason({ parent }))).toEqual(['eligible', 'eligible', 'merge_order']);
+  expect(decision({ parent: planless('OPEN'), pulls: (data) => { data.repository.pr1491.body += '\nCloses #1479\n'; } }))
+    .toMatchObject({ reason: 'merge_order', detail: 'blocker #1479 is closed only by this PR; split the PR' });
   // The Low PR is accepted on the provisional tier_low path, which an unattended merge does not take.
   expect(replay(mergeReplay({ ...lowGreen, order: [1479, 1475] })).pull_requests.find(pr => pr.number === 1494)!.acceptance).toMatchObject({ status: 'accepted', via: 'tier_low' });
 });
