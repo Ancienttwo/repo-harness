@@ -4,7 +4,6 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'pat
 import { isManagedWorktreePath, managedWorktreeRoot } from '../../effects/git/managed-worktree';
 import { payloadString } from './hook-input';
 import { runMutationDenial, runMutationPathGuard, type Denial, type MutationGuardInput, type MutationGuardResult } from './mutation-guard';
-import { PROTECTED_REPO_DIRS } from './mutation-protected-dirs';
 import {
   BRACE_LIMIT, escapePattern, expandBraces, globIndex, protectedNameGate, protectedPath, segmentMatches, unescapePattern, writeThroughPath,
 } from './mutation-protected-gate';
@@ -227,7 +226,7 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
       return;
     }
     const base = commandCwd ?? cwd;
-    // A glob can mutate only below its literal directory, and at the repository root it can name a protected directory.
+    // A glob can mutate only below its literal directory; the protected-name gate owns a glob that can name a protected directory.
     const glob = globIndex(pattern);
     if (glob >= 0) {
       const cut = pattern.lastIndexOf('/', glob) + 1;
@@ -236,11 +235,7 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
         unresolved.push(`${candidate} (a glob can reach ..)`);
         return;
       }
-      const dir = unescapePattern(pattern.slice(0, cut)) || '.';
-      const atRoot = resolve(base, dir) === resolve(repoRoot) || realRel(isAbsolute(dir) ? dir : `${base}/${dir}`) === '';
-      const segment = pattern.slice(cut).split('/', 1)[0]!;
-      if (atRoot) candidates.push(...PROTECTED_REPO_DIRS.filter(name => segmentMatches(segment, name)));
-      candidate = dir;
+      candidate = unescapePattern(pattern.slice(0, cut)) || '.';
     }
     const target = resolve(base, candidate);
     const rel = relative(repoRoot, target);
@@ -252,7 +247,7 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
     } else if (leaves) candidates.push(target);
     // Relative, so a symlink below a protected directory that leaves the repository is not read as an external target.
     else {
-      const real = protectedPath(rel) ? rel : realRel(isAbsolute(candidate) ? candidate : `${base}/${candidate}`);
+      const real = realRel(isAbsolute(candidate) ? candidate : `${base}/${candidate}`);
       const hit = real === null ? null : protectedPath(real);
       if (hit) candidates.push(hit);
     }
