@@ -707,10 +707,10 @@ function r4Probes(values: readonly (readonly [string, string])[]): Record<`r4-${
 
 const MAIN_CI = readFileSync(join(import.meta.dir, '../../.github/workflows/ci.yml'), 'utf8');
 
-/** Attempt 1 fails one job beside the summary; attempt 2 passes. */
+/** Attempt 1 fails one job beside the summary, or none when `job` is null; attempt 2 passes. */
 interface OtherFailure {
-  readonly summary: 'success' | 'failure' | 'skipped';
-  readonly job: string;
+  readonly summary: 'success' | 'failure' | 'skipped' | 'neutral';
+  readonly job: string | null;
   readonly workflow: string;
   /** The workflow text at the base; the head text when absent. */
   readonly base?: string;
@@ -758,6 +758,10 @@ const OTHER_FAILURES = {
   'skipped-transitive-need': { summary: 'skipped', job: 'Setup', workflow: workflowDefinition('setup', undefined, SETUP_JOB) },
   'no-needs-unmapped-failure': { summary: 'success', job: 'Unmapped job', workflow: workflowDefinition('', '[]') },
   'no-needs-skipped-unmapped-failure': { summary: 'skipped', job: 'Unmapped job', workflow: workflowDefinition('', '[]') },
+  'skipped-attempt': { summary: 'skipped', job: null, workflow: workflowDefinition() },
+  'neutral-attempt': { summary: 'neutral', job: null, workflow: workflowDefinition() },
+  'no-needs-skipped-attempt': { summary: 'skipped', job: null, workflow: workflowDefinition('', '[]') },
+  'no-needs-neutral-attempt': { summary: 'neutral', job: null, workflow: workflowDefinition('', '[]') },
 } satisfies Record<string, OtherFailure>;
 
 type EvidenceScenario = 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'association-unknown'
@@ -791,12 +795,12 @@ function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadines
     }
     if (path === 'repos/example/repo-harness/actions/runs/123') return { status: 0, stdout: JSON.stringify(run) };
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/1/jobs?per_page=100') {
-      return { status: 0, stdout: JSON.stringify({ total_count: other ? 4 : 3, jobs: [
+      return { status: 0, stdout: JSON.stringify({ total_count: other?.job ? 4 : 3, jobs: [
         job(456, scenario === 'missing-previous-job' ? 'renamed summary job' : SUMMARY_JOB,
           other?.summary ?? 'failure', SUMMARY_STEP),
         job(460, SHARD_ONE, other ? 'success' : 'failure', SHARD_STEP, annotationRun),
         job(461, SHARD_TWO, 'success', SHARD_STEP),
-        ...other ? [job(462, other.job, 'failure', 'Run job tests')] : [],
+        ...other?.job ? [job(462, other.job, 'failure', 'Run job tests')] : [],
       ] }) };
     }
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/2/jobs?per_page=100') {
@@ -922,6 +926,7 @@ test.each(['transitive-need', 'missing-nested-need', 'skipped-transitive-need', 
   'quoted-block-need', 'scalar-need-next-line', 'format-name-collision', 'reusable-name-collision',
   'reusable-callee-template', 'deep-indent-body', 'deep-indent-matrix', 'static-starts-with-prefix',
   'prefix-starts-with-static', 'name-outside-domain', 'no-needs-unmapped-failure', 'no-needs-skipped-unmapped-failure',
+  'skipped-attempt', 'neutral-attempt', 'no-needs-skipped-attempt', 'no-needs-neutral-attempt',
   ...Object.keys(OTHER_FAILURES).filter(key => key.startsWith('r4-')) as `r4-${string}`[]])(
   'an old failure that may sit in the needs graph stays on the fail-closed path: %s', (scenario) => {
     expect(() => evidenceVerdict(scenario)).toThrow('RequiredCheckObservation has no failed attempt');

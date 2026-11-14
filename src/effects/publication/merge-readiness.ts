@@ -602,6 +602,11 @@ function* checkEvidence(
     throw new MergeReadinessError('provider_data_incomplete', 'required check rerun did not preserve the failed job');
   }
   const attemptsJobs = linkedJobs as AttemptJob[];
+  const checkFailed = attemptsJobs.some(jobFailed);
+  // Only a check that concluded success in every attempt may exit with no
+  // evidence; a skipped, neutral or unknown attempt without failure evidence
+  // reaches the fail-closed assessment.
+  const succeededEveryAttempt = attemptsJobs.every(job => job.conclusion === 'success' && !jobFailed(job));
   const otherFailed = pages.flatMap((page, index) =>
     page.filter(job => job.id !== attemptsJobs[index]!.id && FAILED_ATTEMPT_CONCLUSIONS.has(job.conclusion)));
 
@@ -625,10 +630,10 @@ function* checkEvidence(
     // Old failures are not evidence for this check only when it succeeded in
     // every attempt and each failed job resolves outside its full needs graph.
     if (placement !== null && [...placement.failed.values()].every(where => where === 'outside')
-      && attemptsJobs.every(job => job.conclusion === 'success' && !jobFailed(job))) return null;
+      && succeededEveryAttempt) return null;
     const needed = otherFailed.filter(job => placement?.failed.get(job.name) === 'needed');
     // A check with no needs owns the failure only when one of its own attempts failed.
-    if (placement?.direct && attemptsJobs.some(jobFailed)) {
+    if (placement?.direct && checkFailed) {
       association = 'direct';
     } else if (needed.length > 0) {
       association = 'declared_needs';
@@ -670,7 +675,7 @@ function* checkEvidence(
     }),
   }));
   // Each child name comes from a failed provider job.
-  if (!attemptsJobs.some(jobFailed) && children.length === 0) return null;
+  if (succeededEveryAttempt && children.length === 0) return null;
   if (attemptsJobs.length > 1 && attemptsJobs[attemptsJobs.length - 1]!.conclusion === 'success') {
     const latestTestExecution = (yield { test_execution: {
       repository: identity.repo_name_with_owner,
