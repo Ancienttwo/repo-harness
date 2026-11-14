@@ -280,7 +280,7 @@ interface Lexed {
   readonly violations: string[];
 }
 
-const DATA_HEAD = /"\$\(cat <<\s?'([A-Za-z_][A-Za-z0-9_]*)'\n/y;
+const HEREDOC_HEAD = /"\$\(cat <<\s?'([A-Za-z_][A-Za-z0-9_]*)'\n/y;
 const REDIRECT = /^(\d*)(>>|>\||>&|>|<>|<&|<<<|<<-|<<|<|&>>|&>)$/;
 
 /**
@@ -288,12 +288,12 @@ const REDIRECT = /^(\d*)(>>|>\||>&|>|<>|<&|<<<|<<-|<<|<|&>>|&>)$/;
  * shell prints it as text, and the lexer reads it as a quoted literal. Its text counts for the trigger and as a possible target
  * in every position (round 5): no position keeps a span as data.
  */
-function dataSpan(text: string, at: number): { end: number; body: string } | null {
-  DATA_HEAD.lastIndex = at;
-  const head = DATA_HEAD.exec(text);
+function heredocLiteral(text: string, at: number): { end: number; body: string } | null {
+  HEREDOC_HEAD.lastIndex = at;
+  const head = HEREDOC_HEAD.exec(text);
   if (!head) return null;
   const close = `\n${head[1]}\n)"`;
-  const start = DATA_HEAD.lastIndex;
+  const start = HEREDOC_HEAD.lastIndex;
   const end = text.indexOf(close, start - 1);
   if (end < 0) return null;
   const body = text.slice(start, end);
@@ -373,7 +373,7 @@ function lex(text: string): Lexed {
     if (f.closer === '`' && ch === '`') { pop(); continue; }
     if (f.closer === ')' && ch === ')' && f.depth === 0) { pop(); continue; }
     if (ch === '"') {
-      const span = dataSpan(text, i);
+      const span = heredocLiteral(text, i);
       if (span) {
         current().quoted = true;
         for (const c of span.body) literal(c);
@@ -488,7 +488,6 @@ interface Command {
   readonly before: string;
   /** The operator right after this command: `|` inside a pipeline, else the list separator; 'end' at the end. */
   readonly after: string;
-  readonly pipeline: number;
   readonly last: boolean;
   readonly size: number;
 }
@@ -496,21 +495,18 @@ interface Command {
 /** A command, or the `(` or `)` of a subshell or group. */
 type Step = Command | { readonly kind: '(' | ')' };
 
-const LIST_SEPARATORS = new Set([';', '&&', '||', '&', '\n', ';;', ';&']);
-
 function commands(tokens: readonly Token[], violations: string[]): Step[] {
   const result: Step[] = [];
-  let words: Word[] = [], redirects: Redirect[] = [], before = '', pipeline = 0, inPipeline: Command[] = [];
+  let words: Word[] = [], redirects: Redirect[] = [], before = '', inPipeline: Command[] = [];
   const end = (separator: string) => {
     if (words.length || redirects.length) {
-      const command: Command = { kind: 'command', words, redirects, before, after: separator, pipeline, last: false, size: 0 };
+      const command: Command = { kind: 'command', words, redirects, before, after: separator, last: false, size: 0 };
       result.push(command); inPipeline.push(command);
     } else if (separator !== '\n' && separator !== '(' && separator !== ')' && separator !== 'end') violations.push(`an empty command before ${separator}`);
     words = []; redirects = [];
     if (separator !== '|' && separator !== '|&') {
       inPipeline.forEach((command, n) => Object.assign(command, { last: n === inPipeline.length - 1, size: inPipeline.length }));
       inPipeline = [];
-      pipeline++;
       if (separator !== '(' && separator !== ')') before = separator;
     }
   };
@@ -540,14 +536,47 @@ function commands(tokens: readonly Token[], violations: string[]): Step[] {
 
 const READ_ONLY = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'rg', 'ls', 'stat', 'file', 'du', 'diff', 'cmp', 'cut', 'tr', 'jq', 'echo',
   'printf', 'test', 'pwd', 'basename', 'dirname', 'realpath', 'readlink', 'which', 'type', 'cd', 'find', 'sort', 'git', 'gh']);
-/** `git grep` is not listed: its -O runs a command on the matched files. */
-const GIT_READ = new Set(['log', 'diff', 'show', 'status', 'ls-files', 'rev-parse', 'cat-file', 'ls-tree', 'blame', 'merge-base',
-  'rev-list', 'show-ref', 'for-each-ref', 'describe', 'shortlog']);
 /**
- * Options of the listed subcommands that write a file (`--output`: log, diff, show, blame, rev-list, shortlog) or turn on a
- * configured command that is off by default (`--ext-diff`, `--textconv`, `--filters`, `--show-signature`).
+ * The git read subcommands and the exact options each one takes. git takes a unique prefix of a long option (`--textc` is
+ * `--textconv`), so only the full name of a listed option passes. Not listed: `grep` (-O runs a command on the matched files),
+ * `cat-file` and `for-each-ref` (`--textconv`, `--filters` and `%(signature)` run configured programs), and every option that
+ * writes a file (`--output`) or turns on a configured command (`--ext-diff`, `--textconv`, `--show-signature`).
  */
-const GIT_WRITES = /^--(?:output(?:=|$)|ext-diff$|textconv$|filters$|show-signature$)/;
+interface GitRead { readonly options: ReadonlySet<string>; readonly glued?: RegExp }
+const options = (...lists: string[]) => new Set(lists.join(' ').split(' '));
+const REVISIONS = '--all --reverse --first-parent --merges --no-merges --topo-order --date-order --boundary --left-right --cherry-pick '
+  + '--full-history --follow --since= --until= --after= --before= --author= --committer= --grep= --max-count= --skip= -n';
+const PRETTY = '--oneline --pretty --pretty= --format= --abbrev-commit --no-abbrev-commit --decorate --decorate= --no-decorate --graph '
+  + '--date= --source --no-color --color=';
+const DIFF = '-p --patch -s --no-patch --stat --stat= --shortstat --numstat --name-only --name-status --summary --raw --diff-filter= '
+  + '--unified= -w --ignore-all-space -b --ignore-space-change --word-diff --word-diff= -M --find-renames --no-renames --minimal '
+  + '--relative --no-ext-diff --no-textconv --no-color --color=';
+const COUNT = /^-n?\d+$/;
+const GIT_READ = new Map<string, GitRead>([
+  ['log', { options: options(REVISIONS, PRETTY, DIFF), glued: /^-n?\d+$|^-U\d+$/ }],
+  ['show', { options: options(PRETTY, DIFF), glued: /^-U\d+$/ }],
+  ['diff', { options: options(DIFF, '--cached --staged --quiet --exit-code --check --merge-base'), glued: /^-U\d+$/ }],
+  ['shortlog', { options: options(REVISIONS, '-s -e --summary --numbered --email --format='), glued: COUNT }],
+  ['rev-list', { options: options(REVISIONS, '--count --abbrev-commit'), glued: COUNT }],
+  ['status', { options: options('--short -s --branch -b --porcelain --porcelain= --long -z --untracked-files= -u --ignored --ignored= '
+    + '--show-stash --ahead-behind --no-ahead-behind') }],
+  ['ls-files', { options: options('--cached -c --deleted -d --modified -m --others -o --ignored -i --exclude-standard --stage -s '
+    + '--unmerged -u -z --full-name --error-unmatch --directory --no-empty-directory --eol -t') }],
+  ['rev-parse', { options: options('--show-toplevel --abbrev-ref --abbrev-ref= --verify --short --short= --git-dir --git-common-dir '
+    + '--absolute-git-dir --is-inside-work-tree --is-inside-git-dir --is-bare-repository --show-prefix --show-cdup --symbolic-full-name '
+    + '-q --quiet') }],
+  ['ls-tree', { options: options('-r -d -t -l --long -z --name-only --name-status --full-name --full-tree --abbrev --abbrev= --object-only') }],
+  ['blame', { options: options('-L -w -M -C -e -s -l -t -p --porcelain --line-porcelain --show-email --root -n --show-number -f '
+    + '--show-name --date='), glued: /^-L\S+$/ }],
+  ['merge-base', { options: options('--is-ancestor --all --fork-point --octopus --independent') }],
+  ['show-ref', { options: options('--heads --tags --head --verify -q --quiet -s --hash --hash= --abbrev --abbrev= -d --dereference --exists') }],
+  ['describe', { options: options('--tags --all --always --long --exact-match --dirty --dirty= --contains --first-parent --abbrev= '
+    + '--match= --exclude= --candidates=') }],
+]);
+/** Options that run a configured program; a prefix of one is an abbreviation even where the option is not listed. */
+const GIT_RUNS = ['--textconv', '--ext-diff', '--output', '--show-signature', '--filters'];
+/** Format placeholders that run the configured signature verifier (`gpg.program`). */
+const GIT_SIGNATURE = /%G|%\(signature/;
 const GIT_FLAGS = new Set(['--no-pager', '-P', '--no-optional-locks', '--literal-pathspecs', '--glob-pathspecs', '--noglob-pathspecs',
   '--icase-pathspecs']);
 const GH_READ = new Set(['pr view', 'pr diff', 'pr list', 'pr checks', 'pr status', 'issue view', 'issue list', 'issue status',
@@ -581,7 +610,7 @@ function readOnly(args: readonly Word[]): boolean {
     case 'file': return !rest.some(value => value === '-C' || value === '--compile');
     case 'git': {
       const git = gitInvocation(args);
-      return git !== null && GIT_READ.has(args[git.at]!.value) && !rest.some(value => GIT_WRITES.test(value));
+      return git !== null && GIT_READ.has(args[git.at]!.value) && gitOptionFinding(args, git.at, STRICT) === null;
     }
     case 'gh': return GH_READ.has(`${rest[0]} ${rest[1]}`);
     default: return true;
@@ -666,17 +695,78 @@ const STRICT = 'Name a protected directory only in simple commands of read-only 
 const SPLIT = `Split the command line: run the command that names _ops or _ref alone. ${STRICT}`;
 const finding = (reason: string, fix = STRICT): Finding => ({ reason, fix });
 
+/**
+ * The first word after a git read subcommand that is not one of its listed options, or null. A shell-expanded word before `--`
+ * may become an option, and a `%G` or `%(signature` format runs the signature verifier. `unlisted` is the fix for an unlisted option.
+ */
+function gitOptionFinding(args: readonly Word[], at: number, unlisted: string): Finding | null {
+  const sub = args[at]!.value;
+  const read = GIT_READ.get(sub)!;
+  for (const word of args.slice(at + 1)) {
+    const value = word.value;
+    if (value === '--') break;
+    if (GIT_SIGNATURE.test(value)) {
+      return finding(`passes ${value} to git ${sub}, a format that runs the signature verifier`, 'Remove the %G and %(signature) placeholders: they run gpg.program.');
+    }
+    if (word.expand || word.glob) {
+      return finding(`passes ${value} to git ${sub}, a word that the shell expands before --`, `Write each git ${sub} option as literal text, and put paths after --.`);
+    }
+    if (!value.startsWith('-') || value === '-') continue;
+    const equals = value.indexOf('=');
+    if (read.options.has(value) || (equals > 0 && read.options.has(value.slice(0, equals + 1))) || read.glued?.test(value)) continue;
+    const name = equals > 0 ? value.slice(0, equals) : value;
+    const full = [...read.options, ...GIT_RUNS].map(option => option.replace(/=$/, '')).filter(option => option !== name && option.startsWith(name));
+    if (name.startsWith('--') && full.length) {
+      return finding(`passes ${value} to git ${sub}, an abbreviation of ${full.join(' or ')}`,
+        'Write the full option name: git takes a unique prefix of a long option, and the gate reads only full names.');
+    }
+    return finding(`passes ${value} to git ${sub}, an option outside the read list`, unlisted);
+  }
+  return null;
+}
+
+/** The values of one option in its three spellings: `--title x` or `-t x`, `--title=x`, `-tx`. */
+function optionValues(words: readonly Word[], long: string, short: string): string[] {
+  return words.flatMap((word, n) => {
+    if (word.value === long || word.value === short) return words[n + 1] ? [words[n + 1]!.value] : [];
+    if (word.value.startsWith(`${long}=`)) return [word.value.slice(long.length + 1)];
+    return word.value.startsWith(short) && word.value.length > short.length && !word.value.startsWith('--') ? [word.value.slice(short.length)] : [];
+  });
+}
+
+const MESSAGE_FILE = 'Write the message to a file on its own command line, then pass it with git commit -F <file> or git tag -F <file>.';
+
 /** Rule 6: a program that is not read-only on a command line that names a protected directory. The fix names the usual way out. */
 function programFinding(args: readonly Word[], named: boolean, commands: number): Finding {
   const program = args[0]!.value;
-  const sub = args.slice(1).find(word => !word.value.startsWith('-'))?.value;
-  const reason = `runs ${program === 'git' || program === 'gh' ? `${program} ${sub ?? ''}`.trim() : program}, which is not a read-only program`;
-  if (program === 'git' && sub === 'grep') return finding(reason, 'Use rg to search: git grep -O runs a command on the matched files.');
-  if (!named && commands > 1) return finding(reason, SPLIT);
-  if ((program === 'git' && (sub === 'commit' || sub === 'tag')) || program === 'gh') {
-    return finding(reason, 'Write the message to a file, then pass it with git commit -F <file>, git tag -F <file> or gh --body-file <file>.');
+  const split = !named && commands > 1;
+  if (program === 'git') {
+    const git = gitInvocation(args);
+    const sub = git ? args[git.at]!.value : null;
+    if (git && sub && GIT_READ.has(sub)) {
+      return gitOptionFinding(args, git.at, split ? SPLIT : `Pass git ${sub} only options of its read list, or read with rg, cat or ls.`)!;
+    }
+    const reason = sub ? `runs git ${sub}, which is not a read-only program` : 'runs git with a global option that is not listed (only -C and flags with no value)';
+    if (sub === 'grep') return finding(reason, 'Use rg to search: git grep -O runs a command on the matched files.');
+    if (sub === 'cat-file') return finding(reason, 'Use git show <rev>:<path>: git cat-file --textconv and --filters run configured programs.');
+    if (sub === 'for-each-ref') return finding(reason, 'Use git show-ref or git log: git for-each-ref %(signature) formats run gpg.program.');
+    if (split) return finding(reason, SPLIT);
+    if (sub === 'commit' || sub === 'tag') return finding(reason, MESSAGE_FILE);
+    return finding(reason, commands > 1 ? SPLIT : STRICT);
   }
-  return finding(reason, commands > 1 ? SPLIT : STRICT);
+  if (program === 'gh') {
+    const sub = args.slice(1).find(word => !word.value.startsWith('-'))?.value;
+    const reason = `runs gh ${sub ?? ''}`.trim() + ', which is not a read-only program';
+    if (split) return finding(reason, SPLIT);
+    if (optionValues(args, '--title', '-t').some(wordNamesProtected)) {
+      return finding(reason, 'Keep _ops and _ref out of the title: gh reads only the body from a file (--body-file <file>).');
+    }
+    if (sub === 'api') {
+      return finding(reason, 'Keep _ops and _ref out of the gh api endpoint; pass a request body that names them with gh api --input <file>, written on its own command line.');
+    }
+    return finding(reason, 'Write the body to a file on its own command line, then pass it with gh --body-file <file>.');
+  }
+  return finding(`runs ${program}, which is not a read-only program`, commands > 1 ? SPLIT : STRICT);
 }
 
 export interface GateDecision {
