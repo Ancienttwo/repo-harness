@@ -37,16 +37,16 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "contracts"))).toBe(false);
       expect(existsSync(join(cwd, "specs"))).toBe(false);
       expect(existsSync(join(cwd, ".ops"))).toBe(false);
-      expect(existsSync(join(cwd, "deploy/README.md"))).toBe(true);
+      // rh init is the only writer of the seed files.
+      for (const seed of ["deploy/README.md", "docs/architecture/index.md", "docs/researches/README.md", "docs/spec.md", ".ai/context/context-map.json", ".ai/context/capabilities.json", ".ai/harness/brain-manifest.json"]) {
+        expect(existsSync(join(cwd, seed))).toBe(false);
+      }
       expect(existsSync(join(cwd, "deploy/env/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "deploy/scripts/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "deploy/submissions/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "deploy/runbooks/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "deploy/release-checklists/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "deploy/sql/.gitkeep"))).toBe(true);
-      const deployReadme = readFileSync(join(cwd, "deploy/README.md"), "utf-8");
-      expect(deployReadme).toContain("operations.deploy_sql");
-      expect(deployReadme).toContain("direct children of `deploy/sql/`");
       expect(existsSync(join(cwd, "tasks/contracts"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/notes"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/todos.md"))).toBe(false);
@@ -58,7 +58,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "docs/brief.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/tech-stack.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/decisions.md"))).toBe(false);
-      expect(existsSync(join(cwd, "docs/architecture/index.md"))).toBe(true);
       expect(existsSync(join(cwd, "docs/architecture/domains"))).toBe(false);
       expect(existsSync(join(cwd, "docs/architecture/modules/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "docs/architecture/requests"))).toBe(false);
@@ -66,7 +65,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "docs/architecture/diagrams/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "docs/api"))).toBe(false);
       expect(existsSync(join(cwd, "scripts/verify-contract.sh"))).toBe(false);
-      expect(existsSync(join(cwd, "docs/spec.md"))).toBe(true);
       expect(existsSync(join(cwd, "plans"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/reviews"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/workstreams"))).toBe(false);
@@ -79,12 +77,9 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "package.json"))).toBe(false);
       expect(existsSync(join(cwd, ".gitignore"))).toBe(false);
       expect(readdirSync(join(cwd, "docs/reference-configs"))).toEqual([]);
-      expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/context/capabilities.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/workflow-contract.json"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(false);
-      expect(existsSync(join(cwd, ".ai/harness/brain-manifest.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/events.jsonl"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/architecture"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/workstreams/events.jsonl"))).toBe(false);
@@ -187,11 +182,6 @@ describe("create-project-dirs runtime smoke", () => {
       }
       expect(readFileSync(join(cwd, ".ai/hooks/README.md"), "utf-8")).toContain("repo-harness-hook");
 
-      const architectureIndex = readFileSync(join(cwd, "docs/architecture/index.md"), "utf-8");
-      expect(architectureIndex).toContain("## Architecture Flow");
-      expect(architectureIndex).not.toContain("Latest snapshot");
-      expect(architectureIndex).not.toContain("ARCHITECTURE PENDING REQUESTS");
-
       expect(existsSync(join(cwd, "docs/PROGRESS.md"))).toBe(false);
       const workflowContract = JSON.parse(readFileSync(join(ROOT, "assets/workflow-contract.v1.json"), "utf-8"));
       expect(workflowContract.helpers.runtimeDirectory).toBe("package:scripts");
@@ -266,13 +256,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.agenticDevelopment.routing.complexEngineeringPlan).toBe("parent-agent:geju");
       expect(workflowContract.agenticDevelopment.routing.designPlan).toBe("parent-agent:geju");
       expect(workflowContract.agenticDevelopment.routing.smallOrMediumPlan).toBe("waza:think");
-      const contextMap = JSON.parse(readFileSync(join(cwd, ".ai/context/context-map.json"), "utf-8"));
-      expect(contextMap.root_context_files).not.toContain("docs/researches/");
-      expect(contextMap.root_context_files).toContain(".ai/context/capabilities.json");
-      expect(contextMap.functional_block_selector.script).toBe("rh run select-agent-context-blocks");
-      expect(contextMap.lsp_profiles.default).toBe("typescript-lsp");
-      expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).not.toContain("apps/*/AGENTS.md");
-      expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).not.toContain("tasks/workstreams/**/*.md");
       const tsDefaultPolicy = defaultPolicy("en") as Record<string, any>;
       const repoPolicy = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8"));
       expect(tsDefaultPolicy.context.capability_source).toBe("registry");
@@ -294,129 +277,27 @@ describe("create-project-dirs runtime smoke", () => {
     }
   }, RUNTIME_SMOKE_TIMEOUT_MS);
 
-  test("should write paired CLAUDE.md and AGENTS.md files only for selected functional blocks", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "nested-agents-"));
+  test("should not discover context blocks or write their registry, map or mirrors", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "no-context-block-discovery-"));
     const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
 
     try {
       mkdirSync(join(cwd, "apps/web"), { recursive: true });
-      mkdirSync(join(cwd, "apps/web/components"), { recursive: true });
-      mkdirSync(join(cwd, "packages/ui"), { recursive: true });
-      mkdirSync(join(cwd, "services/api"), { recursive: true });
+      mkdirSync(join(cwd, "apps/api"), { recursive: true });
       mkdirSync(join(cwd, ".ai/context"), { recursive: true });
       writeFileSync(join(cwd, ".ai/context/agent-context-blocks.txt"), "apps/web\n");
+      writeFileSync(join(cwd, "apps/api/AGENTS.md"), "# Api Contract\n");
 
       const res = spawnSync(
         "bash",
-        [
-          "-lc",
-          [
-            `source '${libPath}'`,
-            "REPO_HARNESS_PLAN_TYPE=K",
-            'pi_ensure_harness_state_surface "$PWD" apply',
-          ].join("\n"),
-        ],
-        { cwd, encoding: "utf-8" }
+        ["-lc", [`source '${libPath}'`, 'pi_ensure_harness_state_surface "$PWD" apply'].join("\n")],
+        { cwd, encoding: "utf-8", env: { ...process.env, REPO_HARNESS_CONTEXT_BLOCKS: "apps/web" } }
       );
 
       expect(res.status).toBe(0);
-      expect(existsSync(join(cwd, "apps/web/CLAUDE.md"))).toBe(true);
-      expect(existsSync(join(cwd, "apps/web/AGENTS.md"))).toBe(true);
-      expect(existsSync(join(cwd, "packages/ui/CLAUDE.md"))).toBe(false);
-      expect(existsSync(join(cwd, "packages/ui/AGENTS.md"))).toBe(false);
-      expect(existsSync(join(cwd, "services/api/CLAUDE.md"))).toBe(false);
-      expect(existsSync(join(cwd, "services/api/AGENTS.md"))).toBe(false);
-      expect(readFileSync(join(cwd, "apps/web/CLAUDE.md"), "utf-8")).toBe(
-        readFileSync(join(cwd, "apps/web/AGENTS.md"), "utf-8")
-      );
-      const contextMap = JSON.parse(readFileSync(join(cwd, ".ai/context/context-map.json"), "utf-8"));
-      const capabilities = JSON.parse(readFileSync(join(cwd, ".ai/context/capabilities.json"), "utf-8"));
-      expect(capabilities.capabilities.map((entry: { id: string }) => entry.id)).toContain("apps-web");
-      expect(contextMap.functional_block_selector.script).toBe("rh run select-agent-context-blocks");
-      const webClaudeEntry = contextMap.discoverable_contexts.find((entry: { path: string }) => entry.path === "apps/web/CLAUDE.md");
-      expect(webClaudeEntry.lsp_profile).toBe("typescript-lsp");
-      expect(webClaudeEntry.doc_scope).toBe("capability-contract");
-      expect(webClaudeEntry.capability_id).toBe("apps-web");
-      expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).toContain("apps/web/CLAUDE.md");
-      expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).toContain("apps/web/AGENTS.md");
-      expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).not.toContain("packages/ui/CLAUDE.md");
-      expect(existsSync(join(cwd, "apps/web/components/CLAUDE.md"))).toBe(false);
-      expect(existsSync(join(cwd, "apps/web/components/AGENTS.md"))).toBe(false);
-      expect(existsSync(join(cwd, "apps/CLAUDE.md"))).toBe(false);
-      expect(existsSync(join(cwd, "apps/AGENTS.md"))).toBe(false);
-      expect(existsSync(join(cwd, "packages/CLAUDE.md"))).toBe(false);
-      expect(existsSync(join(cwd, "packages/AGENTS.md"))).toBe(false);
-      expect(existsSync(join(cwd, "services/CLAUDE.md"))).toBe(false);
-      expect(existsSync(join(cwd, "services/AGENTS.md"))).toBe(false);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, RUNTIME_SMOKE_TIMEOUT_MS);
-
-  test("should mirror an existing single agent context file to the sibling format", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "paired-agent-context-"));
-    const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
-
-    try {
-      mkdirSync(join(cwd, "apps/web"), { recursive: true });
-      const existingAgents = "# Existing Web Contract\n\n- Keep this custom local rule.\n";
-      writeFileSync(join(cwd, "apps/web/AGENTS.md"), existingAgents);
-
-      const res = spawnSync(
-        "bash",
-        [
-          "-lc",
-          [
-            `source '${libPath}'`,
-            "REPO_HARNESS_PLAN_TYPE=K",
-            'pi_ensure_harness_state_surface "$PWD" apply',
-          ].join("\n"),
-        ],
-        { cwd, encoding: "utf-8" }
-      );
-
-      expect(res.status).toBe(0);
-      expect(readFileSync(join(cwd, "apps/web/AGENTS.md"), "utf-8")).toBe(existingAgents);
-      expect(readFileSync(join(cwd, "apps/web/CLAUDE.md"), "utf-8")).toBe(existingAgents);
-      const contextMap = JSON.parse(readFileSync(join(cwd, ".ai/context/context-map.json"), "utf-8"));
-      expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).toContain("apps/web/CLAUDE.md");
-      expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).toContain("apps/web/AGENTS.md");
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, RUNTIME_SMOKE_TIMEOUT_MS);
-
-  test("should ignore external reference context files during capability discovery", () => {
-    const cwd = mkdtempSync(join(tmpdir(), "ignored-reference-context-"));
-    const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
-
-    try {
-      mkdirSync(join(cwd, "_ref/external-tool"), { recursive: true });
-      mkdirSync(join(cwd, "_ops/scratch"), { recursive: true });
-      mkdirSync(join(cwd, ".worktrees/codex/old"), { recursive: true });
-      writeFileSync(join(cwd, "_ref/external-tool/AGENTS.md"), "# External Reference\n");
-      writeFileSync(join(cwd, "_ops/scratch/CLAUDE.md"), "# Local Operations\n");
-      writeFileSync(join(cwd, ".worktrees/codex/old/AGENTS.md"), "# Old Worktree\n");
-
-      const res = spawnSync(
-        "bash",
-        [
-          "-lc",
-          [
-            `source '${libPath}'`,
-            "REPO_HARNESS_PLAN_TYPE=K",
-            'pi_ensure_harness_state_surface "$PWD" apply',
-          ].join("\n"),
-        ],
-        { cwd, encoding: "utf-8" }
-      );
-
-      expect(res.status).toBe(0);
-      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
-      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
-      expect(existsSync(join(cwd, "_ref/external-tool/CLAUDE.md"))).toBe(false);
-      const capabilities = JSON.parse(readFileSync(join(cwd, ".ai/context/capabilities.json"), "utf-8"));
-      expect(capabilities.capabilities).toEqual([]);
+      for (const absent of [".ai/context/capabilities.json", ".ai/context/context-map.json", "apps/web/CLAUDE.md", "apps/web/AGENTS.md", "apps/api/CLAUDE.md"]) {
+        expect(existsSync(join(cwd, absent))).toBe(false);
+      }
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -544,7 +425,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "services"))).toBe(false);
       expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
       expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
-      expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/context-budget/latest.json"))).toBe(false);
     } finally {

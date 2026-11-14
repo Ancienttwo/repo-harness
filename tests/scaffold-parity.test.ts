@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, relative } from "path";
 import { spawnSync } from "child_process";
@@ -39,10 +39,7 @@ describe("create-project-dirs scaffold parity", () => {
 
       expect(res.status).toBe(0);
       expect(collectFiles(cwd)).toEqual([
-        "./.ai/context/capabilities.json",
         "./.ai/context/capability-source-map.json",
-        "./.ai/context/context-map.json",
-        "./.ai/harness/brain-manifest.json",
         "./.ai/harness/events.jsonl",
         "./.ai/harness/failures/latest.jsonl",
         "./.ai/harness/planning/.gitkeep",
@@ -54,7 +51,6 @@ describe("create-project-dirs scaffold parity", () => {
         "./.claude/templates/design-brief.template.md",
         "./.claude/templates/research.template.md",
         "./.claude/templates/spec.template.md",
-        "./deploy/README.md",
         "./deploy/env/.gitkeep",
         "./deploy/release-checklists/.gitkeep",
         "./deploy/runbooks/.gitkeep",
@@ -63,11 +59,8 @@ describe("create-project-dirs scaffold parity", () => {
         "./deploy/submissions/.gitkeep",
         "./docs/CHANGELOG.md",
         "./docs/architecture/diagrams/.gitkeep",
-        "./docs/architecture/index.md",
         "./docs/architecture/modules/.gitkeep",
         "./docs/prds/prd.template.md",
-        "./docs/researches/README.md",
-        "./docs/spec.md",
         "./interfaces/types.ts",
         "./tasks/lessons.md",
         "./tests/README.md",
@@ -123,10 +116,12 @@ describe("create-project-dirs scaffold parity", () => {
     }
   }, SCAFFOLD_PARITY_TIMEOUT_MS);
 
-  test("scaffold then rh init writes the same managed parts as rh init on a fresh directory", () => {
-    const scaffolded = mkdtempSync(join(tmpdir(), "scaffold-then-init-"));
-    const fresh = mkdtempSync(join(tmpdir(), "init-fresh-"));
+  test("scaffold then rh init writes the same managed parts and seed files as rh init on a fresh directory", () => {
+    // One repo name in both parents: the brain manifest seeds the directory name.
+    const parents = [mkdtempSync(join(tmpdir(), "scaffold-then-init-")), mkdtempSync(join(tmpdir(), "init-fresh-"))];
+    const [scaffolded, fresh] = parents.map((parent) => join(parent, "demo")) as [string, string];
     try {
+      for (const repo of [scaffolded, fresh]) mkdirSync(repo);
       expect(spawnSync("bash", [join(ROOT, "scripts/create-project-dirs.sh")], { cwd: scaffolded, encoding: "utf-8" }).status).toBe(0);
       for (const repo of [scaffolded, fresh]) {
         expect(spawnSync("git", ["init", "-q", "-b", "main"], { cwd: repo }).status).toBe(0);
@@ -134,7 +129,8 @@ describe("create-project-dirs scaffold parity", () => {
         writeFileSync(join(repo, "package.json"), `${JSON.stringify({ name: "demo", scripts: { "check:task-workflow": "repo-harness run check-task-workflow --strict" } }, null, 2)}\n`);
         expect(applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true })).ok).toBe(true);
       }
-      const managed = (repo: string) => [".gitignore", "package.json", ...readdirSync(join(repo, "docs/reference-configs")).sort().map((name) => `docs/reference-configs/${name}`)]
+      const seeds = ["deploy/README.md", "docs/architecture/index.md", "docs/researches/README.md", "docs/spec.md", ".ai/context/context-map.json", ".ai/context/capabilities.json", ".ai/harness/brain-manifest.json"];
+      const managed = (repo: string) => [".gitignore", "package.json", ...seeds, ...readdirSync(join(repo, "docs/reference-configs")).sort().map((name) => `docs/reference-configs/${name}`)]
         .map((path) => [path, readFileSync(join(repo, path), "utf-8")]);
       expect(managed(scaffolded)).toEqual(managed(fresh));
 
@@ -193,8 +189,7 @@ describe("create-project-dirs scaffold parity", () => {
       expect(scripts).toEqual(MANAGED_PACKAGE_SCRIPTS);
       for (const key of RETIRED_PACKAGE_SCRIPT_KEYS) expect(scripts[key]).toBeUndefined();
     } finally {
-      rmSync(scaffolded, { recursive: true, force: true });
-      rmSync(fresh, { recursive: true, force: true });
+      for (const parent of parents) rmSync(parent, { recursive: true, force: true });
     }
   }, SCAFFOLD_PARITY_TIMEOUT_MS);
 });

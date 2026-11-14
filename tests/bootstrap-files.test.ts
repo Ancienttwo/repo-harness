@@ -441,7 +441,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(content).toContain("create_contract_directories");
     expect(content).not.toContain("cat > tasks/todos.md");
     expect(content).toContain('"adoptionTemplates.files.lessonsLog.lines" > tasks/lessons.md');
-    expect(content).toContain("cat > docs/researches/README.md");
+    expect(content).not.toContain("docs/researches/README.md");
     expect(content).not.toContain("docs/TODO.md");
     expect(sharedLib).toContain("pi_install_helpers requires contract helper inventory");
     expect(contract.helpers.scripts).not.toContain("prepare-handoff.sh");
@@ -454,8 +454,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).toContain("pi_print_external_tooling_report");
     expect(contract.helpers.scripts).toContain("check-deploy-sql-order.sh");
     expect(content).toContain("mkdir -p .ai/context");
-    expect(content).toContain(".ai/harness/policy.json");
-    expect(content).toContain(".ai/context/context-map.json");
+    expect(content).not.toContain(".ai/harness/policy.json");
+    expect(content).not.toContain(".ai/context/context-map.json");
     expect(contract.helpers.scripts).toContain("maintenance-triage.sh");
     expect(contract.helpers.scripts).toContain("heartbeat-triage.sh");
     expect(contract.helpers.scripts).toContain("verification-plan.ts");
@@ -586,7 +586,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(content).toContain("create_contract_directories");
     expect(content).not.toContain("cat > tasks/todos.md");
     expect(content).toContain('"adoptionTemplates.files.lessonsLog.lines" > tasks/lessons.md');
-    expect(content).toContain("docs/researches/README.md");
+    expect(content).not.toContain("docs/researches/README.md");
     expect(content).not.toContain("docs/TODO.md");
     expect(content).toContain("pi_install_helpers");
     expect(content).toContain("pi_install_templates");
@@ -604,8 +604,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("check-context-files.sh");
     expect(contract.helpers.scripts).toContain("select-agent-context-blocks.sh");
     expect(content).toContain(".ai/context");
-    expect(content).toContain(".ai/harness/policy.json");
-    expect(content).toContain(".ai/context/context-map.json");
+    expect(content).not.toContain(".ai/harness/policy.json");
+    expect(content).not.toContain(".ai/context/context-map.json");
     expect(contract.helpers.scripts).toContain("maintenance-triage.sh");
     expect(contract.helpers.scripts).toContain("heartbeat-triage.sh");
     expect(contract.helpers.scripts).toContain("verification-plan.ts");
