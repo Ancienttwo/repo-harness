@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { taskReviewRunner } from '../../src/effects/review-runner/task-review-runner';
 import { buildReviewCommand, pullRequestSelectionFromOptions } from '../../src/cli/commands/review';
@@ -10,6 +10,7 @@ import { createReviewAdmission, reviewCampaignKey, type ReviewAdmissionInput } f
 import { readReviewAdmission } from '../../src/effects/admission/admission-store';
 import { gatesDirectoryName } from '../../src/effects/git/repository-identity';
 import * as accountHome from '../../src/effects/runtime/os-account-home';
+import * as herdrCore from '../../src/effects/terminal/herdr-core';
 import { hashVerificationPlan } from '../../src/core/evidence/verification-plan';
 import { controlApprovalFixture } from '../helpers/control-approval-fixture';
 import { initGitRepo, tmpWorkspace } from '../helpers/repo-fixture';
@@ -510,4 +511,58 @@ test('the optional PR selection is all-or-none and admission identity alone is n
   }
   expect(pullRequestSelectionFromOptions({ ...admission, repository: 'example/repo-harness', pr: '42', base: 'b'.repeat(40) }))
     .toEqual({ repository: 'example/repo-harness', provider_repository_id: '1001', pr_number: 42, expected_base_sha: 'b'.repeat(40) });
+});
+
+const SEAT_CWD = '/tmp/example-wt-collect';
+
+/** A fake Pi session record; `texts` are assistant text parts. */
+function collectFixture(texts: readonly string[] | null) {
+  const fixture = publishFixture();
+  const home = join(fixture.root, 'home');
+  const directory = join(home, '.pi', 'agent', 'sessions', '--tmp-example-wt-collect--');
+  if (texts !== null) {
+    mkdirSync(directory, { recursive: true });
+    const lines = texts.map((text) => JSON.stringify({ type: 'message', message: { role: 'assistant', content: [{ type: 'text', text }] } }));
+    writeFileSync(join(directory, 'a.jsonl'), lines.join('\n') + '\n');
+  }
+  return { ...fixture, home };
+}
+
+async function runCollect(fixture: ReturnType<typeof collectFixture>) {
+  const hc = spyOn(herdrCore, 'hcGet').mockReturnValue({ cwd: SEAT_CWD } as never);
+  const previous = process.env.REPO_HARNESS_GH_BIN;
+  process.env.REPO_HARNESS_GH_BIN = fixture.gh.bin;
+  try {
+    return await runReview(fixture.home, ['collect', '--repo', fixture.root, '--seat', 't9', '--pr', String(PUBLISH_PR), '--json']);
+  } finally {
+    hc.mockRestore();
+    if (previous === undefined) delete process.env.REPO_HARNESS_GH_BIN; else process.env.REPO_HARNESS_GH_BIN = previous;
+  }
+}
+
+const receiptBlock = (receipt: unknown) => 'Done.\nRECEIPT-JSON\n```json\n' + JSON.stringify(receipt, null, 2) + '\n```\n';
+
+test('collect publishes the last RECEIPT-JSON block of the seat session', async () => {
+  const fixture = collectFixture([receiptBlock(publishReceipt({ subject_sha: 'b'.repeat(40) })), receiptBlock(publishReceipt())]);
+  const result = await runCollect(fixture);
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, pr: PUBLISH_PR, head_sha: PUBLISH_HEAD, round: 1, threads: 1 });
+});
+
+test('collect fails closed on a missing record, block, bad JSON, invalid receipt and stale subject', async () => {
+  const cases: [string, readonly string[] | null, string, string][] = [
+    ['missing session', null, 'review_receipt_invalid', 'session record is missing'],
+    ['no block', ['no receipt here'], 'review_receipt_invalid', 'no RECEIPT-JSON block'],
+    ['bad JSON', ['RECEIPT-JSON\n{"protocol": '], 'review_receipt_invalid', 'does not decode'],
+    ['invalid receipt', ['RECEIPT-JSON\n{"protocol": 1}'], 'review_receipt_invalid', ''],
+    ['stale subject', [receiptBlock(publishReceipt({ subject_sha: 'b'.repeat(40) }))], 'review_subject_stale', ''],
+  ];
+  for (const [label, texts, code, message] of cases) {
+    const fixture = collectFixture(texts);
+    const result = await runCollect(fixture);
+    expect(result.status, label).toBe(2);
+    expect(JSON.parse(result.stdout), label).toMatchObject({ ok: false, error: code, posted: [] });
+    expect(JSON.parse(result.stdout).message, label).toContain(message);
+    expect(fixture.gh.calls().some((args) => args.includes('POST')), label).toBe(false);
+  }
 });

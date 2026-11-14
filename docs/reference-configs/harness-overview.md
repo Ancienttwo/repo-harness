@@ -69,7 +69,8 @@ same-family context. Each review records `model_relation` in its receipt.
   [Herdr dispatch and notify](herdr-notify.md).
 - Review: an acceptor returns one `AcceptanceReviewResult`. The session
   that runs the round publishes it with
-  `rh review publish --pr <n> --receipt <path>`. The merge
+  `rh review publish --pr <n> --receipt <path>`, or for a Pi seat
+  without file tools, `rh review collect --seat <terminal> --pr <n>`. The merge
   executor refuses an unresolved review thread that a person started. A
   thread that a review bot (a GitHub App account) started is advisory.
 - Merge: `rh publication merge` runs only when

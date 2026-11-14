@@ -8,6 +8,7 @@ import { osAccountHome } from '../../effects/runtime/os-account-home';
 import { recordCircuitAttempt } from '../hook/circuit-breaker';
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
 import { publishReview, ReviewPublishError } from '../../effects/review/review-publish';
+import { collectReview } from '../../effects/review/review-collect';
 
 /** Both control operations accept only a closed JSON object from the trusted Bot. */
 function readControlRequest(file: string, fields: readonly string[]): Record<string, any> {
@@ -62,28 +63,35 @@ export function buildReviewCommand<Session, Endpoint>(loadRunner: () => Promise<
         process.exitCode = 1;
       }
     });
+  /** Both publish commands print one failure shape; a thrown ReviewPublishError carries its exit code and the URLs already posted. */
+  const publishAction = (name: string, publish: (opts: Record<string, any>) => unknown) => (opts: Record<string, any>) => {
+    try {
+      console.log(JSON.stringify(publish(opts), null, opts.json ? undefined : 2));
+    } catch (error) {
+      if (error instanceof ReviewPublishError) {
+        const failure = { ok: false, error: error.code, exit_code: error.exitCode,
+          message: error.message, posted: error.posted,
+          ...(error.code === 'review_publish_unknown' ? { inspect_required: true, confirmed_urls: error.posted } : {}) };
+        console.log(JSON.stringify(failure, null, opts.json ? undefined : 2));
+        process.exitCode = error.exitCode;
+        return;
+      }
+      console.error(`review ${name}: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    }
+  };
   command.command('publish').description('Publish one gatekeeper receipt as an acceptance claim, one COMMENT PR review, and an acceptance record')
     .requiredOption('--pr <number>', 'Pull request number')
     .requiredOption('--receipt <path>', 'Review publish receipt JSON; the gatekeeper owns its content')
     .option('--owner-record <url>', 'Owner decision comment URL on the PR or an issue it closes; required for a round above 5')
     .option('--repo <path>', 'Owner repository worktree', process.cwd()).option('--json', 'Print compact JSON')
-    .action(opts => {
-      try {
-        const result = publishReview({ repoRoot: opts.repo, prNumber: Number(opts.pr), receiptPath: opts.receipt, ownerRecord: opts.ownerRecord });
-        console.log(JSON.stringify(result, null, opts.json ? undefined : 2));
-      } catch (error) {
-        if (error instanceof ReviewPublishError) {
-          const failure = { ok: false, error: error.code, exit_code: error.exitCode,
-            message: error.message, posted: error.posted,
-            ...(error.code === 'review_publish_unknown' ? { inspect_required: true, confirmed_urls: error.posted } : {}) };
-          console.log(JSON.stringify(failure, null, opts.json ? undefined : 2));
-          process.exitCode = error.exitCode;
-          return;
-        }
-        console.error(`review publish: ${error instanceof Error ? error.message : String(error)}`);
-        process.exitCode = 1;
-      }
-    });
+    .action(publishAction('publish', opts => publishReview({ repoRoot: opts.repo, prNumber: Number(opts.pr), receiptPath: opts.receipt, ownerRecord: opts.ownerRecord })));
+  command.command('collect').description('Publish the last RECEIPT-JSON block of a Pi review seat session record through the same path as publish')
+    .requiredOption('--seat <terminal>', 'The Pi review seat hc terminal; its newest session record under ~/.pi/agent/sessions is read')
+    .requiredOption('--pr <number>', 'Pull request number')
+    .option('--owner-record <url>', 'Owner decision comment URL on the PR or an issue it closes; required for a round above 5')
+    .option('--repo <path>', 'Owner repository worktree', process.cwd()).option('--json', 'Print compact JSON')
+    .action(publishAction('collect', opts => collectReview({ repoRoot: opts.repo, prNumber: Number(opts.pr), seat: opts.seat, ownerRecord: opts.ownerRecord })));
   for (const operation of ['round', 'status', 'close', 'cancel'] as const) {
     const child = command.command(operation).requiredOption('--repository-id <id>', 'Approved provider repository identity')
       .requiredOption('--issue-id <id>', 'Approved provider issue identity')
