@@ -419,7 +419,7 @@ export function formatGlobalContextWrite(path: string, current: string | null, m
   return `${current === null ? 'created' : current.includes(GLOBAL_RULES_BEGIN) ? 'updated' : 'appended'}:${path}${edited}`;
 }
 
-export const GLOBAL_RULES_EDITED = 'the managed block differs from every released block, so sync keeps it; move personal rules outside the markers and delete the block to get the current one';
+export const GLOBAL_RULES_EDITED = 'the managed block differs from every released block, so sync keeps it; move personal rules outside the markers, then delete the block with both markers and try again to get the current one';
 
 /**
  * The instruction file must be reached without a symlink under HOME. The

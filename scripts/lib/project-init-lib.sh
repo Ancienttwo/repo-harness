@@ -211,7 +211,10 @@ pi_runtime_block_end_for() {
 
 pi_has_runtime_block() {
   local file_path="$1"
-  sed 's/\r$//' "$file_path" | grep -Fxq -e "$PI_RUNTIME_BLOCK_BEGIN" -e "$PI_LEGACY_RUNTIME_BLOCK_BEGIN"
+  local found
+  # grep -q exits on the first match; under pipefail the SIGPIPE to sed would make a found marker read as missing.
+  found="$(sed 's/\r$//' "$file_path" | grep -Fx -c -e "$PI_RUNTIME_BLOCK_BEGIN" -e "$PI_LEGACY_RUNTIME_BLOCK_BEGIN" || true)"
+  [ "${found:-0}" -gt 0 ]
 }
 
 pi_ensure_gitignore_block() {

@@ -118,7 +118,7 @@ describe('language settings routes', () => {
     mkdirSync(join(h.home, '.claude'), { recursive: true });
     mkdirSync(join(h.home, '.codex'), { recursive: true });
     writeFileSync(join(h.home, '.claude', 'CLAUDE.md'), renderGlobalRulesBlock(resolve(import.meta.dir, '../..'), { preset: 'custom', instruction: 'Report in French.' }));
-    writeFileSync(join(h.home, '.codex', 'AGENTS.md'), '<!-- BEGIN: repo-harness global-working-rules -->\nunknown\n<!-- END: repo-harness global-working-rules -->\n');
+    writeFileSync(join(h.home, '.codex', 'AGENTS.md'), readFileSync(resolve(import.meta.dir, '../fixtures/global-rules/released-v0.23.1-en.md')));
     expect(await (await fetch(`${h.server.url}${reportPath}`)).json()).toEqual({ hosts: [
       { host: 'claude', state: 'managed-current', preset: 'custom' }, { host: 'codex', state: 'managed-unrecorded', preset: null },
     ] });
@@ -134,6 +134,24 @@ describe('language settings routes', () => {
     writeFileSync(join(h.home, '.codex', 'AGENTS.md'), '<!-- BEGIN: repo-harness global-working-rules -->');
     const refused = await send(h, reportPath, { preset: 'zh-CN' });
     expect([refused.status, (await refused.json()).error.code]).toEqual([409, 'report_language_refused']);
+  });
+
+  test('POST refuses an unrecorded block that no release rendered, and saves after the block is deleted', async () => {
+    const h = await startHarness();
+    mkdirSync(join(h.home, '.claude'), { recursive: true });
+    mkdirSync(join(h.home, '.codex'), { recursive: true });
+    const paths = [join(h.home, '.claude', 'CLAUDE.md'), join(h.home, '.codex', 'AGENTS.md')];
+    writeFileSync(paths[0]!, renderGlobalRulesBlock(resolve(import.meta.dir, '../..'), { preset: 'custom', instruction: 'Report in French.' }));
+    writeFileSync(paths[1]!, 'Personal rule.\n\n<!-- BEGIN: repo-harness global-working-rules -->\nunknown\n<!-- END: repo-harness global-working-rules -->\n');
+    const before = paths.map(path => readFileSync(path, 'utf8'));
+    const refused = await send(h, reportPath, { preset: 'en' });
+    expect([refused.status, (await refused.json()).error.code]).toEqual([409, 'report_language_refused']);
+    expect(paths.map(path => readFileSync(path, 'utf8'))).toEqual(before);
+    // The repair that the refusal names: delete the block with both markers, then save again.
+    writeFileSync(paths[1]!, 'Personal rule.\n');
+    const saved = await send(h, reportPath, { preset: 'en' });
+    expect([saved.status, await saved.json()]).toEqual([200, { changed_hosts: ['claude', 'codex'] }]);
+    expect(readFileSync(paths[1]!, 'utf8')).toStartWith('Personal rule.\n');
   });
 
   test('a read_only repository saves only documentation.language and keeps JSON bytes around it', async () => {
