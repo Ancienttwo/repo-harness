@@ -199,18 +199,18 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     ensureSessionDirectory(reviewerRepo, outbox);
     let runtimeHome: string | undefined;
     let piLoopbackPorts: readonly number[] = [];
-    const credentialWindowMs = timeout * REVIEW_MAX_ROUNDS + 120_000;
+    let piModel: string | undefined;
     if (session.actual_harness === 'codex') {
       authOutput = outbox;
       const marker = join(dir, 'auth-copy.json');
-      const prepared = prepareCodexHome(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir, credentialWindowMs, existsSync(marker));
+      const prepared = prepareCodexHome(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir, timeout * REVIEW_MAX_ROUNDS + 120_000, existsSync(marker));
       runtimeHome = prepared.home;
       if (!existsSync(marker)) writeSessionArtifact(marker, { auth_copied: true, mode: prepared.mode });
     }
     if (session.actual_harness === 'pi') {
       piOutput = outbox;
-      const prepared = preparePiAgentDirectory(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir, credentialWindowMs);
-      runtimeHome = prepared.directory; piLoopbackPorts = prepared.loopbackPorts;
+      const prepared = preparePiAgentDirectory(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir, timeout);
+      runtimeHome = prepared.directory; piLoopbackPorts = prepared.loopbackPorts; piModel = prepared.model;
     }
     // Isolation admission precedes any SDK/native Session creation.
     const repository = taskRepository(root);
@@ -236,7 +236,7 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
       }
       const spec: ReviewHostSpec = { mode: 'review', isolation: { paths: isolationPaths, policyFile: profilePath }, kind: session.actual_harness,
         installation: isolatedInstallation, launcher, vendorExecutable: realpathSync(vendorExecutable),
-        options: client.sessionOptions(session.actual_harness, outbox, runtimeHome),
+        options: client.sessionOptions(session.actual_harness, outbox, runtimeHome, piModel),
         requestDirectory: client.requestDirectory(primary, session.task, GENERIC_REVIEW_ROLE), output: outbox, controlDirectory: dir, timeoutMs: timeout };
       writeSessionArtifact(specPath, spec);
     }

@@ -112,8 +112,8 @@ export interface ReviewerRunner<Session, Endpoint, Authority> {
   /** The fixed host command for a host spec file. A terminal launch also proves that the command reads back. */
   hostCommand(specFile: string, terminal: boolean): readonly string[];
   installation(kind: ReviewRuntimeId, executable?: string): Promise<InstallationSnapshot>;
-  /** Session options from the reviewer profile; review passes only the role's harness and output. */
-  sessionOptions(kind: ReviewRuntimeId, output: string, runtimeHome?: string): SessionOptions;
+  /** Session options from the reviewer profile; review passes the role's harness and output, and for pi the admitted `provider/model`. */
+  sessionOptions(kind: ReviewRuntimeId, output: string, runtimeHome?: string, piModel?: string): SessionOptions;
   /** The directory where the implementation writes the session's requests. */
   requestDirectory(primaryRoot: string, task: string, role: string): string;
   /** The reviewer output directory in the reviewer checkout. */

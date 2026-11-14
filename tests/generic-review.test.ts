@@ -185,6 +185,7 @@ const packetRepositoryTemplate = fixtureTemplate(() => {
 }, fixture => [fixture.root, fixture.home]);
 afterAll(() => packetRepositoryTemplate.dispose());
 
+const PI_NAMED_SETTINGS = '{"defaultProvider":"fixture","defaultModel":"fixture-model"}';
 function packetRoundFixture() {
   const seed = packetRepositoryTemplate.materialize();
   const fixture = { ...seed, authority: { ...seed.authority } };
@@ -192,6 +193,8 @@ function packetRoundFixture() {
   // Match the acceptance fixture's short, private endpoint HOME.
   const endpointHome = tmpWorkspaceIn('/tmp', 'rp');
   roots.push(endpointHome);
+  mkdirSync(join(endpointHome, '.pi/agent'), { recursive: true });
+  writeFileSync(join(endpointHome, '.pi/agent/settings.json'), PI_NAMED_SETTINGS);
   const endpoint = { socket: join(endpointHome, 'hc.sock'), home: endpointHome };
   const reviewerRepo = join(fixture.home, 'reviewer');
   const location = reviewLocation(fixture.root, fixture.authority);
@@ -401,7 +404,8 @@ test('Pi isolation fixture links native configuration without storing credential
     packages: ['fixture-package'], extensions: ['fixture-extension'], httpProxy: 'http://fixture.invalid', defaultProjectTrust: 'always' }));
   writeFileSync(join(agent, 'models.json'), '{"providers":{"fixture":{"apiKey":"sk-PROBE-LITERAL"}}}');
   writeFileSync(join(agent, 'auth.json'), '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
-  const { directory } = preparePiAgentDirectory(output, source, 60000);
+  const { directory, model } = preparePiAgentDirectory(output, source, 60000);
+  expect(model).toBe('fixture-provider/fixture-model');
   expect(lstatSync(directory).mode & 0o777).toBe(0o700);
   expect(readdirSync(directory).sort()).toEqual(['auth.json', 'models.json', 'settings.json']);
   expect(lstatSync(join(directory, 'models.json')).isSymbolicLink()).toBe(true);
@@ -430,20 +434,26 @@ test('Pi isolation fixture links native configuration without storing credential
   expect(() => preparePiAgentDirectory(output, source, 60000)).toThrow('directory_unsafe');
   const otherOutput = join(root, 'other'); mkdirSync(otherOutput); symlinkSync(agent, join(otherOutput, '.pi-agent'));
   expect(() => preparePiAgentDirectory(otherOutput, source, 60000)).toThrow('directory_unsafe');
-  const prepareWith = (auth: Record<string, unknown>, defaultProvider?: string) => {
+  const named = { defaultProvider: 'fixture', defaultModel: 'fixture-model' };
+  const prepareWith = (auth: Record<string, unknown>, settings: Record<string, unknown> = named, reviewTimeoutMs = 60000) => {
     writeFileSync(join(agent, 'auth.json'), JSON.stringify(auth));
-    writeFileSync(join(agent, 'settings.json'), JSON.stringify(defaultProvider === undefined ? {} : { defaultProvider }));
+    writeFileSync(join(agent, 'settings.json'), JSON.stringify(settings));
     const windowOutput = join(root, `window-${randomUUID()}`); mkdirSync(windowOutput);
-    return () => preparePiAgentDirectory(windowOutput, source, 60000);
+    return () => preparePiAgentDirectory(windowOutput, source, reviewTimeoutMs);
   };
   const oauth = (expires: number) => ({ type: 'oauth', access: '[fixture]', refresh: '[fixture]', expires });
   const apiKey = { type: 'api_key', key: 'sk-PROBE-LITERAL' }, soon = Date.now() + 1000;
-  expect(prepareWith({ fixture: apiKey }, 'fixture')).not.toThrow();
-  expect(prepareWith({ fixture: oauth(Date.now() + 3_600_000) }, 'fixture')).not.toThrow();
-  expect(prepareWith({ fixture: oauth(soon) }, 'fixture')).toThrow('review_access_expires_within_run');
-  expect(prepareWith({ fixture: apiKey, unused: oauth(soon) }, 'fixture')).not.toThrow();
-  expect(prepareWith({ fixture: apiKey, other: oauth(soon) })).toThrow('review_access_expires_within_run');
-  expect(prepareWith({ fixture: { type: 'session_token' } }, 'fixture')).toThrow('review_pi_auth_shape_unknown');
+  expect(prepareWith({ fixture: apiKey })).not.toThrow();
+  expect(prepareWith({ fixture: oauth(Date.now() + 3_600_000) })).not.toThrow();
+  expect(prepareWith({ fixture: oauth(soon) })).toThrow(/review_access_expires_within_run.*\/login fixture/);
+  // pi refreshes below 5 minutes left: a 30 s timeout needs more than 330 s, so a 240 s token is refused.
+  expect(prepareWith({ fixture: oauth(Date.now() + 240_000) }, named, 30_000)).toThrow('review_access_expires_within_run');
+  // The run names one provider, so pi cannot fall through to another entry (or to one absent from auth.json).
+  expect(prepareWith({ fixture: apiKey, unused: oauth(soon) })).not.toThrow();
+  expect(prepareWith({ other: oauth(soon) })().model).toBe('fixture/fixture-model');
+  expect(prepareWith({ fixture: apiKey, other: oauth(soon) }, {})).toThrow('review_pi_model_unnamed');
+  expect(prepareWith({ fixture: apiKey, other: oauth(soon) }, { defaultProvider: 'fixture' })).toThrow('review_pi_model_unnamed');
+  expect(prepareWith({ fixture: { type: 'session_token' } })).toThrow('review_pi_auth_shape_unknown');
 });
 
 test('Pi review source fixture uses custom agent directories and rejects relative overrides', async () => {
@@ -459,12 +469,13 @@ test('Pi review source fixture uses custom agent directories and rejects relativ
   ];
   for (const [index, source] of sources.entries()) {
     mkdirSync(source.directory, { recursive: true });
+    writeFileSync(join(source.directory, 'settings.json'), '{"defaultProvider":"fixture","defaultModel":"fixture-model"}');
     writeFileSync(join(source.directory, 'models.json'), '{"providers":{"fixture":{"apiKey":"sk-PROBE-LITERAL"}}}');
     writeFileSync(join(source.directory, 'auth.json'), '{"fixture":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
     const output = join(root, `output-${index}`); mkdirSync(output);
     const { directory } = preparePiAgentDirectory(output, home, 60000, { PI_CODING_AGENT_DIR: source.configured });
     for (const name of ['models.json', 'auth.json']) expect(readlinkSync(join(directory, name))).toBe(join(source.directory, name));
-    expect(JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8'))).toEqual({});
+    expect(JSON.parse(readFileSync(join(directory, 'settings.json'), 'utf8'))).toEqual({ defaultProvider: 'fixture', defaultModel: 'fixture-model' });
     expectNoStoredPiProbe(output);
     expect(removePiCredentialReferences(output).status).toBe('removed');
     expect(readdirSync(directory)).toEqual([]);
@@ -478,9 +489,10 @@ test('Pi credential cleanup fixture removes links and empty auth without followi
   const { preparePiAgentDirectory, removePiCredentialReferences } = await import('../src/effects/review/review-isolation');
   const root = tmpWorkspace('pi-cleanup'); roots.push(root);
   const home = join(root, 'home'), source = join(home, '.pi/agent'); mkdirSync(source, { recursive: true });
+  writeFileSync(join(source, 'settings.json'), PI_NAMED_SETTINGS);
   for (const hasCredentials of [false, true]) {
     const output = join(root, hasCredentials ? 'linked' : 'empty'); mkdirSync(output);
-    if (hasCredentials) for (const name of ['models.json', 'settings.json', 'auth.json']) writeFileSync(join(source, name), '{"probe":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
+    if (hasCredentials) for (const name of ['models.json', 'auth.json']) writeFileSync(join(source, name), '{"probe":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
     const { directory } = preparePiAgentDirectory(output, home, 60000);
     expectNoStoredPiProbe(output);
     expect(removePiCredentialReferences(output).status).toBe('removed');
@@ -494,7 +506,8 @@ test('Pi credential cleanup fixture removes links and empty auth without followi
   expect(readdirSync(directory)).toEqual(['models.json']);
   const escape = join(root, 'escape'); mkdirSync(escape); symlinkSync(source, join(escape, '.pi-agent'));
   expect(removePiCredentialReferences(escape).status).toBe('cleanup_pending');
-  for (const name of ['models.json', 'settings.json', 'auth.json']) expect(readFileSync(join(source, name), 'utf8')).toBe('{"probe":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
+  for (const name of ['models.json', 'auth.json']) expect(readFileSync(join(source, name), 'utf8')).toBe('{"probe":{"type":"api_key","key":"sk-PROBE-LITERAL"}}');
+  expect(readFileSync(join(source, 'settings.json'), 'utf8')).toBe(PI_NAMED_SETTINGS);
 });
 
 darwinTest('Pi isolation fixture: OAR flags, native extension, actual model and paired denials', async () => {
@@ -570,9 +583,10 @@ test('Pi review options use native configuration; an unobserved model is null fo
   expect(oarActualModel('pi', reported(null))).toBeNull();
   expect(decodeAgentsConfig({ enabled: ['pi'], uses: { docs: [], review: ['pi'] }, default_docs: null }).uses.review).toEqual(['pi']);
   expect(() => reviewSessionOptions('pi', '/fixture')).toThrow('agent_directory_required');
-  const options = reviewSessionOptions('pi', '/fixture', '/fixture/.pi-agent');
+  expect(() => reviewSessionOptions('pi', '/fixture', '/fixture/.pi-agent')).toThrow('review_pi_model_required');
+  const options = reviewSessionOptions('pi', '/fixture', '/fixture/.pi-agent', 'fixture-provider/fixture-model');
   expect(options.env).toEqual({ PI_CODING_AGENT_DIR: '/fixture/.pi-agent', OAR_PI_AGENT_DIR: '/fixture/.pi-agent' });
-  expect(options.model).toBeUndefined(); expect(options.effort).toBeUndefined();
+  expect(options.model).toBe('fixture-provider/fixture-model'); expect(options.effort).toBeUndefined();
   const identity = { request_id: 'fixture', context_sha256: 'sha256:' + 'a'.repeat(64), subject_sha256: 'sha256:' + 'b'.repeat(64),
     actual_harness: 'pi' as const, actual_role: 'deep-reasoner', actual_model: 'fixture-provider/fixture-actual' };
   const result = { ...identity, verdict: 'PASS' as const, summary: '[fixture opinion]', findings: [] };
@@ -925,6 +939,7 @@ test('preparePiAgentDirectory reads each loopback port from the provider baseUrl
     const root = tmpWorkspace('pi-loopback-ports'); roots.push(root);
     const output = join(root, 'output'), agent = join(root, 'home/.pi/agent');
     mkdirSync(output); mkdirSync(agent, { recursive: true }); writeFileSync(join(agent, 'models.json'), models);
+    writeFileSync(join(agent, 'settings.json'), PI_NAMED_SETTINGS);
     return preparePiAgentDirectory(output, join(root, 'home'), 60000);
   };
   const baseUrl = (value: unknown) => JSON.stringify({ providers: { fixture: { baseUrl: value } } });

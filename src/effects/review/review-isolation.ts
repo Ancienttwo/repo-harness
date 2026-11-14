@@ -7,7 +7,11 @@ import { shellQuote } from '../../core/shell-quote';
 import type { ReviewIsolationAdmission, ReviewIsolationPaths } from '../../core/review/runner-port';
 
 
-export interface PiAgentDirectory { readonly directory: string; readonly loopbackPorts: readonly number[] }
+/** `model` is the `provider/model` that the native settings name; the review passes it to pi explicitly. */
+export interface PiAgentDirectory { readonly directory: string; readonly loopbackPorts: readonly number[]; readonly model: string }
+
+/** pi-ai refreshes an OAuth token that has less than 5 minutes left (auth/resolve.js DEFAULT_OAUTH_MINIMUM_VALIDITY_MS). */
+const PI_OAUTH_REFRESH_MARGIN_MS = 300_000;
 
 const MODEL_URL_DEFAULT_PORTS: Readonly<Record<string, number>> = { 'http:': 80, 'https:': 443 };
 const LOOPBACK_MODEL_HOSTS: readonly string[] = ['127.0.0.1', 'localhost', '[::1]'];
@@ -39,9 +43,12 @@ function piModelLoopbackPorts(bytes: Buffer): readonly number[] {
 
 /**
  * Credentials stay at their source. Only the native model defaults are projected into private settings.
- * The credentials the run uses must outlive `runWindowMs`: the sandbox denies an OAuth refresh.
+ * Without an explicit model pi falls through to the first provider with auth, so the native
+ * settings must name the provider and model. pi refreshes that provider's OAuth token when it
+ * has less than the refresh margin left, and the sandbox denies the refresh, so the token
+ * must outlive the review timeout plus that margin.
  */
-export function preparePiAgentDirectory(output: string, sourceHome: string, runWindowMs: number, env: Readonly<Record<string, string | undefined>> = process.env): PiAgentDirectory {
+export function preparePiAgentDirectory(output: string, sourceHome: string, reviewTimeoutMs: number, env: Readonly<Record<string, string | undefined>> = process.env): PiAgentDirectory {
   const directory = join(ownedOutput(output), '.pi-agent');
   try { mkdirSync(directory, { mode: 0o700 }); } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -62,17 +69,24 @@ export function preparePiAgentDirectory(output: string, sourceHome: string, runW
     if (!lstatSync(destination).isSymbolicLink() || readlinkSync(destination) !== models) throw new Error('review_pi_models_changed');
   } else if (existsSync(destination)) throw new Error('review_pi_models_changed');
   const settings = preparePiSettings(directory, source);
+  const provider = settings.defaultProvider, model = settings.defaultModel;
+  if (typeof provider !== 'string' || provider === '' || typeof model !== 'string' || model === '') {
+    throw new Error(`review_pi_model_unnamed: set defaultProvider and defaultModel in ${join(source, 'settings.json')}`);
+  }
   const auth = join(source, 'auth.json'), link = join(directory, 'auth.json');
   if (existsSync(auth)) {
     const bytes = readNativeConfigBytes(auth);
-    try { assertAccessWindow(piAuthExpiries(bytes, settings.defaultProvider), runWindowMs); } finally { bytes.fill(0); }
+    try {
+      assertAccessWindow(piAuthExpiries(bytes, provider), reviewTimeoutMs + PI_OAUTH_REFRESH_MARGIN_MS,
+        `run pi outside the review and enter /login ${provider} to renew the ${provider} token`);
+    } finally { bytes.fill(0); }
     if (!existsSync(link)) symlinkSync(auth, link);
     if (!lstatSync(link).isSymbolicLink() || readlinkSync(link) !== auth) throw new Error('review_pi_auth_changed');
   } else {
     if (!existsSync(link)) writeFileSync(link, '{}', { flag: 'wx', mode: 0o600 });
     if (lstatSync(link).isSymbolicLink() || readFileSync(link, 'utf8') !== '{}') throw new Error('review_pi_auth_changed');
   }
-  return { directory, loopbackPorts };
+  return { directory, loopbackPorts, model: `${provider}/${model}` };
 }
 
 function preparePiSettings(directory: string, source: string): Readonly<Record<string, unknown>> {
@@ -130,9 +144,11 @@ function ownedOutput(output: string): string {
 type CredentialExpiry = number | 'none';
 
 /** The one run-window rule: a sandboxed run cannot refresh a credential, so each one must outlive the run. */
-function assertAccessWindow(expiries: readonly CredentialExpiry[], runWindowMs: number): void {
+function assertAccessWindow(expiries: readonly CredentialExpiry[], runWindowMs: number, renew?: string): void {
   if (!Number.isSafeInteger(runWindowMs) || runWindowMs < 1) throw new Error('review_auth_window_invalid');
-  if (expiries.some(expiry => expiry !== 'none' && expiry <= Date.now() + runWindowMs)) throw new Error('review_access_expires_within_run');
+  if (expiries.some(expiry => expiry !== 'none' && expiry <= Date.now() + runWindowMs)) {
+    throw new Error(`review_access_expires_within_run${renew ? `; the token must stay valid for ${Math.ceil(runWindowMs / 60_000)} minutes; ${renew}` : ''}`);
+  }
 }
 /** Codex auth.json: the access token JWT carries the expiry in seconds. */
 function codexAuthExpiry(bytes: Buffer): CredentialExpiry[] {
@@ -147,22 +163,20 @@ function codexAuthExpiry(bytes: Buffer): CredentialExpiry[] {
 }
 /**
  * pi auth.json: a provider map of `api_key` entries (no expiry) and `oauth`
- * entries (`expires` in epoch milliseconds). The run uses the provider that the
- * native settings name; without one, pi may select any entry. Another shape fails closed.
+ * entries (`expires` in epoch milliseconds). The run passes one provider to pi,
+ * so only its entry counts; without an entry pi takes no credential from this
+ * file. Another shape fails closed.
  */
-function piAuthExpiries(bytes: Buffer, defaultProvider: unknown): CredentialExpiry[] {
+function piAuthExpiries(bytes: Buffer, provider: string): CredentialExpiry[] {
   let entries: unknown;
   try { entries = JSON.parse(bytes.toString('utf8')); } catch { throw new Error('review_pi_auth_shape_unknown'); }
   if (!entries || typeof entries !== 'object' || Array.isArray(entries)) throw new Error('review_pi_auth_shape_unknown');
   const map = entries as Record<string, unknown>;
-  if (defaultProvider !== undefined && typeof defaultProvider !== 'string') throw new Error('review_pi_settings_source_invalid');
-  const used = defaultProvider === undefined ? Object.keys(map) : Object.hasOwn(map, defaultProvider) ? [defaultProvider] : [];
-  return used.map(provider => {
-    const entry = map[provider] as { type?: unknown; expires?: unknown } | null;
-    if (entry?.type === 'api_key') return 'none';
-    if (entry?.type === 'oauth' && typeof entry.expires === 'number' && Number.isFinite(entry.expires)) return entry.expires;
-    throw new Error(`review_pi_auth_shape_unknown: provider ${JSON.stringify(provider)}`);
-  });
+  if (!Object.hasOwn(map, provider)) return [];
+  const entry = map[provider] as { type?: unknown; expires?: unknown } | null;
+  if (entry?.type === 'api_key') return ['none'];
+  if (entry?.type === 'oauth' && typeof entry.expires === 'number' && Number.isFinite(entry.expires)) return [entry.expires];
+  throw new Error(`review_pi_auth_shape_unknown: provider ${JSON.stringify(provider)}`);
 }
 /** One bounded read of a native credential or configuration file (auth.json, models.json, settings.json); never follows a link. */
 function readNativeConfigBytes(path: string): Buffer {
