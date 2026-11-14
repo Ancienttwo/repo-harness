@@ -2679,6 +2679,7 @@ describe('worktree page', () => {
     await mount(<OperatorApp {...props(busy())} />);
     expect(document.querySelectorAll('[data-open-worktree]')).toHaveLength(0);
 
+    await act(async () => root?.unmount());
     installDom(WORKTREES_URL);
     const requests: unknown[] = [];
     Object.assign(window, { repoHarnessDesktop: { openWorktree: async (request: unknown) => { requests.push(request); } } });
