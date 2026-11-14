@@ -228,6 +228,21 @@ write_start_metadata() {
 EOF_METADATA
 }
 
+# A new worktree starts from the upstream of the base branch, not from the
+# checkout HEAD: the dependency install runs on that base, and a stale base
+# installs a tree that bun.lock on the real base no longer matches. The helper
+# runs without network or credentials, so the caller runs `git fetch` first.
+resolve_upstream_base() {
+  local base_branch="$1" upstream commit
+  if ! upstream="$(git rev-parse --abbrev-ref --symbolic-full-name "$base_branch@{upstream}" 2>/dev/null)" \
+    || ! commit="$(git rev-parse --verify "$upstream^{commit}" 2>/dev/null)"; then
+    echo "contract-worktree: base branch $base_branch has no resolvable upstream; run 'git fetch' and set its upstream in the main checkout, then start again" >&2
+    return 1
+  fi
+  echo "[ContractWorktree] Base: $upstream $commit ($(git show -s --format=%ci "$commit"))" >&2
+  printf '%s\n' "$commit"
+}
+
 bootstrap_worktree_runtime() {
   # A fresh linked worktree starts without the gitignored runtime artifacts the
   # verification gates depend on, and both resulting failures name neither cause.
@@ -418,7 +433,6 @@ start_worktree() {
   local slug base_branch existing_worktree base_commit source_commit new_branch=0 disposition metadata_file
   slug="$(derive_issue_slug "$issue_number" "$issue_title")"
   base_branch="$(policy_get '.worktree_strategy.base_branch' 'main')"
-  source_commit="$(git rev-parse HEAD)"
   branch_name="${branch_name:-${branch_type}/${slug}}"
   worktree_path="${worktree_path:-$(default_worktree_path "$slug")}"
   metadata_file="$REPO_ROOT/.ai/harness/worktrees/${slug}.json"
@@ -454,6 +468,7 @@ start_worktree() {
       echo "contract-worktree: --fresh refuses existing branch: $branch_name" >&2
       return 1
     fi
+    source_commit="$(resolve_upstream_base "$base_branch")" || return 1
     if [[ "$output_json" -eq 1 ]]; then
       run_contract_runtime add-worktree --repo "$REPO_ROOT" --worktree "$worktree_path" --branch "$branch_name" --base "$source_commit" >&2
     else
@@ -462,6 +477,7 @@ start_worktree() {
     disposition="attached_existing_branch"
     start_notice "[ContractWorktree] Added worktree for existing branch: $worktree_path"
   else
+    source_commit="$(resolve_upstream_base "$base_branch")" || return 1
     if [[ "$output_json" -eq 1 ]]; then
       run_contract_runtime add-worktree --repo "$REPO_ROOT" --worktree "$worktree_path" --branch "$branch_name" --base "$source_commit" --new-branch >&2
     else

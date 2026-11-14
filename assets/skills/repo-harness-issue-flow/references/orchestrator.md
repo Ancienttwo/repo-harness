@@ -249,6 +249,9 @@ module is in the title so that a list view shows the write scopes.
   dependency is merged, or its contract is stable and the issue allows
   early start.
 - Each parallel worker gets its own worktree from a clean base.
+- Run `git fetch` in the main checkout before `contract-worktree start`. The
+  helper bases the worktree on the upstream of the base branch and does not
+  fetch.
 - Keep at most 8 active writer seats under one coordinator. A seat is
   active until its PR is merged or its claim status is `done` or
   `released` (`board.md` Claim roles). Hold further
