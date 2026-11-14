@@ -224,7 +224,14 @@ describe("repo-harness action command skills", () => {
 
     expect(setup).toContain("Impact-scoped PR CI with a release-only full matrix -> `references/ci-scope.md`");
     expect(ciScope).toContain("Package or workspace membership alone never selects a platform family");
-    expect(ciScope).toContain("<family> runs <path> but does not own it");
+    expect(ciScope).toContain("`REVIEWED_JOBS` holds each targeted family job's exact header");
+    expect(ciScope).toContain("`REVIEWED_SCRIPTS` holds the exact text of each package script");
+    expect(ciScope).toContain("Refuse workflow-level keys outside `name`, `run-name`, `on`, `permissions`, `concurrency` and `jobs`");
+    expect(ciScope).toContain("Remove one owner.");
+    expect(ciScope).toContain("Remove one allow-list entry.");
+    expect(ciScope).toContain("Append the round-4 command `node x > /dev/null&./bin/tool`.");
+    expect(ciScope).toContain("Make a one-character near-miss of an allowed string.");
+    expect(ciScope).toContain("Add `[run] bun = true` to `bunfig.toml`.");
     expect(ciScope).toContain("For a dispatch run only, the ref (`github.ref`) must be on an allowlist");
     expect(ciScope).toContain("Both the planner and the aggregate gate check the ref. Routine runs do not check it");
     expect(ciScope).toContain("It never tells the author to use release validation");

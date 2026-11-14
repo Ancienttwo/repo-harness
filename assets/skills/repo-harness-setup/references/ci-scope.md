@@ -49,7 +49,6 @@ other families.
      `bun install`; `pre<script>` and `post<script>` hooks for a script a job
      runs; and `bunfig.toml` keys other than `[test].preload`.
 
-   Copy and adapt the [field-proven implementation](https://github.com/Ancienttwo/arch-context/blob/c06308ce/scripts/verify-sharding-workflow.test.ts).
    A family command change updates the reviewed table in the same PR.
 4. **Release-only complete matrix.** Only `workflow_dispatch` runs the complete
    matrix. The dispatch input carries the exact full approved commit SHA, and it
