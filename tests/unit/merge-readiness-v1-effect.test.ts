@@ -831,17 +831,12 @@ test('an unproven dependency keeps the summary failure and attributes no child',
   expect(evidence!.cause).toBe('unknown');
 });
 
-test('a failed job outside the needs of a check that passed in each attempt is not failure evidence', () => {
-  const verdict = evidenceVerdict('unneeded-failure');
-  expect(verdict.ready).toBe(true);
-  expect(verdict.blockers).toEqual([]);
-  expect(verdict.check_failures).toEqual([]);
-});
-
-test('a check that failed in an earlier attempt keeps its evidence beside a failed unneeded job', () => {
-  const verdict = evidenceVerdict('unneeded-failure-summary-failed');
-  expect(verdict.ready).toBe(true);
-  const [evidence] = verdict.check_failures;
+test('a failed job outside the needs is failure evidence only beside a failed attempt of the check', () => {
+  const passed = evidenceVerdict('unneeded-failure');
+  expect(passed.ready).toBe(true);
+  expect(passed.blockers).toEqual([]);
+  expect(passed.check_failures).toEqual([]);
+  const [evidence] = evidenceVerdict('unneeded-failure-summary-failed').check_failures;
   expect(evidence!.association).toBe('unknown');
   expect(evidence!.failed).toMatchObject({ attempt: 1, job_id: 456, job_name: SUMMARY_JOB, steps: [SUMMARY_STEP] });
   expect(evidence!.failed_children).toEqual([expect.objectContaining({
