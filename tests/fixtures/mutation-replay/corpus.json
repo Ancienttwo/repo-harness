@@ -41,7 +41,9 @@
     "builtin exec > out.txt; git commit --allow-empty -m \"$(cat <<'D'\n_ops/env\nD\n)\"; xargs rm -rf < out.txt",
     "eval 'exec > out.txt'; git commit --allow-empty -m \"$(cat <<'D'\n_ops/env\nD\n)\"; xargs rm -rf < out.txt",
     "echo _ops/env > out.txt; xargs rm -rf < out.txt",
-    "cat <<'EOF' > out.txt\n_ops/env\nEOF\nsh -c 'rm -rf $(cat out.txt)'"
+    "cat <<'EOF' > out.txt\n_ops/env\nEOF\nsh -c 'rm -rf $(cat out.txt)'",
+    "git grep -O'rm -rf' -l x _ops/env",
+    "git grep --open-files-in-pager=rm -l x _ops/env"
   ],
   "accepted": {
     "1": ["rm -rf ${X}ps", "rm -rf $(printf _o)ps", "rm -rf \"$P\"/env", "cd \"$(printf _o)ps\" && rm -rf env"],

@@ -540,8 +540,14 @@ function commands(tokens: readonly Token[], violations: string[]): Step[] {
 
 const READ_ONLY = new Set(['cat', 'head', 'tail', 'wc', 'grep', 'rg', 'ls', 'stat', 'file', 'du', 'diff', 'cmp', 'cut', 'tr', 'jq', 'echo',
   'printf', 'test', 'pwd', 'basename', 'dirname', 'realpath', 'readlink', 'which', 'type', 'cd', 'find', 'sort', 'git', 'gh']);
-const GIT_READ = new Set(['log', 'diff', 'show', 'status', 'ls-files', 'grep', 'rev-parse', 'cat-file', 'ls-tree', 'blame', 'merge-base',
+/** `git grep` is not listed: its -O runs a command on the matched files. */
+const GIT_READ = new Set(['log', 'diff', 'show', 'status', 'ls-files', 'rev-parse', 'cat-file', 'ls-tree', 'blame', 'merge-base',
   'rev-list', 'show-ref', 'for-each-ref', 'describe', 'shortlog']);
+/**
+ * Options of the listed subcommands that write a file (`--output`: log, diff, show, blame, rev-list, shortlog) or turn on a
+ * configured command that is off by default (`--ext-diff`, `--textconv`, `--filters`, `--show-signature`).
+ */
+const GIT_WRITES = /^--(?:output(?:=|$)|ext-diff$|textconv$|filters$|show-signature$)/;
 const GIT_FLAGS = new Set(['--no-pager', '-P', '--no-optional-locks', '--literal-pathspecs', '--glob-pathspecs', '--noglob-pathspecs',
   '--icase-pathspecs']);
 const GH_READ = new Set(['pr view', 'pr diff', 'pr list', 'pr checks', 'pr status', 'issue view', 'issue list', 'issue status',
@@ -575,8 +581,7 @@ function readOnly(args: readonly Word[]): boolean {
     case 'file': return !rest.some(value => value === '-C' || value === '--compile');
     case 'git': {
       const git = gitInvocation(args);
-      return git !== null && GIT_READ.has(args[git.at]!.value)
-        && !rest.some(value => value.startsWith('--output') || value === '-O' || value.startsWith('--open-files-in-pager'));
+      return git !== null && GIT_READ.has(args[git.at]!.value) && !rest.some(value => GIT_WRITES.test(value));
     }
     case 'gh': return GH_READ.has(`${rest[0]} ${rest[1]}`);
     default: return true;
@@ -666,6 +671,7 @@ function programFinding(args: readonly Word[], named: boolean, commands: number)
   const program = args[0]!.value;
   const sub = args.slice(1).find(word => !word.value.startsWith('-'))?.value;
   const reason = `runs ${program === 'git' || program === 'gh' ? `${program} ${sub ?? ''}`.trim() : program}, which is not a read-only program`;
+  if (program === 'git' && sub === 'grep') return finding(reason, 'Use rg to search: git grep -O runs a command on the matched files.');
   if (!named && commands > 1) return finding(reason, SPLIT);
   if ((program === 'git' && (sub === 'commit' || sub === 'tag')) || program === 'gh') {
     return finding(reason, 'Write the message to a file, then pass it with git commit -F <file>, git tag -F <file> or gh --body-file <file>.');
