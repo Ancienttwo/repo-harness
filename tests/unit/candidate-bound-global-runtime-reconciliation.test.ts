@@ -516,7 +516,7 @@ describe('candidate-bound global runtime reconciliation', () => {
     try {
       mkdirSync(cwd, { recursive: true });
       mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
-      writeExecutable(join(home, '.bun', 'bin', 'repo-harness'), '#!/bin/sh\nexit 0\n');
+      writeExecutable(join(home, '.bun', 'bin', 'rh'), '#!/bin/sh\nexit 0\n');
       writeCoreOnlyInstallState(home);
       const transaction = beginInstallHostTransaction([], env);
       const request: CandidateReconciliationRequest = {
@@ -649,7 +649,7 @@ describe('candidate-bound global runtime reconciliation', () => {
         const globalManifest = join(globalRoot, 'package.json');
         const oldManifest = JSON.stringify({ dependencies: { 'repo-harness': '^0.21.2' } });
         writeFileSync(globalManifest, oldManifest);
-        const cliBin = join(home, '.bun', 'bin', 'repo-harness');
+        const cliBin = join(home, '.bun', 'bin', 'rh');
         mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
         const oldBin = '#!/bin/sh\necho 0.21.2\n';
         writeExecutable(cliBin, oldBin);
@@ -766,9 +766,9 @@ describe('candidate-bound global runtime reconciliation', () => {
 
       expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(0);
       const runtime = JSON.parse(result.stdout) as { lines: string[] };
-      expect(runtime.lines.filter((line) => /^\d+ leftovers \(\d+ removable\)\. Run: repo-harness upgrade$/.test(line))).toHaveLength(1);
+      expect(runtime.lines.filter((line) => /^\d+ leftovers \(\d+ removable\)\. Run: rh upgrade$/.test(line))).toHaveLength(1);
       // The registered-repo line follows the leftover summary.
-      expect(runtime.lines.at(-1)).toMatch(/^Registered repos: \d+ of \d+ have pending project upgrade work\..* Preview: repo-harness upgrade --registered$/);
+      expect(runtime.lines.at(-1)).toMatch(/^Registered repos: \d+ of \d+ have pending project upgrade work.* Preview: rh upgrade --registered(\. Apply: rh upgrade --registered --apply --expected-revision sha256:[0-9a-f]{64})?$/);
       expect(readFileSync(bunLog, 'utf-8')).toContain(`${candidateRoot}/src/cli/index.ts upgrade --summary-line`);
     } finally {
       rmSync(root, { recursive: true, force: true });

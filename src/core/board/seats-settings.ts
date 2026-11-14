@@ -82,7 +82,7 @@ const REVIEW_TOOLS: readonly SeatTool[] = Object.freeze(['net', 'read', 'shell']
 
 /**
  * The section an absent `seats` key reads as: the canvas defaults, with the
- * orchestrator on Opus high (G36). `repo-harness seats argv` launches from the
+ * orchestrator on Opus high (G36). `rh seats argv` launches from the
  * same value. No runtime check compares it with the fleet role profiles: a
  * save checks it as any other section, and a route test compares the default
  * worker fleet with the worker range.
@@ -113,9 +113,9 @@ export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
   }),
 });
 
-export const SEATS_CONFIG_UPDATE_ACTION = 'repo-harness update';
+export const SEATS_CONFIG_UPDATE_ACTION = 'rh update';
 
-/** The routing keys that came after the first stored sections (#2630, #2633): `repo-harness update` adds each with its default. */
+/** The routing keys that came after the first stored sections (#2630, #2633): `rh update` adds each with its default. */
 export const INTRODUCED_ROUTING_DEFAULTS = Object.freeze({
   codex_credit_mode: DEFAULT_SEATS_CONFIG.routing.codex_credit_mode,
   codex_credit_floor: DEFAULT_SEATS_CONFIG.routing.codex_credit_floor,

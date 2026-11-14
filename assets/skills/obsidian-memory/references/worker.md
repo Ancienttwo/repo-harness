@@ -8,7 +8,7 @@ Worker reference. Execute only the Bot-assigned recall or write scope.
 2. Not configured, or the path does not exist → **stop and say so**. Do not scan the disk to guess a vault, and do not create a vault root on the fly.
 3. The project sub-vault is `<brainRoot>/<project-slug>/`; `<project-slug>` is the repo directory name or a name the user gives.
 
-**Having no brainRoot configured is a legitimate steady state, not a defect awaiting repair.** Unconfigured simply means this machine does not use the vault layer: the in-repo artifacts remain a complete, authoritative memory surface, and at closeout the conclusions go into the existing slots such as `tasks/lessons.md` and `docs/researches/`. Do not create a vault just so this skill can run. Only when the user explicitly wants the vault layer enabled, point them at `repo-harness install --brain-root <path>` or `repo-harness update --brain-root <path>`.
+**Having no brainRoot configured is a legitimate steady state, not a defect awaiting repair.** Unconfigured simply means this machine does not use the vault layer: the in-repo artifacts remain a complete, authoritative memory surface, and at closeout the conclusions go into the existing slots such as `tasks/lessons.md` and `docs/researches/`. Do not create a vault just so this skill can run. Only when the user explicitly wants the vault layer enabled, point them at `rh install --brain-root <path>` or `rh update --brain-root <path>`.
 
 The brain CLI does not enforce this skill boundary. `configuredBrainRoot()` uses
 `REPO_HARNESS_BRAIN_ROOT`, then user config, then `defaultBrainRootChoice()`.
@@ -41,4 +41,4 @@ Run this only when the sub-vault does not exist or the user explicitly asks:
 
 ## Directory ownership boundary
 
-Inside a repo-harness-managed repository, the `brain_path` declared in `.ai/harness/brain-manifest.json` is a **machine projection** of `repo-harness brain sync`; hand-written content there is overwritten by the next sync. This skill never writes a path the manifest declares; memory notes land in subdirectories the manifest does not own, such as `notes/` and `decisions/`. Externalizing documents like `docs/reference-configs/` goes through the existing `brain promote`/`sync` channel; this skill does not duplicate that transport.
+Inside a repo-harness-managed repository, the `brain_path` declared in `.ai/harness/brain-manifest.json` is a **machine projection** of `rh brain sync`; hand-written content there is overwritten by the next sync. This skill never writes a path the manifest declares; memory notes land in subdirectories the manifest does not own, such as `notes/` and `decisions/`. Externalizing documents like `docs/reference-configs/` goes through the existing `brain promote`/`sync` channel; this skill does not duplicate that transport.

@@ -1,13 +1,13 @@
 ---
 name: repo-harness-advisor
-description: Start the advisor seat of the current repository beside its live orchestrator seat in the project Herdr space, from repo-harness seats argv. Refuses without a live orchestrator or with a live advisor.
+description: Start the advisor seat of the current repository beside its live orchestrator seat in the project Herdr space, from rh seats argv. Refuses without a live orchestrator or with a live advisor.
 when_to_use: "repo-harness-advisor"
 disable-model-invocation: true
 ---
 
 # repo-harness-advisor
 
-Bot entrypoint. Explicit invoke only. It starts one process. `repo-harness seats argv`
+Bot entrypoint. Explicit invoke only. It starts one process. `rh seats argv`
 holds the model, the effort, the tool limits, the env, the labels and the brief; this
 skill copies none of them. The role rules stay in `repo-harness-issue-flow`.
 
@@ -62,7 +62,7 @@ count=$(printf '%s' "$tab_of" | jq -r .count)
 pane=$(printf '%s' "$tab_of" | jq -r .pane)
 
 # 5. Launch: seats argv first, checked, then Herdr with the checked values. Never split down.
-launch=$(repo-harness seats argv advisor --repository-id "$id" --json) || stop 'repo-harness seats argv advisor failed'
+launch=$(rh seats argv advisor --repository-id "$id" --json) || stop 'rh seats argv advisor failed'
 argv=$(printf '%s' "$launch" | jq -ec '.argv | select(type == "array" and length > 0 and all(.[]; type == "string"))') || stop 'seats argv gave no argv'
 if [ "$count" -lt 3 ]; then
   herdr-app do pane.split --direction right --pane "$pane" --argv "$argv" || stop 'herdr-app pane.split failed'

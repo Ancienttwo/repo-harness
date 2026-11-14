@@ -211,7 +211,7 @@ describe('Windows protected-helper platform contract', () => {
       configPath: 'C:\\missing\\config.json',
       fileAccess: access(),
       nativeSystemToolsDirectory: CONTRACT.system_tools_dir,
-    })).toThrow('run repo-harness install or repo-harness update');
+    })).toThrow('run rh install or rh update');
 
     expect(() => resolveProtectedHelperPlatform({
       platform: 'win32',

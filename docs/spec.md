@@ -50,7 +50,7 @@ workflow-scoped and have no shell tool; repo writes need an explicit
 - It does not replace the target repository's build, test, deploy, or release
   authority.
 - It does not vendor unified helper scripts into downstream repositories; the
-  canonical helper invocation is `repo-harness run <helper>`.
+  canonical helper invocation is `rh run <helper>`.
 - It does not treat chat history, SQLite state, or hosted agent threads as the
   durable source of truth.
 
@@ -89,8 +89,8 @@ workflow-scoped and have no shell tool; repo writes need an explicit
 
 | Surface | Owner | Purpose |
 |---|---|---|
-| `repo-harness run <helper>` | Package runtime | Canonical workflow helper execution |
-| `repo-harness state next --json` | Package runtime | Canonical pull-based continuation entry: a read-only projection returning one unit or one halt per tick, byte-identical for identical repo bytes and identical attempt-ledger bytes |
+| `rh run <helper>` | Package runtime | Canonical workflow helper execution |
+| `rh state next --json` | Package runtime | Canonical pull-based continuation entry: a read-only projection returning one unit or one halt per tick, byte-identical for identical repo bytes and identical attempt-ledger bytes |
 | `docs/spec.md` | Maintainers | Stable product intent and safety boundary |
 | GitHub issue and PR | Issue owner and implementer | Task identity, claim, dependencies, scope, review and proof |
 | `docs/prds/*.prd.md` | Planner | Product intent and acceptance scenarios |
@@ -159,7 +159,7 @@ readback is a separate release check, never a task AcceptanceReceipt field.
   comment and resume from the exact next step.
 - A maintainer can reject or accept an agent change from the PR description and
   the machine evidence.
-- The issue/PR loop can drive work to completion using only `repo-harness state
+- The issue/PR loop can drive work to completion using only `rh state
   next` output; an interrupted closeout is recoverable explicitly without
   duplicating push or merge; two consecutive no-progress turns halt the loop
   instead of spinning.
@@ -199,12 +199,12 @@ readback is a separate release check, never a task AcceptanceReceipt field.
   `code-change`) that determines which verification and delegation rules
   apply to that task.
 - **Refactor recommendations**: Evidence on demand. No hook scans for them.
-  The Bot reads `repo-harness refactor recommendations --json` and decides
+  The Bot reads `rh refactor recommendations --json` and decides
   whether to schedule work or ask the user.
-  `repo-harness refactor recommendations` shows each open suggestion with the
+  `rh refactor recommendations` shows each open suggestion with the
   metrics and bounded evidence of its observation and the statistics of the
   affected modules. Open suggestions are the ArchContext `open` records plus
-  unrecorded scan candidates. `repo-harness refactor decide` records the
+  unrecorded scan candidates. `rh refactor decide` records the
   user's accept, defer or reject decision in one ArchContext call.
   `--import-node-limit` applies to both commands. `--timeout-ms <ms>` (default
   120000, range 1000..600000) also applies to both commands. repo-harness never
@@ -223,7 +223,7 @@ readback is a separate release check, never a task AcceptanceReceipt field.
 
 ## Persistent generic acceptance review
 
-`repo-harness review round/status/close/cancel` uses the existing task-agent runtime and fleet deep-reasoner in a dedicated linked checkout. The caller supplies `{endpoint, parent_pane}` (an hc core socket and the owner's hc terminal) and the reviewer checkout; with `--launch herdr-app`, review starts only the fixed Node >=24 OAR application host in an hc terminal of that core (`hc run`), and the host reports its own idle or working status with OSC 7501. With `--launch app-terminal`, the operator runs the printed host command once. Review never starts a second native launcher. Default selection uses an existing typed task binding for the parent pane and chooses its opposite harness. Unknown owner requires explicit `--harness`. Only preflight executable absence permits reported fallback; explicit selection and every post-intent failure refuse fallback/replay.
+`rh review round/status/close/cancel` uses the existing task-agent runtime and fleet deep-reasoner in a dedicated linked checkout. The caller supplies `{endpoint, parent_pane}` (an hc core socket and the owner's hc terminal) and the reviewer checkout; with `--launch herdr-app`, review starts only the fixed Node >=24 OAR application host in an hc terminal of that core (`hc run`), and the host reports its own idle or working status with OSC 7501. With `--launch app-terminal`, the operator runs the printed host command once. Review never starts a second native launcher. Default selection uses an existing typed task binding for the parent pane and chooses its opposite harness. Unknown owner requires explicit `--harness`. Only preflight executable absence permits reported fallback; explicit selection and every post-intent failure refuse fallback/replay.
 
 The acceptance context binds the stable campaign, approved admission and grant, fresh provider goal identity, Git subject including untracked content, target revision and prepared verification fingerprint. Each numbered request freezes that context. The provider writes the exact request's Result file; immutable task-agent collection precedes domain identity, verdict and stable finding validation. The trusted host consumes completion and model observation from the OAR Session API and writes control evidence only in the owner's protected review journal. The owner binds actual harness/role/model from that journal to the reviewed Result; reviewer-authored outbox observations are never read as authority. Ready, request acknowledgements and disposal acknowledgement use the same protected journal. Missing, failed or ambiguous completion fails closed. The generic-review Receipt has no launcher fields and remains equally writable/verifiable by headless domain callers. History and idle never grant acceptance.
 

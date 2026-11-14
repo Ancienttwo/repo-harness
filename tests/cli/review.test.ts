@@ -53,7 +53,7 @@ test('peer-runtime guards refuse before loading actions and preserve the recorde
       expect(result.status, `${args.join(' ')}: ${result.stderr}`).toBe(1);
       expect(result.stdout).toBe('');
       expect(result.stderr).toContain('install_plugin_unavailable: ');
-      expect(result.stderr).toContain(selection === 'all' ? 'run: repo-harness update\n' : 'run: repo-harness install --plugins operator,peer-runtime\n');
+      expect(result.stderr).toContain(selection === 'all' ? 'run: rh update\n' : 'run: rh install --plugins operator,peer-runtime\n');
       expect(result.loaded).toEqual([]);
     }
   }

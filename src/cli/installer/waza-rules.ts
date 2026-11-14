@@ -76,7 +76,7 @@ export function syncWazaSharedRules(
       for (const rule of wazaRules.files) {
         const current = previous.get(rule);
         if (current === undefined && state === null) {
-          return { status: 'failed', detail: 'an install state is required to own new Waza rules; run repo-harness install first' };
+          return { status: 'failed', detail: 'an install state is required to own new Waza rules; run rh install first' };
         }
         if (current === undefined) continue;
         const source = join(sourceDir, rule);
@@ -89,7 +89,7 @@ export function syncWazaSharedRules(
           // The old sync wrote this projection without a receipt. Adopt it only once.
           if (existingHosts.length > 0 && existingHosts.every((path) => readFileSync(path).equals(stagedBytes))) {
             if (state === null) {
-              return { status: 'failed', detail: 'an install state is required to own Waza rules; run repo-harness install first' };
+              return { status: 'failed', detail: 'an install state is required to own Waza rules; run rh install first' };
             }
             adoptedPaths.push(source, ...existingHosts);
             // Preserve proof of the old projection before shared staging advances.

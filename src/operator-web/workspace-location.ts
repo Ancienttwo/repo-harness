@@ -25,7 +25,7 @@ export const WORKSPACES = [
 ] as const;
 export type NavWorkspace = typeof WORKSPACES[number]['id'];
 export type NavGroup = NonNullable<typeof WORKSPACES[number]['group']>;
-/** The three pages read from one `repo-harness setup check` result. */
+/** The three pages read from one `rh setup check` result. */
 export const SETUP_WORKSPACES = ['agents', 'skills', 'hooks'] as const;
 export type Workspace = NavWorkspace;
 

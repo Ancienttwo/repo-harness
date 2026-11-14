@@ -25,10 +25,10 @@ function fixture(): { root: string; registry: string; tarball: string; installed
   mkdirSync(join(packageDir, 'bin'), { recursive: true });
   mkdirSync(hookRepo, { recursive: true });
   writeFileSync(join(root, 'package.json'), '{"name":"repo-harness","version":"1.2.3"}\n');
-  writeFileSync(join(packageDir, 'package.json'), '{"name":"repo-harness","version":"1.2.3","bin":{"repo-harness":"bin/repo-harness","repo-harness-hook":"bin/repo-harness-hook"}}\n');
-  writeFileSync(join(packageDir, 'bin', 'repo-harness'), '#!/usr/bin/env bun\nconsole.log("1.2.3");\n');
+  writeFileSync(join(packageDir, 'package.json'), '{"name":"repo-harness","version":"1.2.3","bin":{"rh":"bin/rh","repo-harness-hook":"bin/repo-harness-hook"}}\n');
+  writeFileSync(join(packageDir, 'bin', 'rh'), '#!/usr/bin/env bun\nconsole.log("1.2.3");\n');
   writeFileSync(join(packageDir, 'bin', 'repo-harness-hook'), '#!/usr/bin/env bun\nconsole.log(JSON.stringify({ protocol: 1, kind: "repo-harness-state-snapshot", state_version: 1 }));\n');
-  chmodSync(join(packageDir, 'bin', 'repo-harness'), 0o755);
+  chmodSync(join(packageDir, 'bin', 'rh'), 0o755);
   chmodSync(join(packageDir, 'bin', 'repo-harness-hook'), 0o755);
   const tarball = join(root, 'repo-harness-1.2.3.tgz');
   const packed = spawnSync('tar', ['-czf', tarball, '-C', root, 'package'], { encoding: 'utf-8' });
@@ -39,9 +39,9 @@ function fixture(): { root: string; registry: string; tarball: string; installed
   }));
   cpSync(packageDir, installedPackage, { recursive: true });
   mkdirSync(join(root, 'node_modules', '.bin'), { recursive: true });
-  const cli = join(root, 'node_modules', '.bin', 'repo-harness');
+  const cli = join(root, 'node_modules', '.bin', 'rh');
   const hook = join(root, 'node_modules', '.bin', 'repo-harness-hook');
-  symlinkSync('../repo-harness/bin/repo-harness', cli);
+  symlinkSync('../repo-harness/bin/rh', cli);
   symlinkSync('../repo-harness/bin/repo-harness-hook', hook);
   return { root, registry, tarball, installedPackage, cli, hook, hookRepo };
 }
@@ -92,7 +92,7 @@ describe('release runtime evidence', () => {
 
   test('rejects a same-version installed package whose canonical bin differs from the published tarball', () => {
     const value = fixture();
-    writeFileSync(join(value.installedPackage, 'bin', 'repo-harness'), '#!/usr/bin/env bun\nconsole.log("1.2.3");\n// altered\n');
+    writeFileSync(join(value.installedPackage, 'bin', 'rh'), '#!/usr/bin/env bun\nconsole.log("1.2.3");\n// altered\n');
     expect(() => collectRuntimeEvidence({
       packageName: 'repo-harness', packageVersion: '1.2.3', registryReadbackPath: value.registry, tarballPath: value.tarball, installedPackagePath: value.installedPackage,
       installedCliPath: value.cli, installedHookPath: value.hook, hookRepo: value.hookRepo,

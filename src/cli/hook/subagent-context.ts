@@ -84,7 +84,7 @@ export function effectiveStateDiagnostic(
   owner: string,
   resolution: Extract<EffectiveStateResolution, { readonly ok: false }>,
 ): string {
-  return `repo-harness-hook: ${owner}: effective state unavailable (${resolution.reason_code} ${resolution.error_hash}); run repo-harness state resolve --json\n`;
+  return `repo-harness-hook: ${owner}: effective state unavailable (${resolution.reason_code} ${resolution.error_hash}); run rh state resolve --json\n`;
 }
 
 export function sanitize(value: string): string {

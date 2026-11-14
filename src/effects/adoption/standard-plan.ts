@@ -13,6 +13,7 @@ import { planLegacyLeftovers, stripLegacyHookEntries } from "../upgrade/legacy-i
 import { runGit } from "../git/run-git";
 import { pruneUnknownPolicyKeys } from "../../core/workflow/policy-schema";
 import { withoutRepositorySelectingGitEnv } from "../git/runner";
+import { MANAGED_PACKAGE_SCRIPTS } from "../../core/adoption/package-scripts";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
 const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");
@@ -239,7 +240,7 @@ export class ReviewBaseUnresolvedError extends Error {
 
   constructor(repoRoot: string) {
     super(
-      `cannot set .ai/harness/policy.json#worktree_strategy.review_base: ${repoRoot} has no refs/remotes/origin/HEAD and no current branch (detached HEAD or not a git repository). Check out a branch or run \`git remote set-head origin --auto\`, then run repo-harness init again. Use --mode minimal for a non-git scaffold.`,
+      `cannot set .ai/harness/policy.json#worktree_strategy.review_base: ${repoRoot} has no refs/remotes/origin/HEAD and no current branch (detached HEAD or not a git repository). Check out a branch or run \`git remote set-head origin --auto\`, then run rh init again. Use --mode minimal for a non-git scaffold.`,
     );
     this.name = "ReviewBaseUnresolvedError";
   }
@@ -348,10 +349,10 @@ function referenceStub(name: string): string {
 
 > **Runtime Docs**: user-level repo-harness reference
 > **Doc ID**: ${docId}
-> **Source Command**: \`repo-harness docs path ${docId}\`
+> **Source Command**: \`rh docs path ${docId}\`
 
 This repo keeps workflow facts and runtime artifacts locally under \`.ai/\`.
-Use \`repo-harness docs show ${docId}\` for the full generic runtime guide.
+Use \`rh docs show ${docId}\` for the full generic runtime guide.
 `;
 }
 
@@ -418,12 +419,7 @@ function addPackageOperation(repoRoot: string, operations: AdoptionOperation[]):
   const current = jsonFile(repoRoot, "package.json");
   if (!current) return;
   const scripts = isObject(current.scripts) ? { ...current.scripts } : {};
-  Object.assign(scripts, {
-    "check:brain": "repo-harness brain check",
-    "check:context-files": "repo-harness run check-context-files",
-    "check:deploy-sql": "repo-harness run check-deploy-sql-order",
-    "sync:brain": "repo-harness brain sync",
-  });
+  Object.assign(scripts, MANAGED_PACKAGE_SCRIPTS);
   if (scripts["check:brain-manifest"] === "repo-harness run check-brain-manifest") {
     delete scripts["check:brain-manifest"];
   }

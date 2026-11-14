@@ -193,7 +193,7 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     else if (readFileSync(packetPath, 'utf8') !== packet) {
       // A failed start does not consume a round. Preserve its packet even when
       // the launch outcome is unknown; do not replace it or start another pane.
-      throw new Error(`review_packet_changed_before_send; packet for round ${round} is preserved. Inspect with repo-harness review status --repo ${shellQuote(root)} --campaign-id ${shellQuote(options.authority.campaign_id)} --json; restore the original subject and verification before retrying the same review round.`);
+      throw new Error(`review_packet_changed_before_send; packet for round ${round} is preserved. Inspect with rh review status --repo ${shellQuote(root)} --campaign-id ${shellQuote(options.authority.campaign_id)} --json; restore the original subject and verification before retrying the same review round.`);
     }
     const outbox = client.outputDirectory(reviewerRepo, primary, session.task, GENERIC_REVIEW_ROLE);
     ensureSessionDirectory(reviewerRepo, outbox);

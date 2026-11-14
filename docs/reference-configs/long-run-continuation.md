@@ -21,13 +21,13 @@ The message always names both the issue and the branch. The host reads that issu
 
 One tick, in order:
 
-1. `repo-harness state next --json` — read the opening `ContinuationEnvelopeV2` and retain its `progress_token` as `$BEFORE`.
+1. `rh state next --json` — read the opening `ContinuationEnvelopeV2` and retain its `progress_token` as `$BEFORE`.
 2. Execute **at most one bounded unit**, per the envelope's route (table below).
 3. Run the targeted checks or the acceptance gate that the unit requires.
 4. Finish the unit, or record the halt.
-5. `repo-harness state next --json` — read the closing envelope and retain its `progress_token` as `$AFTER`.
-6. `repo-harness state attempt` — record the turn's `AttemptReceiptV1` from `$BEFORE` to `$AFTER`.
-7. `repo-harness state next --json` once more. This post-receipt envelope applies the no-progress breaker and is the only envelope from which the host may stop or open the next tick.
+5. `rh state next --json` — read the closing envelope and retain its `progress_token` as `$AFTER`.
+6. `rh state attempt` — record the turn's `AttemptReceiptV1` from `$BEFORE` to `$AFTER`.
+7. `rh state next --json` once more. This post-receipt envelope applies the no-progress breaker and is the only envelope from which the host may stop or open the next tick.
 
 Rules that make the tick safe to repeat:
 
@@ -39,7 +39,7 @@ Rules that make the tick safe to repeat:
 
 | Route | Meaning | Host action |
 |---|---|---|
-| `continue` | The branch names one GitHub issue; `reason` carries `next_action:Continue GitHub issue #N on branch <branch>.` and `unit_ref` is a stable hash of that message, so projection-only edits do not reset the stall group | Read the issue and PR for the exact step, then run the envelope's `command` (`repo-harness state resolve --json`) for the full brief |
+| `continue` | The branch names one GitHub issue; `reason` carries `next_action:Continue GitHub issue #N on branch <branch>.` and `unit_ref` is a stable hash of that message, so projection-only edits do not reset the stall group | Read the issue and PR for the exact step, then run the envelope's `command` (`rh state resolve --json`) for the full brief |
 | `halt` | A blocker, a stall, or an unreadable ledger; `command` is `null` | Surface `reason` to the operator and stop. Never retry a halt without a state change — the same bytes produce the same halt |
 | `idle` | No next action is available | Stop the loop |
 
@@ -50,7 +50,7 @@ Rules that make the tick safe to repeat:
 Record one receipt after each bounded turn:
 
 ```bash
-repo-harness state attempt --unit-ref "$UNIT" \
+rh state attempt --unit-ref "$UNIT" \
   --outcome completed \
   --before-progress-token "$BEFORE" --after-progress-token "$AFTER"
 ```
@@ -80,8 +80,8 @@ A closeout ownership conflict is a helper-level refusal, not an envelope halt re
 
 | Halt reason | Remedy |
 |---|---|
-| `no_progress` | Investigate why the unit stopped moving. Then either make real progress (a token change clears the breaker by itself), or, if the turns were legitimately non-material, record `repo-harness state attempt --unit-ref <unit> --outcome resumed` to override explicitly |
-| `attempt_ledger_unreadable` | Run `repo-harness state attempt-repair --json`. It moves an unterminated last line (a torn append) to `attempts.torn-<ms>` beside the ledger and truncates the ledger to its last complete receipt. `state attempt` refuses to append until this repair runs. If `ledger_status` is still `unreadable`, `unreadable_line` names a malformed complete line: inspect `.ai/harness/runs/continuation/attempts.jsonl` and remove that line by hand. The ledger is liveness evidence, not authority: resetting it loses nothing durable and the loop resumes from the same envelope |
+| `no_progress` | Investigate why the unit stopped moving. Then either make real progress (a token change clears the breaker by itself), or, if the turns were legitimately non-material, record `rh state attempt --unit-ref <unit> --outcome resumed` to override explicitly |
+| `attempt_ledger_unreadable` | Run `rh state attempt-repair --json`. It moves an unterminated last line (a torn append) to `attempts.torn-<ms>` beside the ledger and truncates the ledger to its last complete receipt. `state attempt` refuses to append until this repair runs. If `ledger_status` is still `unreadable`, `unreadable_line` names a malformed complete line: inspect `.ai/harness/runs/continuation/attempts.jsonl` and remove that line by hand. The ledger is liveness evidence, not authority: resetting it loses nothing durable and the loop resumes from the same envelope |
 | `blockers:*` | Fix the named authority artifact. These are the existing Effective State vocabulary; the envelope does not add remedies of its own |
 
 ## The Receipt-Invisibility Invariant
@@ -99,8 +99,8 @@ This decision trail is adapted from pstack (cursor/plugins, MIT, Lauren Tan).
 Record each choice in the existing evidence ledger:
 
 ```sh
-repo-harness run decision-trail record --phase build --decision "Use the ledger" --why "Keep one authority" --evidence '#812' --evidence src/core/evidence/checkpoint.ts:1 --result "Implemented"
-repo-harness run decision-trail render --format tsv --limit 20
+rh run decision-trail record --phase build --decision "Use the ledger" --why "Keep one authority" --evidence '#812' --evidence src/core/evidence/checkpoint.ts:1 --result "Implemented"
+rh run decision-trail render --format tsv --limit 20
 ```
 
 `record` prints one event ID. It writes a `decision.recorded` event with producer

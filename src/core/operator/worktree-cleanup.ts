@@ -4,7 +4,7 @@ import { isPublicWorktreeDirectory, WORKTREE_REASONS, type WorktreeView } from '
 
 /**
  * Wire shapes of the green worktree cleanup (slice 5.1): the request of
- * `POST /api/v1/worktrees/cleanup` and `repo-harness worktrees clean`, its
+ * `POST /api/v1/worktrees/cleanup` and `rh worktrees clean`, its
  * result, and the selection digest input. Pure, so the browser can import it.
  */
 

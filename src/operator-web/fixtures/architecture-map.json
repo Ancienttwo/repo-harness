@@ -2319,7 +2319,7 @@
    "status": "active",
    "layer": "cli",
    "parent": null,
-   "summary": "Long-running repo-harness mcp serve process on stdio or loopback HTTP.",
+   "summary": "Long-running rh mcp serve process on stdio or loopback HTTP.",
    "domain": null,
    "namespace": null,
    "mount": null
@@ -2331,7 +2331,7 @@
    "status": "active",
    "layer": "effects",
    "parent": null,
-   "summary": "Long-lived repo-harness herdr notify relay process in the hc terminal rh-notify-relay. It follows hc events of the terminals labeled for notify and sends their blocked and done turns to the configured channels.",
+   "summary": "Long-lived rh herdr notify relay process in the hc terminal rh-notify-relay. It follows hc events of the terminals labeled for notify and sends their blocked and done turns to the configured channels.",
    "domain": null,
    "namespace": null,
    "mount": null
@@ -2367,7 +2367,7 @@
    "status": "active",
    "layer": "effects",
    "parent": null,
-   "summary": "Long-running repo-harness operator serve process with a read-only loopback HTTP API.",
+   "summary": "Long-running rh operator serve process with a read-only loopback HTTP API.",
    "domain": null,
    "namespace": null,
    "mount": null
@@ -2831,7 +2831,7 @@
    "kind": "calls",
    "source": "capability.workflow-engine.contract-assets",
    "target": "component.contract-assets.planning-helpers",
-   "intent": "Run a contract-listed helper through repo-harness run",
+   "intent": "Run a contract-listed helper through rh run",
    "protocol": null
   },
   {
@@ -3655,7 +3655,7 @@
    "kind": "spawns",
    "source": "process.herdr-core-server",
    "target": "process.agent-host",
-   "intent": "Run each seat agent session from the argv of repo-harness seats argv when herdr-app do places it.",
+   "intent": "Run each seat agent session from the argv of rh seats argv when herdr-app do places it.",
    "protocol": null
   },
   {
@@ -17880,7 +17880,7 @@
     },
     {
      "number": 1710,
-     "title": "fix(operator): point the adoption hint at repo-harness init",
+     "title": "fix(operator): point the adoption hint at rh init",
      "url": "https://github.com/Ancienttwo/repo-harness/pull/1710",
      "head_sha": "fec18962451b13b357495ceb58777c202b232167",
      "impact": {
@@ -18423,7 +18423,7 @@
     },
     {
      "number": 1723,
-     "title": "feat(operator): quota read model and repo-harness quota --json (#1716)",
+     "title": "feat(operator): quota read model and rh quota --json (#1716)",
      "url": "https://github.com/Ancienttwo/repo-harness/pull/1723",
      "head_sha": "8f1bc6c83b4090f65c74f7c468f43ef24fe553fb",
      "impact": {

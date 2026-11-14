@@ -107,9 +107,9 @@ function StaleRegistrations({ count, t }: { readonly count: number; readonly t: 
       </button>
       {open && <div className="flex flex-col gap-2">
         <p className="text-xs text-kumo-subtle">{t('repositories.staleBody')}</p>
-        <CommandLine command="repo-harness fleet prune" t={t} className="max-w-full sm:max-w-md" />
+        <CommandLine command="rh fleet prune" t={t} className="max-w-full sm:max-w-md" />
         <p className="text-xs text-kumo-danger">{t('repositories.staleApply')}</p>
-        <CommandLine command="repo-harness fleet prune --apply --expected-revision <digest>" t={t} className="max-w-full sm:max-w-xl" />
+        <CommandLine command="rh fleet prune --apply --expected-revision <digest>" t={t} className="max-w-full sm:max-w-xl" />
       </div>}
     </li>
   );
@@ -123,7 +123,7 @@ export function RepositoriesPage({ view, activity, now, onOpen, readLanguage, wr
   const [expanded, setExpanded] = useState(false);
   if (view.kind === 'loading') return <Empty size="sm" icon={<Loader size={24} />} title={t('repositories.loading')} />;
   if (view.kind === 'failed') {
-    return <Empty size="sm" icon={<CircleDashedIcon size={32} />} title={t('repositories.failed.title')} description={t('repositories.failed.body')} commandLine="repo-harness operator serve" />;
+    return <Empty size="sm" icon={<CircleDashedIcon size={32} />} title={t('repositories.failed.title')} description={t('repositories.failed.body')} commandLine="rh operator serve" />;
   }
   const { repositories, stale_registrations: stale } = view.list;
   const shown = expanded ? repositories : repositories.slice(0, FIRST_ROWS);
@@ -136,7 +136,7 @@ export function RepositoriesPage({ view, activity, now, onOpen, readLanguage, wr
         {t('freshness.repositories.refreshFailed')}
       </p>}
       {repositories.length === 0 && stale === 0
-        ? <Empty size="sm" icon={<CircleDashedIcon size={32} />} title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} commandLine="repo-harness init --dry-run" />
+        ? <Empty size="sm" icon={<CircleDashedIcon size={32} />} title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} commandLine="rh init --dry-run" />
         : (
           <ul className="divide-y divide-kumo-hairline overflow-hidden rounded-xl border border-kumo-line bg-kumo-base">
             {shown.map(repository => (

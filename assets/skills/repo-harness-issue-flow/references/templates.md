@@ -183,7 +183,7 @@ Write a closing keyword (`Closes`, `Fixes`, `Resolves`) followed by an
 issue number only for the issues that the PR closes, and never in a code
 span or a quote. The squash commit message on main is plain text, so a
 keyword in a code span can close an issue there even when the PR link list
-ignores it. `repo-harness publication merge` refuses the mismatch
+ignores it. `rh publication merge` refuses the mismatch
 (`closing_references_mismatch`).
 
 ## Comments
@@ -296,7 +296,7 @@ Supersedes: <previous plan URL>   # omit on the first plan
 After the fields comes exactly one fenced `json` block: the plan block.
 `decodePlanBlock` in `src/core/board/plan-block.ts` of repo-harness defines
 its protocol and fields (merge order, holds, seat limit).
-`repo-harness board --parent <n>` decodes the newest plan and fails on an
+`rh board --parent <n>` decodes the newest plan and fails on an
 invalid block. The block holds no dependency, membership or tier: those are
 GitHub fields (Plan data, above).
 
@@ -351,7 +351,7 @@ Findings:
 Every review writes this record, one row per review. The fields are `Round`,
 `Role`, `Subject` (the full 40-hex head SHA in backticks), `Verdict`
 (`PASS` or `FAIL`, a colon, then the finding counts) and the
-`Model relation` line. `repo-harness review publish` writes it for rounds
+`Model relation` line. `rh review publish` writes it for rounds
 1 to 5 (`acceptor.md` §4). The board reads only this shape. A record that it cannot
 read makes the PR state unknown, not accepted.
 
@@ -415,7 +415,7 @@ Reason: <the stop decision, and who made it>
 ```
 
 `Issues:` is for the parent only; without it, the hold covers every item
-of the batch. A hold on an issue or a PR covers that issue or PR. `repo-harness board merge` reads it (`orchestrator.md` §9.3).
+of the batch. A hold on an issue or a PR covers that issue or PR. `rh board merge` reads it (`orchestrator.md` §9.3).
 
 ```text
 repo-harness merge hold released
@@ -433,7 +433,7 @@ Checks: <commands and results>; CI <state>
 Review: <delta check rows needed for the new head (`acceptor.md` §2.2)>
 ```
 
-Merge result (integrator, after `repo-harness publication merge`):
+Merge result (integrator, after `rh publication merge`):
 
 ```text
 repo-harness integration status

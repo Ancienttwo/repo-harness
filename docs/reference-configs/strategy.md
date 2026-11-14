@@ -12,15 +12,15 @@ writes a Git object. It confirms state again after all source confirmations.
 
 ## Commands
 
-- `repo-harness strategy status --repo <root>` reports document presence.
-- `repo-harness strategy context --repo <root>` reads compact context and builds
+- `rh strategy status --repo <root>` reports document presence.
+- `rh strategy context --repo <root>` reads compact context and builds
   a lesson index in memory. `--topic <topic...>` selects exact applicability.
-- `repo-harness strategy context --repo <root> --load <id...>` verifies and reads
+- `rh strategy context --repo <root> --load <id...>` verifies and reads
   at most eight selected bodies. Repeat these flags for proposal validation.
-- `repo-harness strategy validate .ai/harness/strategy/proposal.json --repo <root>`
+- `rh strategy validate .ai/harness/strategy/proposal.json --repo <root>`
   rebuilds current context and returns invalid, stale, blocked or reviewable.
   A non-reviewable result sets exit code 1. Reviewable grants no execution rights.
-- `repo-harness strategy install-skill --target codex|claude|both [--dry-run]`
+- `rh strategy install-skill --target codex|claude|both [--dry-run]`
   installs only an owned host link. `uninstall-skill` removes only that link.
   Neither command enables project reads or changes project policy.
 
@@ -163,7 +163,7 @@ success and failure.
 
 ## Repository pilot
 
-`repo-harness strategy pilot --repo <root>` explicitly reads
+`rh strategy pilot --repo <root>` explicitly reads
 `docs/strategy/repository-pilot.json` with canonical state observation. The
 repository pilot owner is Aimpact. README and the approved first-scope plan are
 pinned evidence. The command does not create docs/strategy/context.json or

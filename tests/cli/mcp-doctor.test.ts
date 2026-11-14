@@ -145,11 +145,11 @@ describe('mcp doctor and local config', () => {
       mkdirSync(join(unreadable.HOME, '.repo-harness'), { recursive: true });
       writeFileSync(installStateFixturePath(unreadable), '{');
 
-      const needs = (name: string, repair: string) => `install_plugin_unavailable: repo-harness mcp ${name} needs the mcp plugin: the mcp plugin is not selected; run: ${repair}`;
+      const needs = (name: string, repair: string) => `install_plugin_unavailable: rh mcp ${name} needs the mcp plugin: the mcp plugin is not selected; run: ${repair}`;
       const blocked: [string, NodeJS.ProcessEnv, string | RegExp][] = [
-        ['core only', selected([]), 'repo-harness install --plugins mcp'],
-        ['other plugin', selected(['product']), 'repo-harness install --plugins mcp,product'],
-        ['no install state', noState, 'repo-harness install'],
+        ['core only', selected([]), 'rh install --plugins mcp'],
+        ['other plugin', selected(['product']), 'rh install --plugins mcp,product'],
+        ['no install state', noState, 'rh install'],
         ['unreadable install state', unreadable, /is not valid JSON/],
       ];
       for (const [name, env, expected] of blocked) {

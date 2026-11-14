@@ -220,7 +220,7 @@ function writeManagedHostSurfaces(
     writePath(join(home, '.bun', 'bin', 'codegraph'), '#!/bin/sh\n');
     symlinkSync(join(source, 'SKILL.md'), join(home, '.bun', 'bin', 'archctx'));
   }
-  writePath(join(home, '.bun', 'bin', 'repo-harness'), '#!/bin/sh\n');
+  writePath(join(home, '.bun', 'bin', 'rh'), '#!/bin/sh\n');
   symlinkSync(source, canonical);
   writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({
     theme: 'user-owned',
@@ -348,7 +348,7 @@ describe('install selection', () => {
       const before = readFileSync(statePath);
       expect(installStateCode(() => readInstallState(env)), `protocol ${row.protocol}`).toBe('install_state_protocol_retired');
       for (const step of row.bridge) expect(() => readInstallState(env)).toThrow(step);
-      expect(() => readInstallState(env)).toThrow(`then: bun add -g repo-harness@${versions([]).core.version} --no-cache && repo-harness update`);
+      expect(() => readInstallState(env)).toThrow(`then: bun add -g repo-harness@${versions([]).core.version} --no-cache && rh update`);
       const update = spawnSync(process.execPath, [CLI, 'update', '--no-cli', '--json'], { cwd: ROOT, encoding: 'utf-8', env });
       expect(update.status).not.toBe(0);
       expect(update.stderr).toContain(`is protocol ${row.protocol}, which this package no longer reads`);
@@ -356,8 +356,10 @@ describe('install selection', () => {
     });
 
     const request = Buffer.from(JSON.stringify({ protocol: 1, profile: 'full' }), 'utf-8').toString('base64url');
-    expect(() => parseCandidateRequest(request, '0.26.0')).toThrow(CandidateRequestProtocolRetiredError);
-    expect(() => parseCandidateRequest(request, '0.26.0')).toThrow('bun add -g repo-harness@0.26.0 --no-cache && repo-harness update');
+    // The candidate names its own release, whose command is rh.
+    const current = versions([]).core.version;
+    expect(() => parseCandidateRequest(request, current)).toThrow(CandidateRequestProtocolRetiredError);
+    expect(() => parseCandidateRequest(request, current)).toThrow(`bun add -g repo-harness@${current} --no-cache && rh update`);
   }, 60_000);
 
   test('fresh install dry-run selects all and skips the host plugins this host cannot run', () => withHome((env) => {
@@ -371,7 +373,7 @@ describe('install selection', () => {
     expect(plan.selection).toBe('all');
     expect(plan.requested_plugins).toEqual([...ALL_PLUGINS]);
     expect(plan.skipped.map(({ id, command }: { id: string; command: string }) => [id, command])).toEqual([
-      ['pi', 'repo-harness update'],
+      ['pi', 'rh update'],
     ]);
   }), 30_000);
 
@@ -466,7 +468,7 @@ describe('install selection', () => {
       && ['symlink', 'managed-file', 'directory-copy'].includes(entry.type)
       && (entry.type === 'symlink' || entry.content_hash?.startsWith('sha256:') === true)
     ))).toBe(true);
-    expect(persisted.ownership_manifest.some((entry: { path: string }) => entry.path === join(env.HOME!, '.bun', 'bin', 'repo-harness'))).toBe(false);
+    expect(persisted.ownership_manifest.some((entry: { path: string }) => entry.path === join(env.HOME!, '.bun', 'bin', 'rh'))).toBe(false);
     expect(persisted.ownership_manifest.some((entry: { path: string }) => entry.path === join(env.HOME!, '.codex', 'skills', 'repo-harness'))).toBe(false);
     expect(installStateStatus(applied.state, env).drift.status).toBe('consistent');
   }));
@@ -812,7 +814,7 @@ describe('install selection', () => {
       const all = resolveRecordedSelection({ selection: 'all', plugins: [] }, target, env);
       expect(all.run.includes(id), label).toBe(reason === null);
       expect(all.skipped.find(entry => entry.id === id), label)
-        .toEqual(reason === null ? undefined : { id, reason, command: 'repo-harness install --target both' });
+        .toEqual(reason === null ? undefined : { id, reason, command: 'rh install --target both' });
       // A recorded plugin that the target cannot run stays in the record.
       const recorded = resolveRecordedSelection({ selection: 'all', plugins: versions([id]).plugins }, target, env);
       expect(recorded.record.includes(id), label).toBe(true);
@@ -1197,10 +1199,10 @@ describe('install selection', () => {
     const selection = readRecordedSelection(env);
     expect(selection).toEqual({ status: 'recorded', selection: 'all', plugins: ['product'] });
     // scripts/lib/architecture-plugin.sh prints this report.
-    expect(architectureSelectionReport(selection)).toEqual({ status: 'not-selected', message: 'the architecture plugin is not selected; run: repo-harness update' });
+    expect(architectureSelectionReport(selection)).toEqual({ status: 'not-selected', message: 'the architecture plugin is not selected; run: rh update' });
     for (const [id, command] of [['mcp', 'mcp serve'], ['strategy-memory', 'strategy']] as const) {
       expect(() => assertPluginCommandSelected(selection, id, command, env))
-        .toThrow(`install_plugin_unavailable: repo-harness ${command} needs the ${id} plugin: the ${id} plugin is not selected; run: repo-harness update`);
+        .toThrow(`install_plugin_unavailable: rh ${command} needs the ${id} plugin: the ${id} plugin is not selected; run: rh update`);
     }
   }));
 
@@ -1241,7 +1243,7 @@ describe('install selection', () => {
       /** Null: the state bytes stay as they were. */
       readonly committed: readonly PluginId[] | null;
     }
-    const keptCommand = `repo-harness install --plugins ${ALL_PLUGINS.join(',')}`;
+    const keptCommand = `rh install --plugins ${ALL_PLUGINS.join(',')}`;
     const rows: readonly Row[] = [
       {
         name: 'all, pi appears: update installs and records pi', selection: 'all', recorded: ALL_PLUGINS, pi: [false, true], ran: ALL_WITH_PI,
@@ -1250,11 +1252,11 @@ describe('install selection', () => {
       { name: 'explicit list, pi appears: the list does not grow', selection: ALL_PLUGINS, recorded: ALL_PLUGINS, pi: [false, true], ran: ALL_PLUGINS, committed: null },
       {
         name: 'explicit list without command plugins: one repair keeps the list and adds them', selection: ['architecture', 'product'], recorded: ['architecture', 'product'], pi: [false, false], ran: ['architecture', 'product'],
-        lines: ['[plugins] not selected mcp, operator, peer-runtime: an explicit list does not grow; to add them, run: repo-harness install --plugins architecture,mcp,operator,peer-runtime,product'], committed: null,
+        lines: ['[plugins] not selected mcp, operator, peer-runtime: an explicit list does not grow; to add them, run: rh install --plugins architecture,mcp,operator,peer-runtime,product'], committed: null,
       },
       {
         name: 'explicit list without operator and peer-runtime: the repair adds both', selection: ['mcp'], recorded: ['mcp'], pi: [false, false], ran: ['mcp'],
-        lines: ['[plugins] not selected operator, peer-runtime: an explicit list does not grow; to add them, run: repo-harness install --plugins mcp,operator,peer-runtime'], committed: null,
+        lines: ['[plugins] not selected operator, peer-runtime: an explicit list does not grow; to add them, run: rh install --plugins mcp,operator,peer-runtime'], committed: null,
       },
       {
         name: 'all, recorded pi disappears: kept with its line', selection: 'all', recorded: ALL_WITH_PI, pi: [true, false], ran: ALL_PLUGINS,
@@ -1262,7 +1264,7 @@ describe('install selection', () => {
       },
       {
         name: 'all, pi appears in a partial refresh: not added', selection: 'all', recorded: ALL_PLUGINS, pi: [false, true], options: { syncSkill: false }, ran: ALL_PLUGINS,
-        lines: ['[plugins] not added pi in a partial refresh; run: repo-harness update'], committed: null,
+        lines: ['[plugins] not added pi in a partial refresh; run: rh update'], committed: null,
       },
     ];
     for (const row of rows) withHome((base) => {
@@ -1444,7 +1446,7 @@ describe('install selection', () => {
       try {
         writePath(join(optIn, '.ai/harness/policy.json'), JSON.stringify(policy));
         expect(installStateCode(() => assertArchitecturePolicySelection(optIn, ['product'], env))).toBe('install_plugin_unavailable');
-        expect(() => assertArchitecturePolicySelection(optIn, ['product'], env)).toThrow(`sets ${needs}, which needs the architecture plugin; run: repo-harness install --plugins architecture,product`);
+        expect(() => assertArchitecturePolicySelection(optIn, ['product'], env)).toThrow(`sets ${needs}, which needs the architecture plugin; run: rh install --plugins architecture,product`);
         expect(() => assertArchitecturePolicySelection(optIn, ['architecture'], env)).not.toThrow();
       } finally {
         rmSync(optIn, { recursive: true, force: true });

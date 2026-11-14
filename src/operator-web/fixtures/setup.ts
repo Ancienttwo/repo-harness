@@ -94,7 +94,7 @@ export function readySetup(now: number): SetupSnapshotV2 {
       {
         id: 'doctor.security-config', status: 'needs_agent', title: 'Local hook and VS Code automatic task security scan',
         detail: '2 finding(s): 0 high, 2 warn, 0 fail\nfirst=unmanaged-hook-command at [private path]',
-        command: 'repo-harness security scan --json',
+        command: 'rh security scan --json',
       },
     ],
     hosts: [
@@ -134,7 +134,7 @@ export function degradedSetup(now: number): SetupSnapshotV2 {
       {
         id: 'status.adapter.codex', status: 'warn', title: 'Codex global hook adapter',
         detail: '4/5 managed entries at [private path]\nprojection drift: 3 mismatches',
-        command: 'repo-harness install --host codex',
+        command: 'rh install --host codex',
       },
       {
         id: 'doctor.skill-projection', status: 'fail', title: 'Host skills match their source and install ledger',
@@ -143,11 +143,11 @@ export function degradedSetup(now: number): SetupSnapshotV2 {
       },
       {
         id: 'tooling.agent_fleet', status: 'fail', title: 'External tooling: agent_fleet',
-        detail: 'missing; codex lacks gatekeeper and harness-evaluator', command: 'repo-harness install --host codex',
+        detail: 'missing; codex lacks gatekeeper and harness-evaluator', command: 'rh install --host codex',
       },
       {
         id: 'doctor.security-config', status: 'needs_agent', title: 'Local hook and VS Code automatic task security scan',
-        detail: '2 finding(s): 0 high, 2 warn, 0 fail', command: 'repo-harness security scan --json',
+        detail: '2 finding(s): 0 high, 2 warn, 0 fail', command: 'rh security scan --json',
       },
     ],
     hosts: [

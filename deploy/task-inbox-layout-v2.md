@@ -1,6 +1,6 @@
 # Task Inbox v2 offline cutover
 
-This runbook operates on the Git common directory shared by all worktrees of one repository. The CLI is `repo-harness fleet inbox migrate-layout`, invoked inside that repository. It never changes Task, Lease, Binding, actor, ACK or message protocols.
+This runbook operates on the Git common directory shared by all worktrees of one repository. The CLI is `rh fleet inbox migrate-layout`, invoked inside that repository. It never changes Task, Lease, Binding, actor, ACK or message protocols.
 
 ## Preconditions
 
@@ -9,7 +9,7 @@ This runbook operates on the Git common directory shared by all worktrees of one
 3. Run the following read-only inspection. Save its JSON output privately; it contains paths and digests, never message bodies. A fresh repository reports `not_required` and needs no migration.
 
 ```sh
-repo-harness fleet inbox migrate-layout --json
+rh fleet inbox migrate-layout --json
 ```
 
 For a v1 store, inspect `manifest.common`, `manifest.identity`, both inventories, `manifest.source_sha256` and `receipt_sha256`. Source approval binds the real common-directory identity as well as every path and byte digest. Unknown files, links, invalid canonical records and case-colliding target paths require investigation; the tool does not repair or discard them.
@@ -19,7 +19,7 @@ For a v1 store, inspect `manifest.common`, `manifest.identity`, both inventories
 Use the exact `manifest.source_sha256` from inspection:
 
 ```sh
-repo-harness fleet inbox migrate-layout --apply --expected-source-sha256 '<source digest>' --confirm-quiescent --json
+rh fleet inbox migrate-layout --apply --expected-source-sha256 '<source digest>' --confirm-quiescent --json
 ```
 
 The command publishes an immutable transaction manifest, acquires sorted existing Task locks, revalidates the inventory, copies exact bytes into `v2-stage`, then retires v1 to `retired-v1`. A regular-file tombstone occupies `v1` before the stage becomes `v2`. Canonical records are unchanged; only recipient filesystem components become bounded storage tokens. Noncanonical staging residue stays in the retained original and is not served from v2.
@@ -31,7 +31,7 @@ A `committed` result includes the final receipt digest. Verify the expected Task
 Runtime refuses an active or partially prepared journal. Preserve all artifacts and use the original source digest:
 
 ```sh
-repo-harness fleet inbox migrate-layout --resume --expected-source-sha256 '<original source digest>' --confirm-quiescent --json
+rh fleet inbox migrate-layout --resume --expected-source-sha256 '<original source digest>' --confirm-quiescent --json
 ```
 
 Resume validates filesystem state against the immutable manifest. Only exact expected files or an interrupted write containing a prefix of those expected bytes may be completed. Conflicting files, changed source bytes, wrong repository identity and malformed published journals fail closed. Do not delete journals, force a stage over an existing tree, edit receipts or restore an old binary to bypass refusal.
@@ -43,7 +43,7 @@ The same resume command continues an interrupted rollback when its rollback jour
 Before reopening clients, rollback may use the exact `receipt_sha256` from the original dry run or completed result:
 
 ```sh
-repo-harness fleet inbox migrate-layout --rollback --receipt-sha256 '<receipt digest>' --confirm-quiescent --json
+rh fleet inbox migrate-layout --rollback --receipt-sha256 '<receipt digest>' --confirm-quiescent --json
 ```
 
 This also permits abandoning an incomplete staged copy. If v2 was published, its entire inventory must still match the migration output. **Any subsequent v2 write refuses rollback**, including an ACK or staging residue; later records must never be lost. In that case retain v2 and plan a separate data-aware recovery. Successful rollback restores the original v1 bytes and leaves a rollback receipt; the v2 runtime deliberately refuses that legacy layout. Reopening v1 requires the coordinated previous release, not mixed clients.

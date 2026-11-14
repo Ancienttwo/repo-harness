@@ -5,7 +5,7 @@ import { protectedRepoDir, PROTECTED_REPO_DIRS } from '../src/cli/hook/mutation-
 
 export function checkProtectedPaths(args: readonly string[], cwd = process.cwd(), env = process.env): number {
   if (args.length > 1 || (args.length === 1 && !['--staged', '--tracked'].includes(args[0]!))) {
-    process.stderr.write('Usage: repo-harness run check-protected-paths [--staged|--tracked]\n');
+    process.stderr.write('Usage: rh run check-protected-paths [--staged|--tracked]\n');
     return 2;
   }
   try {

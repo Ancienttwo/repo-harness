@@ -33,8 +33,8 @@ irm https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.ps1 
 Si Bun est déjà dans le PATH, vous pouvez aussi lancer :
 
 ```bash
-bunx repo-harness@latest install     # Bun one-shot bootstrap
-npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
+bunx -p repo-harness@latest rh install     # Bun one-shot bootstrap
+npx -y -p repo-harness@latest rh install   # npx fallback; the CLI still runs on Bun
 ```
 
 ## Première commande
@@ -42,8 +42,8 @@ npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
 À la racine du dépôt cible, prévisualisez d'abord, puis appliquez :
 
 ```bash
-repo-harness init --dry-run
-repo-harness init
+rh init --dry-run
+rh init
 ```
 
 `--dry-run` liste seulement les fichiers à créer ou à rafraîchir. Il n'écrit aucun fichier.

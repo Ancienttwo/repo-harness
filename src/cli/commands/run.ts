@@ -71,9 +71,9 @@ export const RUN_HELP_GROUPS = [
 
 // Retired helper ids fail with their replacement command. They never run it.
 const RETIRED_HELPERS: ReadonlyMap<string, string> = new Map([
-  ['check-brain-manifest', 'repo-harness brain check'],
-  ['sync-brain-docs', 'repo-harness brain sync'],
-  ['run-bounded-verifier-command', 'repo-harness run verification-plan execute'],
+  ['check-brain-manifest', 'rh brain check'],
+  ['sync-brain-docs', 'rh brain sync'],
+  ['run-bounded-verifier-command', 'rh run verification-plan execute'],
 ]);
 
 function groupedHelperLines(helpers: ReturnType<typeof listHelpers>): string[] {
@@ -125,7 +125,7 @@ export function buildRunCommand(): Command {
     .action((helper: string, args: string[]) => {
       const replacement = RETIRED_HELPERS.get(helper);
       if (replacement) {
-        console.error(`repo-harness run: helper "${helper}" is retired. Use \`${replacement}\`. Run \`repo-harness init\` to rewrite generated package scripts.`);
+        console.error(`rh run: helper "${helper}" is retired. Use \`${replacement}\`. Run \`rh init\` to rewrite generated package scripts.`);
         process.exit(2);
       }
       const result = runHelper({ helper, args });

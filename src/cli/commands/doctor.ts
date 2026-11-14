@@ -1,5 +1,5 @@
 /**
- * `repo-harness doctor` — read-only readiness diagnostics.
+ * `rh doctor` — read-only readiness diagnostics.
  *
  * Built-in checks: PATH resolution, CLI version, per-host install detection,
  * Codex user-level trust state count, and target-aware CodeGraph readiness.
@@ -36,6 +36,7 @@ import { readText } from '../../effects/state/collect-state-inputs';
 import { hcList } from '../../effects/terminal/herdr-core';
 import { readNotifyInstallRecord, relayIsLive } from '../../effects/terminal/notify-read';
 import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/decision/notify-relay-record';
+import { CLI_NAME, RETIRED_CLI_NAME } from '../../core/skill-surface/cli-name';
 
 const TRUST_STATE_LINE = /^\[hooks\.state\."[^"]+\/\.codex\/hooks\.json:/;
 const PACKAGE_NAME = 'repo-harness';
@@ -125,17 +126,22 @@ function findCommandOnPath(command: string): string | null {
 
 function checkPath(): DoctorCheckResult {
   const id = 'cli-on-path';
-  const describe = 'repo-harness and repo-harness-hook resolvable via PATH';
-  const resolved = findCommandOnPath('repo-harness');
+  const describe = `${CLI_NAME} and repo-harness-hook resolvable via PATH`;
+  const resolved = findCommandOnPath(CLI_NAME);
   const hook = findCommandOnPath('repo-harness-hook');
-  if (resolved && hook) {
+  const retired = findCommandOnPath(RETIRED_CLI_NAME);
+  if (resolved && hook && !retired) {
     return { id, describe, status: 'ok', detail: `${resolved}; repo-harness-hook: ${hook}` };
   }
+  const missing = [!resolved && CLI_NAME, !hook && 'repo-harness-hook'].filter(Boolean).join(' and ');
   return {
     id,
     describe,
     status: 'warn',
-    detail: `${[!resolved && 'repo-harness', !hook && 'repo-harness-hook'].filter(Boolean).join(' and ')} not on PATH; reinstall the repo-harness package.`,
+    detail: [
+      missing && `${missing} not on PATH; reinstall the repo-harness package.`,
+      retired && `The retired command ${RETIRED_CLI_NAME} is still on PATH at ${retired}; run ${CLI_NAME} update, or remove it if update reports it as not managed.`,
+    ].filter(Boolean).join(' '),
   };
 }
 
@@ -162,8 +168,8 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
     const present = source !== null && piPackagePresent(source, env);
     const directoryMissing = source !== null && !fs.existsSync(source);
     checks.push({ id: 'pi-package', describe: 'Pi repo-harness package entry', status: present && !directoryMissing ? 'ok' : 'warn',
-      detail: directoryMissing ? `package directory missing: ${source}; run: repo-harness install`
-        : present ? `present: ${source}` : 'missing; run: repo-harness install' });
+      detail: directoryMissing ? `package directory missing: ${source}; run: rh install`
+        : present ? `present: ${source}` : 'missing; run: rh install' });
   } catch (error) {
     checks.push({ id: 'pi-package', describe: 'Pi repo-harness package entry', status: 'fail', detail: String((error as Error).message) });
   }
@@ -270,7 +276,7 @@ function checkCliUpdate(target: DoctorTarget): DoctorCheckResult {
       id,
       describe,
       status: 'na',
-      detail: `disabled; Agent can run ${UPDATE_CHECK_ENV}=1 repo-harness doctor --json before updating`,
+      detail: `disabled; Agent can run ${UPDATE_CHECK_ENV}=1 rh doctor --json before updating`,
     };
   }
 
@@ -288,7 +294,7 @@ function checkCliUpdate(target: DoctorTarget): DoctorCheckResult {
       id,
       describe,
       status: 'warn',
-      detail: `current=${CLI_VERSION}; latest=${latest.version}; agent_action=repo-harness update --target ${target}`,
+      detail: `current=${CLI_VERSION}; latest=${latest.version}; agent_action=rh update --target ${target}`,
     };
   }
   return { id, describe, status: 'ok', detail: `current=${CLI_VERSION}; latest=${latest.version}` };
@@ -311,7 +317,7 @@ function checkTargetInstall(target: (typeof ALL_TARGETS)[number]): DoctorCheckRe
       id,
       describe,
       status: 'warn',
-      detail: `host detected but repo-harness not installed (run: repo-harness install --target ${target.id} --location global)`,
+      detail: `host detected but repo-harness not installed (run: rh install --target ${target.id} --location global)`,
     };
   }
   const projection = inspectManagedProjection(det.configPath, target.id);
@@ -319,7 +325,7 @@ function checkTargetInstall(target: (typeof ALL_TARGETS)[number]): DoctorCheckRe
   if (projection.status === 'drift') {
     return {
       id, describe, status: 'warn',
-      detail: `projection mismatch: ${projection.mismatches.map(formatManagedHookProjectionMismatch).join('; ')}. Reinstall hooks: repo-harness install --target ${target.id} --location global. Replace hook-lib path callers with repo-harness run <helper>.`,
+      detail: `projection mismatch: ${projection.mismatches.map(formatManagedHookProjectionMismatch).join('; ')}. Reinstall hooks: rh install --target ${target.id} --location global. Replace hook-lib path callers with rh run <helper>.`,
     };
   }
   return { id, describe, status: 'ok', detail: `installed at ${det.configPath}` };
@@ -441,7 +447,7 @@ function formatSkillProjectionJudgment({ row, projection, ledgerDrift }: SkillPr
     const preserve = row.state === 'missing' || row.state === 'source missing' ? '' : `preserve or move ${destination}, then `;
     problems.push(`expected ${source}; ${preserve}run: ${fix}`);
   }
-  if (ledgerDrift) problems.push(`ledger drift; inspect: repo-harness install --state; then run: ${fix}`);
+  if (ledgerDrift) problems.push(`ledger drift; inspect: rh install --state; then run: ${fix}`);
   const state = row.state === 'ok link' ? `ok link -> ${source}` : row.state;
   return `${destination}: ${state}${problems.length > 0 ? '; ' + problems.join('; ') : ''}`;
 }
@@ -467,7 +473,7 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
     const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
     for (const field of ['installedCopyExcludes', 'installedCopyIncludes']) {
       if (sourceRoot !== PACKAGE_ROOT && contract[field] === undefined) {
-        return { id, describe, status: 'warn', detail: `global package contract at ${contractPath} lacks ${field}; run: repo-harness update; then run: repo-harness upgrade` };
+        return { id, describe, status: 'warn', detail: `global package contract at ${contractPath} lacks ${field}; run: rh update; then run: rh upgrade` };
       }
     }
     if (!Array.isArray(contract.installedCopyExcludes) || !contract.installedCopyExcludes.every((value: unknown) => typeof value === 'string')) {
@@ -501,14 +507,14 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
     if (installed) {
       const drift = installStateStatus(installed, env).drift;
       if (drift.status === 'drift') warning = true;
-      details.push(`install ledger: ${JSON.stringify(drift)}${drift.status === 'drift' ? `; inspect: repo-harness install --state; run: ${installSelectionCommand(selection)}` : ''}`);
+      details.push(`install ledger: ${JSON.stringify(drift)}${drift.status === 'drift' ? `; inspect: rh install --state; run: ${installSelectionCommand(selection)}` : ''}`);
     } else {
       warning = true;
-      details.push('install ledger: missing; run: repo-harness install');
+      details.push('install ledger: missing; run: rh install');
     }
     return { id, describe, status: warning ? 'warn' : 'ok', detail: details.join('\n'), skills: judgments.map(judgment => judgment.row) };
   } catch (error) {
-    return { id, describe, status: 'fail', detail: `${String((error as Error).message ?? error)}; inspect: repo-harness install --state` };
+    return { id, describe, status: 'fail', detail: `${String((error as Error).message ?? error)}; inspect: rh install --state` };
   }
 
 }
@@ -530,7 +536,7 @@ function checkCapabilityRegistry(cwd: string): DoctorCheckResult {
   // A declared newer minimum explains a parse error before the parser reports it.
   const gate = inspectWorkflowMarker(repoRoot);
   if (gate) return { id, describe, status: 'fail', detail: gate.message };
-  const next = `Next: run repo-harness run capability-resolver validate --repo ${repoRoot} --format text; fix the model, or run repo-harness update when the model uses a shape that this runtime cannot read.`;
+  const next = `Next: run rh run capability-resolver validate --repo ${repoRoot} --format text; fix the model, or run rh update when the model uses a shape that this runtime cannot read.`;
   try {
     const policy = readWorkflowPolicy(repoRoot);
     const mode = capabilitySourceMode(policy);
@@ -566,7 +572,7 @@ function checkLegacyWorkflowState(cwd: string): DoctorCheckResult {
   }
   return {
     id, describe, status: 'warn',
-    detail: `Legacy copy: ${legacy}. The package no longer ships an operator library. Change callers to repo-harness run <helper>. Test callers, back up the copy, then remove it manually. Keep edited copies until their changes are reviewed. Init and upgrade preserve this file.`,
+    detail: `Legacy copy: ${legacy}. The package no longer ships an operator library. Change callers to rh run <helper>. Test callers, back up the copy, then remove it manually. Keep edited copies until their changes are reviewed. Init and upgrade preserve this file.`,
   };
 }
 

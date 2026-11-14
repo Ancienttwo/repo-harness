@@ -12,7 +12,7 @@ log() {
 }
 
 die() {
-  printf 'repo-harness install: %s\n' "$*" >&2
+  printf 'rh install: %s\n' "$*" >&2
   exit 1
 }
 
@@ -76,9 +76,9 @@ install_repo_harness() {
 
 verify_repo_harness() {
   export PATH="$BUN_INSTALL_DIR/bin:$PATH"
-  has_command repo-harness || die "repo-harness is not on PATH after installation"
-  version="$(repo-harness --version 2>/dev/null || true)"
-  [ -n "$version" ] || die "repo-harness installed, but version readback failed"
+  has_command rh || die "rh is not on PATH after installation"
+  version="$(rh --version 2>/dev/null || true)"
+  [ -n "$version" ] || die "rh installed, but version readback failed"
   log "repo-harness ${version} installed."
 }
 
@@ -101,7 +101,7 @@ cat <<'BANNER'
 BANNER
 
 if [ "${REPO_HARNESS_DRY_RUN:-0}" = "1" ]; then
-  log "DRY RUN: would ensure Bun >= ${MIN_BUN_VERSION}, install ${PACKAGE_NAME}@${PACKAGE_VERSION}, and verify repo-harness --version."
+  log "DRY RUN: would ensure Bun >= ${MIN_BUN_VERSION}, install ${PACKAGE_NAME}@${PACKAGE_VERSION}, and verify rh --version."
   exit 0
 fi
 
@@ -111,14 +111,14 @@ verify_repo_harness
 
 log ""
 log "Next:"
-log "  repo-harness install"
-log "  repo-harness init --dry-run"
+log "  rh install"
+log "  rh init --dry-run"
 
 case ":$ORIGINAL_PATH:" in
   *":$BUN_INSTALL_DIR/bin:"*) ;;
   *)
     log ""
-    log "To use repo-harness in new shells, add to your shell profile:"
+    log "To use rh in new shells, add to your shell profile:"
     log "  export PATH=\"$BUN_INSTALL_DIR/bin:\$PATH\""
     ;;
 esac

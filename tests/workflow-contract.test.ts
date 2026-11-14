@@ -89,7 +89,7 @@ describe("workflow contract manifest", () => {
     expect(contract.documentation?.referenceConfigs?.source).toBe("user-level-runtime-docs");
     expect(contract.documentation?.referenceConfigs?.repoStubDirectory).toBe("docs/reference-configs");
     expect(contract.documentation?.referenceConfigs?.packageDirectory).toBe("assets/reference-configs");
-    expect(contract.documentation?.referenceConfigs?.resolverCommand).toBe("repo-harness docs path <doc-id>");
+    expect(contract.documentation?.referenceConfigs?.resolverCommand).toBe("rh docs path <doc-id>");
     expect(contract.documentation?.referenceConfigs?.stubMarker).toBe("<!-- repo-harness: reference-config-stub v1 -->");
     expect(contract.agenticDevelopment?.routing.productDiscovery).toBe("parent-agent:geju");
     expect(contract.agenticDevelopment?.routing.complexEngineeringPlan).toBe("parent-agent:geju");

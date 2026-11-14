@@ -100,7 +100,7 @@ export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv):
 }
 
 /**
- * Record an install selection without managed surfaces, as `repo-harness install --plugins <plugins>` leaves it.
+ * Record an install selection without managed surfaces, as `rh install --plugins <plugins>` leaves it.
  * `selection: 'all'` with a subset is an `all` state recorded before the other plugin ids existed.
  */
 export function recordPluginSelection(env: NodeJS.ProcessEnv, plugins: readonly PluginId[] = ['architecture'], selection: PluginSelection = [...plugins]): void {
@@ -122,3 +122,24 @@ export function pluginSelectionEnv(plugins: readonly PluginId[] = ['architecture
   recordPluginSelection(env, plugins);
   return env;
 }
+
+/**
+ * The retired-command detector table, shared by the update notice and the upgrade notice.
+ * `calls` holds the forms from review rounds 2 to 5; `prose` names the package without a call;
+ * `excluded` holds the closed exclusion list.
+ */
+export const RETIRED_CLI_LINES = {
+  calls: [
+    'Run `repo-harness board seats` first.', 'exec repo-harness board seats', 'env FOO=1 repo-harness update', 'env -u FOO repo-harness update',
+    'sudo repo-harness update', 'sudo -u user repo-harness update', 'sudo --user root repo-harness update', 'time -p repo-harness update',
+    'time -o /tmp/timing repo-harness update', 'FOO=1 repo-harness board seats', 'repo-harness --version', 'repo-harness review round --issue-id 1', 'repo-harness review reply --help', 'repo-harness --help',
+    'Bash(repo-harness board:*)', 'npx -y repo-harness install', 'npx repo-harness@latest --version', 'bunx repo-harness@0.32.0 run new-plan',
+    'curl https://example.com;repo-harness update', 'curl https://example.com&&repo-harness update', '~/.bun/bin/repo-harness update', 'alias x=repo-harness',
+  ],
+  prose: 'The repo-harness operator console shows it.',
+  excluded: [
+    'repo-harness review reply', 'repo-harness review start status', 'repo-harness acceptance record', 'npx -y -p repo-harness@latest rh install',
+    'bunx -p repo-harness@latest rh install', 'bun add -g repo-harness@latest', 'exec repo-harness-hook Stop', 'cat ~/.repo-harness/config.json',
+    'REPO_HARNESS_HOME=/x rh update', 'https://github.com/aimpact-inc/repo-harness#readme', 'rh board seats',
+  ],
+} as const;

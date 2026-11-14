@@ -176,7 +176,7 @@ describe("repo-harness action command skills", () => {
     expect(ship).toContain("An explicit no-merge instruction wins");
     expect(ship).toContain("GitHub has no change request or unresolved review thread");
     expect(worker).toContain("gh pr create");
-    expect(worker).toContain("repo-harness run contract-worktree sweep");
+    expect(worker).toContain("rh run contract-worktree sweep");
     expect(worker).toContain("Never use reset, clean or stash");
     expect(worker).toContain("Do not commit to or fast-forward main");
     expect(worker).toContain("reuse it");
@@ -191,8 +191,8 @@ describe("repo-harness action command skills", () => {
     expect(initMode).toContain("existing repository");
     expect(setup).toContain("Does not create an application stack from any mode except `scaffold`");
     expect(setup).toContain("Use the Bot-assigned mode and target repo");
-    expect(initMode).toContain("repo-harness init");
-    expect(initMode).toContain("repo-harness init --repo <repo>");
+    expect(initMode).toContain("rh init");
+    expect(initMode).toContain("rh init --repo <repo>");
     expect(scaffold).toContain("new project");
     expect(scaffold).toContain("plan catalog A-K");
     expect(setup).toContain("New project/app/module skeleton, no existing repo workflow -> `references/scaffold.md`");
@@ -212,7 +212,7 @@ describe("repo-harness action command skills", () => {
     const capability = readReference("repo-harness-setup", "capability.md");
 
     expect(capability).toContain("capability-config.ts add");
-    expect(capability).toContain("Does not run `repo-harness init`");
+    expect(capability).toContain("Does not run `rh init`");
     expect(capability).toContain("Does not install or refresh the full harness");
     expect(capability.toLowerCase()).toContain("explicit");
     expect(capability.toLowerCase()).toContain("prefix");
@@ -242,7 +242,7 @@ describe("repo-harness action command skills", () => {
     const architecture = readFileSync(join(COMMAND_ROOT, "repo-harness-architecture/references/worker.md"), "utf-8");
     const handoff = readFileSync(join(ROOT, "references", "handoff.md"), "utf-8");
 
-    expect(architecture).toContain("repo-harness architecture-projection check --json");
+    expect(architecture).toContain("rh architecture-projection check --json");
     expect(architecture).not.toContain("archive-architecture-request");
     expect(architecture).toContain("mermaid");
     expect(architecture).toContain("archctx-generated Markdown Mermaid");
@@ -250,7 +250,7 @@ describe("repo-harness action command skills", () => {
     expect(architecture).toContain("repo-harness-archimap");
     expect(architecture).toContain("docs/architecture/archimap.html");
     expect(architecture).not.toContain("optional human-readable HTML");
-    expect(architecture).toContain("Does not run `repo-harness init`");
+    expect(architecture).toContain("Does not run `rh init`");
     expect(architecture).toContain("architecture updates are explicit");
 
     expect(handoff).toContain("issue claim status");
@@ -265,17 +265,17 @@ describe("repo-harness action command skills", () => {
     expect(architecture).toContain("`projectionProvider.command[0]`");
     expect(architecture).toContain("`projectionProvider.command[1]`");
     expect(architecture).toContain('`"$NODE" "$ARCHCTX" flows check --json`');
-    expect(architecture).toContain("`repo-harness architecture-projection anchors --json`");
-    expect(architecture).toContain("repo-harness architecture-projection publish once");
+    expect(architecture).toContain("`rh architecture-projection anchors --json`");
+    expect(architecture).toContain("rh architecture-projection publish once");
     // projection-apply derives the accepted request id; a per-apply id rule is obsolete.
     expect(architecture).toContain("Do not pass `--request-id`");
     expect(architecture.match(/--request-id/g)).toHaveLength(1);
     expect(architecture).toContain("## Adopt ArchContext in a repository");
     for (const step of [
-      "repo-harness run capability-resolver export --format archcontext-nodes-v2",
+      "rh run capability-resolver export --format archcontext-nodes-v2",
       '"$NODE" "$ARCHCTX" init --name <product name>',
       '"$NODE" "$ARCHCTX" docs adopt --profile repo-harness/v1',
-      "repo-harness architecture-projection adopt --json --adoption-plan-id <adoptionPlanId>",
+      "rh architecture-projection adopt --json --adoption-plan-id <adoptionPlanId>",
     ]) expect(architecture).toContain(step);
   });
 
@@ -350,7 +350,7 @@ describe("repo-harness action command skills", () => {
     expect(prd).toContain("[UNVERIFIED]");
     expect(prd).toContain("Does not skip the `$geju` direction pass");
     expect(prd).toContain("Does not make Codex the primary PRD author");
-    expect(prd).not.toContain("repo-harness run check-task-workflow");
+    expect(prd).not.toContain("rh run check-task-workflow");
   });
 
   test("product routes backlog ordering, issue splitting and dispatch to repo-harness-issue-flow", () => {
@@ -370,8 +370,8 @@ describe("repo-harness action command skills", () => {
     const board = readReference("repo-harness-issue-flow", "board.md");
     const templates = readReference("repo-harness-issue-flow", "templates.md");
 
-    for (const text of [skill, orchestrator, board]) expect(text).toContain("repo-harness publication merge");
-    expect(skill).toContain("repo-harness seats argv orchestrator");
+    for (const text of [skill, orchestrator, board]) expect(text).toContain("rh publication merge");
+    expect(skill).toContain("rh seats argv orchestrator");
     expect(skill).toContain("publication.acceptance_merge");
     for (const code of ["acceptance_merge_off", "base_protection_insufficient", "merge_outcome_unknown", "provider_rejected"]) {
       expect(orchestrator).toContain(code);
@@ -450,7 +450,7 @@ describe("repo-harness action command skills", () => {
   test("issue-flow orchestrator gates splitting on architecture-projection status --json", () => {
     const orchestrator = readReference("repo-harness-issue-flow", "orchestrator.md");
 
-    expect(orchestrator).toContain("repo-harness architecture-projection status --json");
+    expect(orchestrator).toContain("rh architecture-projection status --json");
     expect(orchestrator).toContain("modelAuthority.source");
     expect(orchestrator).toContain("modelAuthority.ready");
     expect(orchestrator).toContain("archcontext");
@@ -464,7 +464,7 @@ describe("repo-harness action command skills", () => {
     const worker = readReference("repo-harness-issue-flow", "worker.md");
 
     expect(worker).toContain("### 6.1 Architecture slice");
-    expect(worker).toContain("repo-harness architecture-projection plan --json --changed-path");
+    expect(worker).toContain("rh architecture-projection plan --json --changed-path");
     expect(worker).toContain("preview.format");
     expect(worker).toContain("unified-diff");
     expect(worker).toContain("preview.content");
@@ -591,7 +591,7 @@ describe("repo-harness action command skills", () => {
     const acceptor = readReference("repo-harness-issue-flow", "acceptor.md");
 
     expect(orchestrator).toContain("any host");
-    expect(orchestrator).toContain("repo-harness seats argv orchestrator");
+    expect(orchestrator).toContain("rh seats argv orchestrator");
     expect(orchestrator).toContain("more than two children");
     expect(orchestrator).toContain("Supersedes:");
     // M33: the round rules live once in acceptor.md; the orchestrator links them.
@@ -610,7 +610,7 @@ describe("repo-harness action command skills", () => {
     expect(worker).toContain("Status: released");
     expect(worker).toContain("Read the claim back");
 
-    expect(acceptor).toContain("repo-harness review publish --pr <n> --receipt <path>");
+    expect(acceptor).toContain("rh review publish --pr <n> --receipt <path>");
     expect(acceptor).toContain("repo-harness-review-publish-receipt");
     expect(acceptor).toContain("review_publish_unknown");
     expect(acceptor).toContain("model_relation");

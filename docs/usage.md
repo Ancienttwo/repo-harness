@@ -42,10 +42,10 @@ Bun installs fail closed with the matching upgrade command (`brew upgrade bun`)
 instead of overwriting manager-owned files.
 
 ```bash
-bunx repo-harness@latest install     # Bun one-shot bootstrap
-bun add -g repo-harness              # or install the persistent CLI first
-repo-harness install
-npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
+bunx -p repo-harness@latest rh install     # Bun one-shot bootstrap
+bun add -g repo-harness                    # or install the persistent CLI first
+rh install
+npx -y -p repo-harness@latest rh install   # npx fallback; the CLI still runs on Bun
 ```
 
 Install `hc` through Herdr.app or a herdr-core release. Verify that `hc --version`
@@ -58,15 +58,15 @@ endpoints. See [runtime cutover](https://github.com/aimpact-inc/repo-harness/blo
 ### 2. Bootstrap the host runtime
 
 ```bash
-repo-harness install
+rh install
 ```
 
 Pi is an optional host under the default `--target both`. When `pi` is on
 PATH, install and update register the installed repo-harness directory with
 `pi install <package-directory>`. An existing user package entry is retained.
-Missing Pi skips this step. Preview with `repo-harness install --dry-run --json`.
+Missing Pi skips this step. Preview with `rh install --dry-run --json`.
 The minimum Pi version is [MIN_PI_VERSION](../src/pi/compat.ts); there is no upper bound.
-`repo-harness setup check` and `repo-harness update --check` report the version,
+`rh setup check` and `rh update --check` report the version,
 path resolver capability, package entry and skill projection.
 
 Catalog skills use `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/skills` and the
@@ -82,7 +82,7 @@ ceremony validates and pins `git.exe`, its matching `bash.exe`/`usr/bin`, and
 the install account's absolute `TEMP` directory plus native `System32` tools in the OS account's
 `~/.repo-harness/config.json#protectedHelperRuntime`. Protected workflow
 helpers do not rediscover tools from a caller's `PATH`; rerun
-`repo-harness update` after relocating or replacing Git for Windows.
+`rh update` after relocating or replacing Git for Windows.
 
 The global bootstrap: installs the npm package as the global CLI, refreshes
 repo-harness skill aliases, installs user-level hook adapters, and records the
@@ -98,7 +98,7 @@ audit:
 ### 3. Preview the repo-local contract
 
 ```bash
-repo-harness init --dry-run
+rh init --dry-run
 ```
 
 Run this from the target repository root. It reports the specs, task state,
@@ -109,7 +109,7 @@ or refreshed. It never creates an application stack; new projects and modules us
 ### 4. Apply and verify
 
 ```bash
-repo-harness init
+rh init
 bun test
 ```
 
@@ -118,7 +118,7 @@ bun test
 Init writes repo-local files and one file under `HOME`: the repo registry
 entry. It writes no install-managed host files. When the
 required Herdr skill or the architecture projection preference is missing, init
-reports a skipped step that names `repo-harness update`. repo-harness supplies tools and evidence; the Bot
+reports a skipped step that names `rh update`. repo-harness supplies tools and evidence; the Bot
 decides what to schedule.
 
 Apply ends with `=== Migration Report ===`, naming where generated hook behavior
@@ -134,14 +134,14 @@ read
 ## Update, upgrade and remove
 
 ```bash
-repo-harness update          # reconcile CLI, mandatory deps, profile tooling, and CodeGraph
-repo-harness update --check  # read-only repair guidance, no writes
-repo-harness upgrade         # check retired leftovers; no writes
-repo-harness upgrade --apply # back up and remove only proven owned leftovers
-repo-harness upgrade decide --keep <path> # record an operator decision for a report-only project item
-repo-harness upgrade --registered # preview project refresh for every registered repo; no writes
-repo-harness uninstall --dry-run # preview owned user configuration cleanup
-repo-harness uninstall           # remove owned configuration; preserve user changes/history
+rh update          # reconcile CLI, mandatory deps, profile tooling, and CodeGraph
+rh update --check  # read-only repair guidance, no writes
+rh upgrade         # check retired leftovers; no writes
+rh upgrade --apply # back up and remove only proven owned leftovers
+rh upgrade decide --keep <path> # record an operator decision for a report-only project item
+rh upgrade --registered # preview project refresh for every registered repo; no writes
+rh uninstall --dry-run # preview owned user configuration cleanup
+rh uninstall           # remove owned configuration; preserve user changes/history
 ```
 
 `update` and `setup check` print one leftover count. `update` does not apply
@@ -174,7 +174,7 @@ A second apply with no eligible items changes no bytes. The command prints the
 backup paths and records nonempty runs in
 `~/.repo-harness/upgrade-cleanup.log.jsonl`.
 
-For project rollback, use the printed `repo-harness init rollback` command.
+For project rollback, use the printed `rh init rollback` command.
 For global rollback, replace each target with its numbered snapshot at the
 original path in the backup manifest. Do not overlay directory contents.
 Restore symlinks verbatim. There is no `install --restore-transaction` command.
@@ -200,7 +200,7 @@ paths for an assigned agent. repo-harness has no PM or Engineer scheduling API.
 ### Board of a parent issue
 
 ```bash
-repo-harness board --parent <n> --json
+rh board --parent <n> --json
 ```
 
 The board reads the sub-issues, pull requests, plan block and hc seat terminals
@@ -216,8 +216,8 @@ for scope and recorded verification.
 ### Refactor recommendations
 
 ```bash
-repo-harness refactor recommendations [--import-node-limit <n>]   # measured suggestions with evidence
-repo-harness refactor decide <id> accept|defer|reject --reason "<text>" [--import-node-limit <n>]
+rh refactor recommendations [--import-node-limit <n>]   # measured suggestions with evidence
+rh refactor decide <id> accept|defer|reject --reason "<text>" [--import-node-limit <n>]
 ```
 
 ArchContext measures structural problems such as cycles and direction
@@ -231,7 +231,7 @@ Before review, configure the repository's manual `external_sources` policy and
 provide working provider access. The default policy is off; initialization does
 not enable it. The trusted upstream Bot must authenticate the human, authorize
 the scope, and supply the bound request. Its integration calls
-`repo-harness review admit --repo <execution-checkout> --request <authorized-request.json>`.
+`rh review admit --repo <execution-checkout> --request <authorized-request.json>`.
 The request contains `{admission, approval, expectedRevision}`. Admission requires
 an explicit `execution_mode`: `contract` or `inline`. The mode is part of the
 approved admission digest; changing it requires new approval. Do not create an
@@ -244,16 +244,16 @@ decision; waiver eligibility in an admission does not grant one.
 See [the control Bot boundary](control-bot-boundary.md) for the integration contract.
 
 ```bash
-repo-harness review round --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --reviewer-repo <linked-checkout> --herdr-endpoint <address.json> --verification <native-report> --claim-ref <claim-reference> --claim-revision <claim-sha256>
-repo-harness review status --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>
-repo-harness review close --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>
+rh review round --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --reviewer-repo <linked-checkout> --herdr-endpoint <address.json> --verification <native-report> --claim-ref <claim-reference> --claim-revision <claim-sha256>
+rh review status --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>
+rh review close --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>
 ```
 
 `review round`, `status`, `close` and `cancel` need the `peer-runtime` plugin,
 including `--launch app-terminal`. Without it, they exit 1 before loading the
 runner and print `install_plugin_unavailable` with the repair command.
-For selection `all`, run `repo-harness update`. For an explicit list, add
-`peer-runtime` with `repo-harness install --plugins <your plugins>,peer-runtime`.
+For selection `all`, run `rh update`. For an explicit list, add
+`peer-runtime` with `rh install --plugins <your plugins>,peer-runtime`.
 No migration changes your selection. `review admit`, `revoke` and `publish`
 stay in core.
 
@@ -264,7 +264,7 @@ A dedicated linked checkout hosts one fleet `deep-reasoner` task-agent in the ad
 
 ## Bot merge
 
-A local Herdr Bot runs `repo-harness publication merge` in its shell. A cloud-only Bot runs the same command in a sandbox that has repo-harness, a working `gh auth` and a checkout. It merges only when `publication.acceptance_merge` is `on` in the policy on the PR base, and it needs strict required checks and enforce_admins on the default branch. A Bot record does not grant merge permission. See [the control Bot boundary](control-bot-boundary.md#bot-modes-and-merge).
+A local Herdr Bot runs `rh publication merge` in its shell. A cloud-only Bot runs the same command in a sandbox that has repo-harness, a working `gh auth` and a checkout. It merges only when `publication.acceptance_merge` is `on` in the policy on the PR base, and it needs strict required checks and enforce_admins on the default branch. A Bot record does not grant merge permission. See [the control Bot boundary](control-bot-boundary.md#bot-modes-and-merge).
 
 
 ## Hooks
@@ -297,7 +297,7 @@ Full playbook:
 Run the operator console on the same machine as the adopted repositories:
 
 ```bash
-repo-harness operator serve
+rh operator serve
 ```
 
 The command binds to loopback only and prints the local URL. The console has
@@ -310,11 +310,11 @@ server a dedicated stdin pipe that the parent holds, and add `--exit-on-stdin-cl
 With the flag, stdin from `/dev/null` ends at once and the server exits; a TTY keeps
 it running until EOF.
 
-`repo-harness operator`, `repo-harness worktrees` and `repo-harness catch-up`
+`rh operator`, `rh worktrees` and `rh catch-up`
 need the `operator` plugin. An `all` selection includes it. Add it to an
-explicit list with `repo-harness install --plugins <your plugins>,operator`.
+explicit list with `rh install --plugins <your plugins>,operator`.
 Without the plugin, each command exits 1 and prints this repair, and no port is
-bound. `repo-harness seats`, `repo-harness quota` and `repo-harness bots` need
+bound. `rh seats`, `rh quota` and `rh bots` need
 no plugin.
 
 The approved design allows three bounded writes and nothing else. They open in
@@ -323,9 +323,9 @@ that return changes as a Draft PR, and worktree cleanup. Green worktree cleanup
 also has a terminal form:
 
 ```bash
-repo-harness worktrees list            # add --json for ids and selection digests
-repo-harness worktrees clean --ids <id,...> --expected-digest <digest>
-repo-harness worktrees path --repository <repo-id> --worktree <id>  # JSON line with the absolute path; the desktop shell uses it
+rh worktrees list            # add --json for ids and selection digests
+rh worktrees clean --ids <id,...> --expected-digest <digest>
+rh worktrees path --repository <repo-id> --worktree <id>  # JSON line with the absolute path; the desktop shell uses it
 ```
  Each write passes an origin check, a write token and a
 precondition check, and is audited before it runs. Host projection (install,
@@ -339,8 +339,8 @@ UX: [`docs/prds/DESIGN-operator-console-uiux.md`](prds/DESIGN-operator-console-u
 Read committed architecture facts or export a module review prompt:
 
 ```bash
-repo-harness module list --json
-repo-harness module review-prompt capability.runtime-harness.task-agent-host --json
+rh module list --json
+rh module review-prompt capability.runtime-harness.task-agent-host --json
 ```
 
 The prompt uses HEAD content. It reports uncommitted paths and their content
@@ -351,21 +351,21 @@ shards arrive. Diff mode requires both `--base <rev>` and `--head <rev>`.
 
 ## MCP connector
 
-As an optional sidecar, `repo-harness mcp serve` exposes workflow artifacts to a
+As an optional sidecar, `rh mcp serve` exposes workflow artifacts to a
 local MCP client over stdio through the default `planner` profile or the
 `executor` profile. The client reads real repo state and writes PRDs under
 `docs/prds/`. It has no default source-code write access, no shell and no runner. The
 task owner directs an explicitly addressed Herdr agent to execute the task goal.
 
 ```bash
-repo-harness mcp serve --repo . --profile planner
-repo-harness mcp doctor --repo .
+rh mcp serve --repo . --profile planner
+rh mcp doctor --repo .
 ```
 
 Both commands need the `mcp` plugin. An `all` selection includes it. Add it to
-an explicit list with `repo-harness install --plugins <your plugins>,mcp`.
+an explicit list with `rh install --plugins <your plugins>,mcp`.
 Without the plugin, each command exits 1 and prints this repair.
-`repo-harness mcp access set` needs no plugin.
+`rh mcp access set` needs no plugin.
 
 General repo reader/writer tools, snapshot and index consistency, and server profiles:
 [`general-repo-mcp.md`](reference-configs/general-repo-mcp.md).
@@ -429,11 +429,11 @@ does not vendor or edit them. The seven fleet personas remain separate from skil
 Ordinary tasks use a scoped brief and PR description. PRD/Sprint/Goal are optional
 product workflows. `merge-gate` is a CLI judge and has no packaged SKILL.md.
 
-`repo-harness init` is for an existing repo; `repo-harness-setup`'s scaffold mode
+`rh init` is for an existing repo; `repo-harness-setup`'s scaffold mode
 creates a new project or module. `hooks-init`, `docs-init`, and
 `create-project-dirs` are internal steps, not public commands. Per-mode routing
 boundaries: [`agentic-development-flow.md`](reference-configs/agentic-development-flow.md)
-and `repo-harness docs show harness-overview`.
+and `rh docs show harness-overview`.
 
 ## Maintainer reference
 
@@ -457,18 +457,18 @@ Runtime routing regressions stay in affected tests. The old routing eval gate is
 ```bash
 bun run check:ci                    # the whole gate
 bun run check:context-map           # .ai/context drift against ArchContext nodes
-repo-harness docs list              # runtime reference docs, resolved from the package
-repo-harness docs show harness-overview
+rh docs list              # runtime reference docs, resolved from the package
+rh docs show harness-overview
 ```
 
 Hook handler changes go to `src/cli/hook/`. Operator helpers live in
-`scripts/` and run through `repo-harness run <helper>`. Reference docs are canonical under
+`scripts/` and run through `rh run <helper>`. Reference docs are canonical under
 `assets/reference-configs/` and projected into `docs/reference-configs/`;
 `bun run check:reference-configs` verifies that projection.
 
 ## Optional strategic reflection
 
-`repo-harness strategy status|context|validate` exports project-local evidence
+`rh strategy status|context|validate` exports project-local evidence
 and validates inert proposals. It is off by default and never dispatches work.
 The optional Skill needs an explicit `strategy install-skill` command. See
 [Strategy and progressive memory](reference-configs/strategy.md).

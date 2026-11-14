@@ -59,7 +59,7 @@ function input(overrides: Partial<SetupProjectionInput> = {}): SetupProjectionIn
       { id: 'doctor.cli-version', title: 'repo-harness CLI version', status: 'ok', detail: '0.21.1' },
     ],
     check_commands: new Map([
-      ['status.adapter.codex', 'repo-harness install --target codex --location global'],
+      ['status.adapter.codex', 'rh install --target codex --location global'],
       ['global-rules.codex', undefined],
       ['doctor.codex-trust-state', `curl -H "Authorization: Bearer ${FAKE_SECRETS[1]}"`],
     ]),
@@ -122,7 +122,7 @@ describe('setup snapshot projection', () => {
     expect(snapshot.status).toBe('ready');
     expect(snapshot.reason).toBeNull();
     expect(snapshot.checks.map(check => [check.id, check.status, check.command])).toEqual([
-      ['status.adapter.codex', 'needs_agent', 'repo-harness install --target codex --location global'],
+      ['status.adapter.codex', 'needs_agent', 'rh install --target codex --location global'],
       ['tooling.herdr', 'warn', null],
       ['doctor.codex-trust-state', 'warn', '[configured]'],
       ['global-rules.codex', 'needs_agent', null],

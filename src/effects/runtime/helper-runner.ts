@@ -383,7 +383,7 @@ export function runHelper(opts: RunHelperOptions): RunHelperResult {
       exitCode: 2,
       reason: 'missing-helper',
       helper: opts.helper,
-      stderr: `repo-harness run: unknown helper "${opts.helper}"`,
+      stderr: `rh run: unknown helper "${opts.helper}"`,
     };
   }
 

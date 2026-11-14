@@ -33,7 +33,7 @@ function withLogLock<T>(repoRoot: string, operation: () => T): T {
  */
 export class UnterminatedEvidenceLogError extends Error {
   constructor(readonly logPath: string, operation: string) {
-    super(`${operation}: store at ${logPath} ends with an unterminated record; run a recovery read first, for example \`repo-harness run decision-trail render\``);
+    super(`${operation}: store at ${logPath} ends with an unterminated record; run a recovery read first, for example \`rh run decision-trail render\``);
     this.name = "UnterminatedEvidenceLogError";
   }
 }
@@ -45,7 +45,7 @@ export class UnterminatedEvidenceLogError extends Error {
  */
 export class CorruptEvidenceLogError extends Error {
   constructor(readonly logPath: string, operation: string, readonly line: number) {
-    super(`${operation}: store at ${logPath} has a corrupt record at line ${line}; run a recovery read first, for example \`repo-harness run decision-trail render\``);
+    super(`${operation}: store at ${logPath} has a corrupt record at line ${line}; run a recovery read first, for example \`rh run decision-trail render\``);
     this.name = "CorruptEvidenceLogError";
   }
 }

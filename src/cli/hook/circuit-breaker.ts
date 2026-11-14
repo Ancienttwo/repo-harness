@@ -102,7 +102,7 @@ function isPersistedCircuitEntry(value: unknown): value is PersistedCircuitEntry
 }
 
 function cleanupHint(repoRoot: string): string {
-  return `run the one-shot cleanup: repo-harness run evidence-gc --repo ${repoRoot}`;
+  return `run the one-shot cleanup: rh run evidence-gc --repo ${repoRoot}`;
 }
 
 function readState(repoRoot: string): PersistedCircuitState | null {

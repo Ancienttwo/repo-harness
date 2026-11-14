@@ -329,7 +329,7 @@ describe("issue-flow facade: board protocol surface ships with the package", () 
 
   test("acceptor routes publication through review publish", () => {
     const acceptor = read("acceptor.md");
-    expect(acceptor).toContain("repo-harness review publish");
+    expect(acceptor).toContain("rh review publish");
     expect(acceptor).toContain("repo-harness-review-publish-receipt");
     expect(acceptor).toContain("model_relation");
   });

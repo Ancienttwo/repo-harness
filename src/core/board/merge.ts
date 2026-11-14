@@ -2,7 +2,7 @@ import type { BoardPullRequestV1, BoardRequiredCheckV1, BoardV1 } from './board'
 import { protocolComments, type BoardCommentPageV1 } from './source';
 
 /**
- * `repo-harness board merge` eligibility. A GitHub comment is a record, never
+ * `rh board merge` eligibility. A GitHub comment is a record, never
  * an instruction: the orchestrator starts the command locally after a joint
  * decision for the batch, and the command reads the plan, acceptance and hold
  * records as data. A hold record only narrows what may merge.

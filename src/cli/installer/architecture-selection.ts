@@ -5,7 +5,7 @@ import { enabledPlugins, installProfileStatePath, InstallStateError, readRecorde
 /**
  * The recorded install selection as one process root reads it, once. No
  * install state is "not selected": a source checkout or a fresh HOME runs
- * core only until `repo-harness install` records a selection.
+ * core only until `rh install` records a selection.
  */
 export type RecordedSelection =
   | { readonly status: 'recorded'; readonly selection: PluginSelection; readonly plugins: readonly PluginId[] }
@@ -84,5 +84,5 @@ export async function registerSelectedArchitecturePorts(selection: RecordedSelec
 export function assertPluginCommandSelected(selection: RecordedSelection, id: PluginId, command: string, env: NodeJS.ProcessEnv = process.env): void {
   if (pluginSelected(selection, id)) return;
   if (selection.status === 'unreadable') throw selection.error;
-  throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env), `install_plugin_unavailable: repo-harness ${command} needs the ${id} plugin: ${notSelectedMessage(selection, id)}`);
+  throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env), `install_plugin_unavailable: rh ${command} needs the ${id} plugin: ${notSelectedMessage(selection, id)}`);
 }

@@ -9,7 +9,7 @@ repo-local harness.
 2. Read `.ai/harness/policy.json` and resolve the optional `operations.deploy_sql` contract before inspecting SQL paths. When absent, use `deploy/sql/` with `ordered4` names; when present, its roots, naming modes, and `invariant_file` are the sole alternate layout authority.
 3. Check the tracked deployment surface: `deploy/`; roots named by `operations.deploy_sql.roots` when configured, otherwise `deploy/sql/`; `deploy/env/.env.example`; release, submission, or runbook files when present.
 4. Check the private operations boundary: `_ops/` is ignored; real env files, secrets, provider state, artifacts, logs, and scratch files stay under `_ops/`.
-5. Run `repo-harness run check-deploy-sql-order`.
+5. Run `rh run check-deploy-sql-order`.
 6. Report readiness gaps as concrete missing or misplaced files, not as an app deployment attempt.
 
 ## Failure Modes

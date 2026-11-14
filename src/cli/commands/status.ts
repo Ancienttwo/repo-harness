@@ -1,5 +1,5 @@
 /**
- * `repo-harness status` — read-only summary of CLI install state + route coverage.
+ * `rh status` — read-only summary of CLI install state + route coverage.
  *
  * Reports per-host install detection (target.detect), managed-entry count vs
  * expected, exact managed projection drift, route registry summary, and

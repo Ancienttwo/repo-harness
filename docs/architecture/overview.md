@@ -72,7 +72,7 @@ in the owning capability page and
 - Read architecture documents on demand. Update real boundaries explicitly.
 - Fact priority: current source > model > documents. When a page conflicts with
   `src/`, `scripts/` or `assets/`, the source wins.
-- `repo-harness run capability-resolver` routes through the policy-selected
+- `rh run capability-resolver` routes through the policy-selected
   resolver. A provider failure is not permission to fall back to registry
   matching.
 - Semantic diagrams live as Mermaid fenced blocks in the relevant capability

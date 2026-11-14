@@ -879,7 +879,7 @@ function resolveAndCommitEffectiveState(
 
 /**
  * The only `state_version` publisher. Its production caller is
- * `repo-harness state resolve`; every other reader uses
+ * `rh state resolve`; every other reader uses
  * `resolveEffectiveStateReadOnly`.
  */
 export function resolveEffectiveState(

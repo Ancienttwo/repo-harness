@@ -224,7 +224,7 @@ describe('Stop architecture debt notice', () => {
     expect(first.stdout).toContain('Run:');
     expect(Buffer.byteLength(first.stdout)).toBeLessThanOrEqual(800);
     expect(first.stderr).toBe('');
-    expect(first.systemMessage).toBe(`Architecture: 1 debt item in ${NOTICE_CAPABILITY}; run repo-harness architecture-debt --json.`);
+    expect(first.systemMessage).toBe(`Architecture: 1 debt item in ${NOTICE_CAPABILITY}; run rh architecture-debt --json.`);
     expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
     expect(git(cwd, ['status', '--porcelain'])).toBe('M src/module/read.ts');
   });
@@ -255,7 +255,7 @@ describe('Stop architecture debt notice', () => {
     expect(stop(cwd).systemMessage).toContain('Architecture: 1 debt item');
     fixtureWrite(cwd, 'docs/architecture/modules/test/module.md', '## 3. Decisions\nRead `src/module/read.ts:998` and `src/module/read.ts:997`.\n');
     const changed = stop(cwd);
-    expect(changed.systemMessage).toBe(`Architecture: 2 debt items in ${NOTICE_CAPABILITY}; run repo-harness architecture-debt --json.`);
+    expect(changed.systemMessage).toBe(`Architecture: 2 debt items in ${NOTICE_CAPABILITY}; run rh architecture-debt --json.`);
     expect(changed.stdout).toContain('[ArchitectureDebt] 2 new');
     expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
   });
@@ -286,7 +286,7 @@ describe('Stop architecture debt notice', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toStartWith('[Architecture] notice unavailable (error): ');
     expect(result.stdout).not.toContain('[ArchitectureDebt]');
-    expect(result.systemMessage).toBe('Architecture: notice unavailable (error); run repo-harness architecture-debt --json.');
+    expect(result.systemMessage).toBe('Architecture: notice unavailable (error); run rh architecture-debt --json.');
     expect(result.stderr.trim().split('\n')).toHaveLength(1);
     expect(result.stderr).toContain('architecture notice unavailable');
     expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(false);

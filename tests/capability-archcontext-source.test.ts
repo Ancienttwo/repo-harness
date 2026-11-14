@@ -269,7 +269,7 @@ describe("capability source: archcontext file-source parity", () => {
         const refused = runStandaloneResolver(projectedCwd, [...command]);
         expect(refused.status, command.join(" ")).toBe(2);
         expect(refused.stdout).toBe("");
-        expect(refused.stderr).toContain('capability_source "archcontext" needs the packaged resolver; run repo-harness run capability-resolver');
+        expect(refused.stderr).toContain('capability_source "archcontext" needs the packaged resolver; run rh run capability-resolver');
       }
     } finally {
       rmSync(projectedCwd, { recursive: true, force: true });
@@ -471,7 +471,7 @@ describe("capability source: no fallback in either direction", () => {
         board: pathOwners({ repo_root: process.cwd() }, [{ state: "open", files: ["apps/web/page.tsx"] }]),
       });
       const missing = consumers();
-      declareArchitectureAbsent("ARCHITECTURE_PLUGIN_NOT_SELECTED", "the architecture plugin is not selected; run: repo-harness install");
+      declareArchitectureAbsent("ARCHITECTURE_PLUGIN_NOT_SELECTED", "the architecture plugin is not selected; run: rh install");
       console.log(JSON.stringify({ otherVersion, missing, notSelected: consumers() }));`;
     try {
       const res = spawnSync("bun", ["-e", script], { cwd, encoding: "utf-8" });
@@ -481,7 +481,7 @@ describe("capability source: no fallback in either direction", () => {
       // A missing provider fails each consumer; an unselected plugin is inert in the hook and doctor rows.
       for (const [rows, code, message] of [
         [missing, "ARCHITECTURE_PROVIDER_UNAVAILABLE", "no architecture ownership provider is registered in this process"],
-        [notSelected, "ARCHITECTURE_PLUGIN_NOT_SELECTED", "the architecture plugin is not selected; run: repo-harness install"],
+        [notSelected, "ARCHITECTURE_PLUGIN_NOT_SELECTED", "the architecture plugin is not selected; run: rh install"],
       ] as const) {
         expect(rows.stillUnavailable, code).toBe("unavailable");
         for (const row of ["effectiveState", "capabilityContext"] as const) expect(rows[row], `${code} ${row}`).toContain(message);
@@ -491,8 +491,8 @@ describe("capability source: no fallback in either direction", () => {
       expect(missing.doctor).toEqual([{ id: "codegraph", describe: "CodeGraph checks", status: "fail", detail: "no architecture codegraph provider is registered in this process" }]);
       expect(notSelected.notice).toEqual({});
       expect(notSelected.doctor).toEqual([
-        { id: "codegraph", describe: "CodeGraph checks", status: "na", detail: "the architecture plugin is not selected; run: repo-harness install" },
-        { id: "architecture-projection", describe: "Host architecture projection configuration", status: "na", detail: "not selected; the architecture plugin is not selected; run: repo-harness install" },
+        { id: "codegraph", describe: "CodeGraph checks", status: "na", detail: "the architecture plugin is not selected; run: rh install" },
+        { id: "architecture-projection", describe: "Host architecture projection configuration", status: "na", detail: "not selected; the architecture plugin is not selected; run: rh install" },
       ]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });

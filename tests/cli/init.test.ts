@@ -227,7 +227,7 @@ describe("init command", () => {
       expect(applied.steps.find((step) => step.step === "global architecture projection")).toBeUndefined();
       expect(applied.steps.find((step) => step.step === "architecture projection readiness")).toMatchObject({
         status: "skipped",
-        detail: expect.stringContaining("run repo-harness update"),
+        detail: expect.stringContaining("run rh update"),
       });
       const disabled = JSON.stringify({
         architecture: { projection_provider: "disabled", projection_apply: "disabled" },
@@ -247,7 +247,7 @@ describe("init command", () => {
       const policy = { ...JSON.parse(readFileSync(policyPath, "utf8")), context: { capability_source: "archcontext" } };
       writeFileSync(policyPath, JSON.stringify(policy));
       expect(() => runInit({ ...options, plugins: ["product"] }))
-        .toThrow(`${policyPath} sets context.capability_source: archcontext, which needs the architecture plugin; run: repo-harness install --plugins architecture,product`);
+        .toThrow(`${policyPath} sets context.capability_source: archcontext, which needs the architecture plugin; run: rh install --plugins architecture,product`);
       expect(readFileSync(policyPath, "utf8")).toBe(JSON.stringify(policy));
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -328,7 +328,7 @@ describe("init command", () => {
       expect(result.steps.find((step) => step.step === "register repo harness repo")?.status).toBe("ok");
       expect(result.steps.find((step) => step.step === "required Herdr skill")).toMatchObject({
         status: "skipped",
-        detail: "missing for claude,codex; run: repo-harness update --target both",
+        detail: "missing for claude,codex; run: rh update --target both",
       });
       const after = snapshotTree(home);
       expect(Object.keys(after).filter((path) => path !== registry)).toEqual(Object.keys(before));
@@ -457,7 +457,7 @@ describe("init command", () => {
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === "refresh handoff packet")).toBeUndefined();
       expect(result.steps.find((step) => step.step === "verify repo harness")?.status).toBe("ok");
-      expect(result.steps.find((step) => step.step === "verify repo harness")?.detail).toBe("repo-harness run check-context-files");
+      expect(result.steps.find((step) => step.step === "verify repo harness")?.detail).toBe("rh run check-context-files");
       expect(existsSync(join(repo, ".ai", "harness", "active-plan"))).toBe(false);
       expect(existsSync(join(repo, ".ai", "harness", "handoff"))).toBe(false);
       expect(existsSync(join(repo, ".ai", "harness", "handoff", "current.md"))).toBe(false);
@@ -593,7 +593,7 @@ describe("init command", () => {
     });
 
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain("Usage: repo-harness init");
+    expect(res.stdout).toContain("Usage: rh init");
     expect(res.stdout).toContain("--repo <path>");
     expect(res.stdout).toContain("--dry-run");
     expect(res.stdout).not.toContain("--experimental-ts-apply");
@@ -722,7 +722,7 @@ describe("init command", () => {
       expect(codegraphStep?.status).toBe("failed");
       expect(codegraphStep?.detail).toContain("index unavailable");
       expect(codegraphStep?.stderr).toContain("install with: bun add -g @colbymchenry/codegraph");
-      expect(codegraphStep?.stderr).toContain("repo-harness tools configure codegraph --target codex --location global");
+      expect(codegraphStep?.stderr).toContain("rh tools configure codegraph --target codex --location global");
       expect(codegraphStep?.stderr).toContain("then run: codegraph init -i . && codegraph sync .");
     } finally {
       rmSync(tmp, { recursive: true, force: true });

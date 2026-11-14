@@ -39,7 +39,7 @@
     "references/pm-boundary.md"
   ],
   "bin": {
-    "repo-harness": "src/cli/index.ts",
+    "rh": "src/cli/index.ts",
     "repo-harness-hook": "dist/hook-entry.js"
   },
   "engines": {
@@ -69,15 +69,15 @@
     "check:release": "bash scripts/check-npm-release.sh",
     "check:release-published": "bash scripts/check-release-published.sh",
     "smoke:tarball-install": "bash scripts/check-tarball-install-smoke.sh",
-    "check:brain": "repo-harness brain check",
-    "check:context-files": "repo-harness run check-context-files",
-    "check:deploy-sql": "repo-harness run check-deploy-sql-order",
+    "check:brain": "rh brain check",
+    "check:context-files": "rh run check-context-files",
+    "check:deploy-sql": "rh run check-deploy-sql-order",
     "build:hook-bundle": "bun build src/cli/hook-entry.ts --target=bun --outfile dist/hook-entry.js --define REPO_HARNESS_SINGLE_FILE_BUNDLE=true && head -1 dist/hook-entry.js | grep -q '^#!/usr/bin/env bun' && ! grep -q REPO_HARNESS_SINGLE_FILE_BUNDLE dist/hook-entry.js",
     "build:operator-web": "vite build --config vite.operator.config.ts",
     "dev:operator": "vite --config vite.operator.config.ts",
     "prepack": "bun run build:hook-bundle 1>&2 && bun run build:oar-review-host 1>&2",
     "prepublishOnly": "bash scripts/check-npm-release.sh --prepublish",
-    "sync:brain": "repo-harness brain sync",
+    "sync:brain": "rh brain sync",
     "sync:codex-installed": "bash scripts/sync-codex-installed-copies.sh",
     "build:oar-review-host": "bun build src/effects/review-runner/task-oar-host.ts --target=node --format=esm --packages=external --outfile=dist/oar-review-host.js"
   },

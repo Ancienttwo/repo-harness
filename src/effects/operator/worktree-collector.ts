@@ -15,7 +15,7 @@ export const emptyWorktreeSizeCache = (): WorktreeSizeCache => ({ repositories: 
 
 /**
  * One collection cycle: a child per registered repository and one orphan
- * child. The serve collector and `repo-harness worktrees list` both run it.
+ * child. The serve collector and `rh worktrees list` both run it.
  */
 export async function collectWorktreesOnce(options: { env: NodeJS.ProcessEnv; run_process: SetupProcessRunner; signal: AbortSignal; sizes: WorktreeSizeCache; closed?: () => boolean }): Promise<{ snapshot: WorktreesSnapshot; sizes: WorktreeSizeCache } | null> {
   const { env, signal } = options;

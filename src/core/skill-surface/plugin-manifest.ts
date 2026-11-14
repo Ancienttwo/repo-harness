@@ -91,17 +91,17 @@ export function ownerEnabled(owner: SurfaceOwner, plugins: readonly PluginId[]):
 }
 
 /** Refreshes the recorded selection; a recorded `all` gains every plugin that this host can run. */
-export const UPDATE_COMMAND = "repo-harness update";
+export const UPDATE_COMMAND = "rh update";
 
 /**
  * The install command that records this selection: `all` stays `all` (a bare
  * install, so the set keeps growing), and a list stays that exact list.
  */
 export function installSelectionCommand(selection: PluginSelection): string {
-  if (selection === "all") return "repo-harness install";
+  if (selection === "all") return "rh install";
   return selection.length === 0
-    ? "repo-harness install --no-plugins"
-    : `repo-harness install --plugins ${selection.join(",")}`;
+    ? "rh install --no-plugins"
+    : `rh install --plugins ${selection.join(",")}`;
 }
 
 /** `all`, the explicit list, or `(core only)`. */

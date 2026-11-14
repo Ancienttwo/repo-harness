@@ -33,8 +33,8 @@ irm https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.ps1 
 如果 Bun 已经在 PATH 上，也可以直接运行：
 
 ```bash
-bunx repo-harness@latest install     # Bun one-shot bootstrap
-npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
+bunx -p repo-harness@latest rh install     # Bun one-shot bootstrap
+npx -y -p repo-harness@latest rh install   # npx fallback; the CLI still runs on Bun
 ```
 
 ## 第一条命令
@@ -42,8 +42,8 @@ npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
 在目标仓库根目录先预览，再应用：
 
 ```bash
-repo-harness init --dry-run
-repo-harness init
+rh init --dry-run
+rh init
 ```
 
 `--dry-run` 只报告将要创建或刷新的文件，不写入任何文件。

@@ -737,7 +737,7 @@ describe('package-local ArchContext projection provider', () => {
     const result = projectionCli(f, { schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'projection.run', data: declined }, declined.requestId);
     expect(result.status).toBe(1);
     expect(JSON.parse(result.stdout).majorChangeAcceptance).toBe('declined-unprovable-proof');
-    expect(result.stderr).toContain('next: repo-harness architecture-debt --json');
+    expect(result.stderr).toContain('next: rh architecture-debt --json');
     expect(result.stderr).not.toMatch(/next: archctx /);
     expect(result.stderr.trim().split('\n').filter(line => line.startsWith('archctx '))).toHaveLength(1);
   });
@@ -753,7 +753,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(result.status).toBe(1);
     expect(JSON.parse(result.stdout).humanActions[0].reasonCode).toBe('unresolved-major-change');
     expect(result.stderr).toContain('unresolved-major-change [capability.test.core]');
-    expect(result.stderr).toContain('repo-harness architecture-projection publish status');
+    expect(result.stderr).toContain('rh architecture-projection publish status');
     expect(result.stderr).toContain('rolling PR');
     expect(result.stderr).not.toContain('architecture-projection apply');
   });
@@ -822,7 +822,7 @@ describe('package-local ArchContext projection provider', () => {
     const missing = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, options);
     expect(missing.modelAuthority.source).toBe('unadopted');
     expect(missing.projectionProvider.state).toBe('missing');
-    expect(missing.projectionProvider.reason).toContain('run repo-harness init');
+    expect(missing.projectionProvider.reason).toContain('run rh init');
     writeFileSync(join(f.repoRoot, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'archcontext' } }));
     const run: RunArchctxProcess = (_bin, args) => ({ status: 0, signal: null, stderr: '', stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : {
       schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.status', data: { running: true, versionUnsupported: { reason: 'product-version-mismatch', expected: ARCHCTX_REQUIRED_VERSION, received: '0.6.3', action: 'upgrade-archctx-runtime', command: 'archctx daemon upgrade' } },
@@ -869,7 +869,7 @@ describe('package-local ArchContext projection provider', () => {
     const unavailable = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, options);
     expect(unavailable.codeFacts).toEqual({ requirement: 'required', state: facts.state, issues: [], reasonCode: facts.reasonCode, message: facts.message });
     expect(unavailable.apply.enabled).toBe(false);
-    expect(unavailable.next).toBe('repo-harness update');
+    expect(unavailable.next).toBe('rh update');
   });
 
   test('a ready doctor keeps the adoption step for an incomplete model', () => {
@@ -1231,7 +1231,7 @@ describe('package-local ArchContext projection provider', () => {
   test.each([
     ['no state dir', undefined, 'status', 'ARCHCONTEXT_STATE_DIR must be an explicit absolute path'],
     ['a relative state dir', 'writer-state', 'status', 'ARCHCONTEXT_STATE_DIR must be an explicit absolute path'],
-    ['an unknown mode', 'absolute', 'push-main', 'Usage: repo-harness architecture-projection publish <status|once|follow>'],
+    ['an unknown mode', 'absolute', 'push-main', 'Usage: rh architecture-projection publish <status|once|follow>'],
   ])('publish refuses %s without creating writer state', (_case, stateDir, mode, message) => {
     const cwd = mkdtempSync(join(tmpdir(), 'repo-harness-publish-refusal-'));
     roots.push(cwd);

@@ -98,7 +98,7 @@ describe('Bot registry', () => {
     } finally { h.cleanup(); }
   });
 
-  test('`repo-harness bots register` writes the record and reports errors as JSON', () => {
+  test('`rh bots register` writes the record and reports errors as JSON', () => {
     const h = home();
     try {
       const run = (...args: string[]) => Bun.spawnSync(['bun', 'src/cli/index.ts', 'bots', 'register', ...args, '--json'], { cwd: process.cwd(), env: { ...process.env, ...h.env } });

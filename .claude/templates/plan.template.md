@@ -52,7 +52,7 @@ Record only artifacts selected for this task. Omit unused optional contract entr
 ## Task Contracts
 - Contract file: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
 - Template: `.claude/templates/contract.template.md`
-- Verification command: `repo-harness run verify-sprint --test <affected-test-file>` (repeat `--test` for each selected existing test; omit it for a typecheck-only task).
+- Verification command: `rh run verify-sprint --test <affected-test-file>` (repeat `--test` for each selected existing test; omit it for a typecheck-only task).
 - Planning selection is metadata only. Do not infer active execution from an active-plan marker or the latest non-archived plan.
 
 ## Handoff

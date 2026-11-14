@@ -147,7 +147,7 @@ cd "$APP_DIR"
 bun init -y >/dev/null
 bun add "$TARBALL_PATH" "$TMP_DIR/$CONSOLE_TARBALL" >/dev/null
 
-CLI="$APP_DIR/node_modules/.bin/repo-harness"
+CLI="$APP_DIR/node_modules/.bin/rh"
 HOOK="$APP_DIR/node_modules/.bin/repo-harness-hook"
 # This smoke verifies the installed package runtime even when the operator shell
 # is configured to route development CLIs to another source checkout.
@@ -270,7 +270,7 @@ stop_operator_smoke() {
 
 VERSION="$("$CLI" --version)"
 if [[ "$VERSION" != "$PACKAGE_VERSION" ]]; then
-  echo "[tarball-smoke] ERROR: repo-harness --version returned $VERSION, expected $PACKAGE_VERSION" >&2
+  echo "[tarball-smoke] ERROR: rh --version returned $VERSION, expected $PACKAGE_VERSION" >&2
   exit 1
 fi
 
@@ -414,7 +414,7 @@ if [[ -n "$(git -C "$TARGET_REPO" status --porcelain)" ]]; then
 fi
 
 if ! "$CLI" run verify-sprint --help >/dev/null; then
-  echo "[tarball-smoke] ERROR: packaged 'repo-harness run verify-sprint --help' failed (run dispatcher / helper lookup / bin startup broken)" >&2
+  echo "[tarball-smoke] ERROR: packaged 'rh run verify-sprint --help' failed (run dispatcher / helper lookup / bin startup broken)" >&2
   exit 1
 fi
 
@@ -622,7 +622,7 @@ const refused = run(...serve);
 if (refused.status !== 1 || refused.stdout !== '' || refused.loaded !== 0) {
   fail(`mcp serve with selection [] returned ${refused.status}, ${refused.stdout.length} stdout bytes and ${refused.loaded} MCP modules`);
 }
-if (!refused.stderr.includes('install_plugin_unavailable: ') || !refused.stderr.includes('run: repo-harness install --plugins mcp\n')) {
+if (!refused.stderr.includes('install_plugin_unavailable: ') || !refused.stderr.includes('run: rh install --plugins mcp\n')) {
   fail(`mcp serve with selection [] did not print the code and the repair: ${refused.stderr}`);
 }
 const status = run('status', '--json');
@@ -661,7 +661,7 @@ const refused = cli(...serve);
 if (refused.status !== 1 || refused.stdout !== '' || refused.loaded !== 0) {
   fail(`operator serve with selection [] returned ${refused.status}, ${refused.stdout.length} stdout bytes and ${refused.loaded} Operator modules`);
 }
-if (!refused.stderr.includes('install_plugin_unavailable: ') || !refused.stderr.includes('run: repo-harness install --plugins operator\n')) {
+if (!refused.stderr.includes('install_plugin_unavailable: ') || !refused.stderr.includes('run: rh install --plugins operator\n')) {
   fail(`operator serve with selection [] did not print the code and the repair: ${refused.stderr}`);
 }
 const core = [
@@ -730,7 +730,7 @@ const selectors = ['--repository-id', 'R', '--issue-id', 'I', '--campaign-id', '
 for (const args of [['review', 'status', ...selectors], ['herdr', 'notify', 'start'], ['events', 'install']]) {
   const result = cli(...args);
   if (result.status !== 1 || result.stdout !== '' || result.loaded !== 0
-    || !result.stderr.includes('install_plugin_unavailable: ') || !result.stderr.includes('run: repo-harness install --plugins peer-runtime\n')) {
+    || !result.stderr.includes('install_plugin_unavailable: ') || !result.stderr.includes('run: rh install --plugins peer-runtime\n')) {
     fail(`${args.join(' ')} did not refuse before loading: ${JSON.stringify(result)}`);
   }
 }
@@ -758,7 +758,7 @@ const bundled = bundleModules.filter(line => new RegExp(owned).test(`/${line.sli
 if (bundled.length) fail(`hook bundle contains peer-runtime: ${bundled.join(', ')}`);
 writeFileSync(statePath, JSON.stringify({ ...state, plugins: [], selection: 'all' }));
 const repair = cli('herdr', 'notify', 'start');
-if (repair.status !== 1 || repair.stdout !== '' || repair.loaded !== 0 || !repair.stderr.includes('run: repo-harness update\n')) fail(`all repair changed the selection: ${repair.stderr}`);
+if (repair.status !== 1 || repair.stdout !== '' || repair.loaded !== 0 || !repair.stderr.includes('run: rh update\n')) fail(`all repair changed the selection: ${repair.stderr}`);
 writeFileSync(statePath, JSON.stringify(state));
 console.log(`[tarball-smoke] OK: peer-runtime loads ${selected.loaded} modules when selected; refusals, core commands, hook routes and hook bundle load 0.`);
 JS_EOF

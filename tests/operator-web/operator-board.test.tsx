@@ -292,7 +292,7 @@ describe('board page', () => {
       await settle();
       const refusal = document.querySelector('[data-board-parents-reason]')!;
       expect(refusal.getAttribute('data-board-parents-reason')).toBe(reason);
-      expect(refusal.textContent).toContain('repo-harness board parents --json');
+      expect(refusal.textContent).toContain('rh board parents --json');
       expect(rows('[data-board-parent-row]')).toHaveLength(0);
       expect(document.body.textContent).not.toContain('No open parent issue');
       await act(async () => root?.unmount());
@@ -626,7 +626,7 @@ describe('board page', () => {
     await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'unavailable', reason: 'board_collect_failed' }) })} />);
     await settle();
     expect(document.querySelector('[data-board-reason]')?.getAttribute('data-board-reason')).toBe('board_collect_failed');
-    expect(document.querySelector('[data-board-reason]')?.textContent).toContain('repo-harness board --parent 1474 --json');
+    expect(document.querySelector('[data-board-reason]')?.textContent).toContain('rh board --parent 1474 --json');
     expect(document.querySelector('[data-freshness-source="board"]')?.getAttribute('data-freshness')).toBe('failed');
     await act(async () => root?.unmount());
 
@@ -660,7 +660,7 @@ describe('board page', () => {
     await act(async () => root?.unmount());
     await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: { ...BOARD, execution: { status: 'unavailable', reason: 'no_seat_terminals' } } }) })} />);
     await settle();
-    expect(document.querySelector('[data-board-banner="execution"]')?.textContent).toContain('No hc terminal carries the seat labels of this parent, so the seat columns are empty. Start each seat with the start rows in herdr-notify.md: the argv of `repo-harness seats argv <seat> --repository-id <id>` labels its own terminal.');
+    expect(document.querySelector('[data-board-banner="execution"]')?.textContent).toContain('No hc terminal carries the seat labels of this parent, so the seat columns are empty. Start each seat with the start rows in herdr-notify.md: the argv of `rh seats argv <seat> --repository-id <id>` labels its own terminal.');
   });
 
   test('the board reader decodes the body with the core decoder and keeps each route refusal; any other answer is unreachable', async () => {
@@ -849,7 +849,7 @@ describe('board page', () => {
     expect(stale.querySelector('[data-command]')).toBeNull();
     await act(async () => stale.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click());
     expect(Array.from(stale.querySelectorAll('[data-command] code')).map(code => code.textContent)).toEqual([
-      'repo-harness fleet prune', 'repo-harness fleet prune --apply --expected-revision <digest>']);
+      'rh fleet prune', 'rh fleet prune --apply --expected-revision <digest>']);
     expect(stale.textContent).toContain('without a backup');
     await act(async () => row(site)!.click());
     expect(window.location.hash).toBe('#board');
@@ -1522,7 +1522,7 @@ describe('board office (#1755)', () => {
       expect(rows('[data-board-office="room"] [data-board-parent-row]').map(row => Number(row.getAttribute('data-board-parent-row')))).toEqual(joinBoardParents(PARENTS, seatsOf(board)).parents.map(parent => parent.number));
       const failure = document.querySelector('[data-board-office="room"] [data-board-reason]');
       expect(failure?.getAttribute('data-board-reason')).toBe('board_collect_failed');
-      expect(failure?.textContent).toContain('repo-harness board --parent 1474 --json');
+      expect(failure?.textContent).toContain('rh board --parent 1474 --json');
       await act(async () => root?.unmount());
     }
   });
@@ -1538,10 +1538,10 @@ describe('board office (#1755)', () => {
       rows(`[data-office-hit="${hit}"]`)[0]!.click();
     };
     for (const [hit, eyebrow, text, command] of [
-      ['tray', 'BACKLOG', '#1477Held: waits for #1476', 'repo-harness board --parent 1474'],
+      ['tray', 'BACKLOG', '#1477Held: waits for #1476', 'rh board --parent 1474'],
       ['door', 'MAIN', 'Merge modeacceptance_merge off', 'gh pr list --base main --state merged --limit 5'],
-      ['board', 'ORCHESTRATOR', 'coordinator · integrator', 'repo-harness board --parent 1474'],
-      ['board', 'ORCHESTRATOR', 'Planplan r1', 'repo-harness board --parent 1474'],
+      ['board', 'ORCHESTRATOR', 'coordinator · integrator', 'rh board --parent 1474'],
+      ['board', 'ORCHESTRATOR', 'Planplan r1', 'rh board --parent 1474'],
     ] as const) {
       await act(async () => panel(hit));
       const shown = document.querySelector('[data-office-panel]')!;
@@ -1713,7 +1713,7 @@ describe('board office (#1755)', () => {
     expect(rows('.board-office__desk-label').map(label => label.textContent)).toEqual(Array.from({ length: 8 }, (_, index) => `Seat ${index + 1}Free desk`));
     expect(document.querySelector('.board-office__scene[data-night]')).not.toBeNull();
     expect(document.querySelector('[data-feed-empty]')?.textContent).toBe('No seat on duty');
-    expect(document.querySelector('[data-office-panel] [data-command] code')?.textContent).toBe('repo-harness board --parent <n>');
+    expect(document.querySelector('[data-office-panel] [data-command] code')?.textContent).toBe('rh board --parent <n>');
     expect(rows('[data-boss]')).toHaveLength(0);
     // No board read the default branch: the door has no command to copy.
     await act(async () => rows('[data-office-hit="door"]')[0]!.click());
@@ -2222,7 +2222,7 @@ describe('office setup checklist (#1788)', () => {
       [reads({ botAccess: { kind: 'loading' } }), 'unknown', ['hc server status']],
       [reads({ botAccess: { kind: 'unavailable', reason: 'bot_access_pending' } }), 'unknown', ['hc server status']],
       [reads({ botAccess: { kind: 'unavailable', reason: 'unreachable' } }), 'unknown', ['hc server status']],
-      [hc({ state: 'unavailable', reason: 'hc_missing' }), 'missing', ['repo-harness update']],
+      [hc({ state: 'unavailable', reason: 'hc_missing' }), 'missing', ['rh update']],
       [hc({ state: 'unavailable', reason: 'hc_unreachable' }), 'failed', [hcRepairCommands(HC_MIN_VERSION)[1]]],
       [reads({ botAccess: bots(decodeBotAccessSnapshot(degradedBotAccess(NOW))) }), 'failed', [...hcRepairCommands(HC_MIN_VERSION)]],
       [hc({ ...READY.hc, terminals: { state: 'unavailable', reason: 'hc_terminals_failed' } } as BotAccessSnapshotV1['hc']), 'failed', ['hc server status']],
@@ -2261,8 +2261,8 @@ describe('office setup checklist (#1788)', () => {
   test('row 3 joins the registry with the GitHub source: only `not_configured` means no remote', () => {
     const ID = 'gh api repos/{owner}/{repo} --jq .id';
     const REMOTE = 'git remote add origin <url>';
-    const INIT = 'repo-harness init';
-    const SERVE = 'repo-harness operator serve';
+    const INIT = 'rh init';
+    const SERVE = 'rh operator serve';
     const noRemote = github('not_configured', 'no_github_remote');
     const cases: readonly (readonly [Partial<OfficeSetupReads>, OfficeSetupScope, string, string])[] = [
       [{ repositories: { kind: 'loading' } }, OVERVIEW, 'unknown', SERVE],
@@ -2292,7 +2292,7 @@ describe('office setup checklist (#1788)', () => {
   });
 
   test('rows 4 and 5 use the reads of the page, with the seat commands of the issue and the label keys of RH_LABEL', () => {
-    const SEAT_COMMANDS = ['repo-harness seats argv <seat> --repository-id <id>', `hc label <t> ${RH_LABEL.repository}=<id> ${RH_LABEL.seat}=<seat>`];
+    const SEAT_COMMANDS = ['rh seats argv <seat> --repository-id <id>', `hc label <t> ${RH_LABEL.repository}=<id> ${RH_LABEL.seat}=<seat>`];
     const failedRoom = (reason: BoardParentsReason) => ({ view: { kind: 'failed', reason }, card: null }) as const;
     const loadingRoom = { view: { kind: 'loading' }, card: null } as const;
     const readyRoom = (list: BoardParentsV1, board: BoardRead | null = null, seats: BoardSeatsV1 = list === EMPTY ? { ...SEATS, seats: [] } : SEATS) => {
@@ -2321,7 +2321,7 @@ describe('office setup checklist (#1788)', () => {
       expect(row('seats', reads(), scope).detail).toBe(detail);
     }
     const write = 'gh issue comment 7 --body-file <plan-file>';
-    const read = 'repo-harness board --parent 7';
+    const read = 'rh board --parent 7';
     const samplePlan = officeBoard(NOW).plan;
     const unavailable = { status: 'unavailable', comment_url: 'https://github.com/o/r/issues/7#issuecomment-1', reason: 'plan_invalid' } as const;
     const planCases: readonly (readonly [Parameters<typeof inRoom>[0], string, string])[] = [
@@ -2334,7 +2334,7 @@ describe('office setup checklist (#1788)', () => {
     ];
     for (const [scope, state, command] of planCases) expect(stateAndCommands('plan', reads(), inRoom(scope))).toEqual([state, [command]]);
     expect(row('plan', reads(), inRoom({ parent: 7, plan: 'unread', parents: { kind: 'failed', reason: 'parents_invalid' } })).detail).toContain('parents_invalid');
-    const anyRead = 'repo-harness board --parent <n>';
+    const anyRead = 'rh board --parent <n>';
     const anyWrite = 'gh issue comment <n> --body-file <plan-file>';
     const planned = readyRoom(PARENTS, { state: 'ok', board: countedBoard({ limit: 3 }) });
     const planWords = (unknown: number, reason: string, count = 0) => `Plans confirmed: ${count}. Not known: ${unknown} (${reason}).`;
@@ -2563,7 +2563,7 @@ describe('home page', () => {
     await settle();
     expect(document.querySelector('[data-home]')).toBeNull();
     expect(document.querySelector('main')?.textContent).toContain('The operator service is not running');
-    expect(document.querySelector('main')?.textContent).toContain('repo-harness operator serve');
+    expect(document.querySelector('main')?.textContent).toContain('rh operator serve');
     expect(document.querySelector('[data-operator-status]')?.getAttribute('data-operator-status')).toBe('unreachable');
   });
 });
@@ -2708,7 +2708,7 @@ describe('worktree page', () => {
     await mount(<OperatorApp {...props(busy(), { initialWorktrees: undefined, readWorktrees: async () => { throw new Error('down'); } })} />);
     await settle();
     expect(document.querySelector('[data-worktrees-page]')?.getAttribute('data-worktrees-page')).toBe('unreachable');
-    expect(document.querySelector('main')?.textContent).toContain('repo-harness operator serve');
+    expect(document.querySelector('main')?.textContent).toContain('rh operator serve');
     expect(document.querySelector('[data-freshness]')?.getAttribute('data-freshness')).toBe('failed');
     await act(async () => root?.unmount());
     root = null; document.body.innerHTML = '';
@@ -2912,13 +2912,13 @@ describe('worktree cleanup (5.1)', () => {
       const command = worktreeRow(directory).querySelector('[data-clean-command] [data-command]')!;
       // The CLI's own formatter is the authority for the command text.
       expect(command.querySelector('code')?.textContent).toBe(cleanCommand([row.id], selectionDigest([worktreeDigestRow(row)])));
-      expect(command.querySelector('code')?.textContent).toBe(`repo-harness worktrees clean --ids ${row.id} --expected-digest ${selectionDigest([worktreeDigestRow(row)])}`);
+      expect(command.querySelector('code')?.textContent).toBe(`rh worktrees clean --ids ${row.id} --expected-digest ${selectionDigest([worktreeDigestRow(row)])}`);
       expect(command.querySelector('button')?.getAttribute('aria-label') ?? command.querySelector('button')?.textContent).toContain('Copy');
     }
     for (const row of document.querySelectorAll<HTMLElement>('[data-worktree]:not([data-judgment="green"])')) expect(row.querySelector('[data-clean-command], [data-command]')).toBeNull();
     const kept = worktreeRow('repo-harness-wt-kanban-redesign');
     expect(kept.querySelector('[data-processes]')?.textContent).toContain('processes using it: 2');
-    expect(kept.textContent).not.toContain('repo-harness worktrees clean');
+    expect(kept.textContent).not.toContain('rh worktrees clean');
   });
 });
 

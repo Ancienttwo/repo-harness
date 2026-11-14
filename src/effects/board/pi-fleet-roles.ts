@@ -1,5 +1,5 @@
 // The fleet roles of one Pi seat as pi-subagents role files (#1977). pi-subagents 0.87.0 reads the PATH-style
-// `PI_SUBAGENT_EXTRA_AGENT_DIRS` per process, so only the seat that `repo-harness seats argv` launches sees them.
+// `PI_SUBAGENT_EXTRA_AGENT_DIRS` per process, so only the seat that `rh seats argv` launches sees them.
 import { sha256Hex } from '../../core/evidence/sha256';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

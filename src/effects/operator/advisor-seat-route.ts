@@ -36,7 +36,7 @@ export const ADVISOR_SEAT_REFUSALS: Readonly<Record<AdvisorSeatFailure, { readon
   github_unavailable: { status: 503, message: 'GitHub did not return the numeric id of this repository.', next_action: 'Check `gh auth status` in the repository, then retry.' },
   hc_unavailable: { status: 503, message: 'hc did not list the seat terminals.', next_action: 'Check that the hc core runs, then retry.' },
   advisor_busy: { status: 503, message: 'Too many board reads are in progress.', next_action: RETRY },
-  advisor_unavailable: { status: 503, message: 'The board advisor command did not return a result.', next_action: 'Run `repo-harness board advisor transcript --parent <n> --json` in the repository for the error.' },
+  advisor_unavailable: { status: 503, message: 'The board advisor command did not return a result.', next_action: 'Run `rh board advisor transcript --parent <n> --json` in the repository for the error.' },
   advisor_invalid: { status: 503, message: 'The advisor seat result failed validation.', next_action: 'Update repo-harness so that the operator and the board command use the same advisor seat protocol.' },
   advisor_timeout: { status: 504, message: 'The board advisor command did not finish in time.', next_action: RETRY },
   boss_cooldown: { status: 409, message: 'This boss command was sent for this parent inside its cooldown.', next_action: 'Wait retry_after_seconds, then send the command with a new request_id.' },

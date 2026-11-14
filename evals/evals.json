@@ -296,7 +296,7 @@
       "id": 7,
       "slug": "route-existing-repo-init",
       "prompt": "Initialize this existing repo with the repo-harness workflow. Do not create a new Vite or app scaffold; just add the repo-local harness, hooks, docs/spec.md, tasks, plans, .ai/context, and .ai/harness.",
-      "expected_output": "Routes the request to repo-harness-setup, inspects the existing repo first, applies the canonical repo-harness init transaction, and explicitly avoids app scaffolding.",
+      "expected_output": "Routes the request to repo-harness-setup, inspects the existing repo first, applies the canonical rh init transaction, and explicitly avoids app scaffolding.",
       "files": [
         "evals/fixtures/new-project-empty"
       ],
@@ -315,7 +315,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "repo-harness init"
+            "pattern": "rh init"
           }
         ]
       },
@@ -544,7 +544,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "repo-harness init.*dry-run"
+            "pattern": "rh init.*dry-run"
           }
         ]
       },
@@ -696,7 +696,7 @@
         "files_not_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness init.*--apply"
+            "pattern": "rh init.*--apply"
           }
         ]
       },
@@ -710,7 +710,7 @@
       "id": 17,
       "slug": "route-repo-harness-architecture",
       "prompt": "Update the architecture model and module documents for the changed responsibility, and add a diagram if it helps, but do not refresh the whole harness.",
-      "expected_output": "Routes the request to repo-harness-architecture, inspects docs/architecture/index.md and the archctx model, uses capability matching when relevant, writes the model change through an archctx ChangeSet, runs repo-harness architecture-projection apply, and only generates a diagram through diagram-design when useful.",
+      "expected_output": "Routes the request to repo-harness-architecture, inspects docs/architecture/index.md and the archctx model, uses capability matching when relevant, writes the model change through an archctx ChangeSet, runs rh architecture-projection apply, and only generates a diagram through diagram-design when useful.",
       "files": [
         "assets/skill-commands/repo-harness-architecture/SKILL.md"
       ],
@@ -737,7 +737,7 @@
         "files_not_contain": [
           {
             "path": "final-response.md",
-            "pattern": "repo-harness init.*--apply"
+            "pattern": "rh init.*--apply"
           }
         ]
       },

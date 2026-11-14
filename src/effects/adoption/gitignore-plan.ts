@@ -20,7 +20,7 @@ export const GITIGNORE_MANAGED_BLOCK_CONTENT = readFileSync(
   join(import.meta.dir, "../../../assets/templates/runtime.gitignore"), "utf8",
 ).trimEnd();
 
-const RETIRED_RUNTIME_HEADER = "# Retired runtime state that still exists; repo-harness upgrade lists these files";
+const RETIRED_RUNTIME_HEADER = "# Retired runtime state that still exists; rh upgrade lists these files";
 
 function gitignoreManagedBlockContent(repoRoot: string, extraContent: string): string {
   const retained = RETIRED_RUNTIME_IGNORE_RULES.filter((rule) => retiredRuntimeRuleFiles(repoRoot, rule).length > 0);

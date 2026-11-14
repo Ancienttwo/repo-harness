@@ -197,9 +197,9 @@ describe('optional strategy and progressive memory', () => {
     const repo = ['--repo', root];
     const blocked: [string, NodeJS.ProcessEnv, string[], string][] = [
       ...[['status'], ['pilot'], ['context'], ['validate', 'proposal.json'], ['install-skill', '--dry-run'], ['uninstall-skill', '--dry-run']].map((args): [string, NodeJS.ProcessEnv, string[], string] =>
-        [`product, ${args[0]}`, selectedEnv(['product']), args[0]!.endsWith('-skill') ? args : [...args, ...repo], 'repo-harness strategy needs the strategy-memory plugin: the strategy-memory plugin is not selected; run: repo-harness install --plugins product,strategy-memory\n']),
-      ['core only', selectedEnv([]), ['status', ...repo], 'not selected; run: repo-harness install --plugins strategy-memory\n'],
-      ['no install state', noState, ['status', ...repo], 'not selected; run: repo-harness install\n'],
+        [`product, ${args[0]}`, selectedEnv(['product']), args[0]!.endsWith('-skill') ? args : [...args, ...repo], 'rh strategy needs the strategy-memory plugin: the strategy-memory plugin is not selected; run: rh install --plugins product,strategy-memory\n']),
+      ['core only', selectedEnv([]), ['status', ...repo], 'not selected; run: rh install --plugins strategy-memory\n'],
+      ['no install state', noState, ['status', ...repo], 'not selected; run: rh install\n'],
       ['unreadable install state', unreadable, ['status', ...repo], 'is not valid JSON'],
     ];
     for (const [name, env, args, message] of blocked) {
@@ -389,7 +389,7 @@ describe('optional strategy and progressive memory', () => {
     expect(observed.blockers).toContain('capability_ownership:unavailable');
     expect(observed.blockers).not.toContain('capability_registry:invalid');
     expect(observed.profile_reasons).toContain('capability:diagnostic:ARCHCONTEXT_RESOLVE_UNAVAILABLE');
-    expect(observed.next_action).toContain('fix: repo-harness state resolve --json');
+    expect(observed.next_action).toContain('fix: rh state resolve --json');
   });
   test('policy and capability edits between passes invalidate old context bindings', () => {
     for (const source of ['.ai/harness/policy.json', '.archcontext/model/nodes/capability.fixture.yaml']) {

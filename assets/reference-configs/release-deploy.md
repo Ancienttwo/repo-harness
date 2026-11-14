@@ -90,9 +90,9 @@ later; do not publish again. The settle above is the other case.
 it runs the guard checks for a version and prints the release commit, this
 command list and the post-release steps. After step 7 passes, the orchestrator
 and the advisor decide together on those post-release steps:
-`repo-harness update` on the owner host, the Upgrade steps of the release
+`rh update` on the owner host, the Upgrade steps of the release
 notes, and the relaunch of both seats from
-`repo-harness seats argv <seat> --repository-id <id>`.
+`rh seats argv <seat> --repository-id <id>`.
 
 ## Webapp Release Shape
 

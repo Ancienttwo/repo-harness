@@ -20,7 +20,7 @@ export function assertTarget(raw: string, commandName: string): InstallTargetSpe
     return raw as InstallTargetSpec;
   }
   console.error(
-    `repo-harness ${commandName}: invalid --target "${raw}" (expected: ${VALID_TARGETS.join(', ')})`,
+    `rh ${commandName}: invalid --target "${raw}" (expected: ${VALID_TARGETS.join(', ')})`,
   );
   process.exit(2);
 }
@@ -36,7 +36,7 @@ export function assertLocation(raw: string, commandName: string): Location {
     return raw as Location;
   }
   console.error(
-    `repo-harness ${commandName}: invalid --location "${raw}" (expected: ${VALID_LOCATIONS.join(', ')})`,
+    `rh ${commandName}: invalid --location "${raw}" (expected: ${VALID_LOCATIONS.join(', ')})`,
   );
   process.exit(2);
 }
@@ -52,7 +52,7 @@ export function assertAdoptionMode(raw: string, commandName: string): AdoptionMo
     return raw as AdoptionMode;
   }
   console.error(
-    `repo-harness ${commandName}: invalid --mode "${raw}" (expected: ${VALID_MODES.join(', ')})`,
+    `rh ${commandName}: invalid --mode "${raw}" (expected: ${VALID_MODES.join(', ')})`,
   );
   process.exit(2);
 }

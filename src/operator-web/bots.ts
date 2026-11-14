@@ -98,6 +98,6 @@ export function botLabel(snapshot: BotAccessSnapshotV1, bot: BotAttribution): Bo
 }
 
 // Access changes are credential and permission operations: the page only gives the command.
-export const MCP_DOCTOR_COMMAND = 'repo-harness mcp doctor';
+export const MCP_DOCTOR_COMMAND = 'rh mcp doctor';
 /** `--repo` takes the repository's local path, which the page never shows, so the path stays a placeholder. */
-export const MCP_ACCESS_COMMAND = 'repo-harness mcp access set --repo <repo-path> --mode read_only|read_write';
+export const MCP_ACCESS_COMMAND = 'rh mcp access set --repo <repo-path> --mode read_only|read_write';

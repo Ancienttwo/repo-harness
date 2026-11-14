@@ -12,7 +12,7 @@ import { registerArchitecturePlugin, resolveOptionalRuntimeDeps, runCli, runTran
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
-import { installStateFixturePath, recordInstallOwnership, recordPluginSelection, seedGlobalPackageFixture } from '../helpers/install-ownership';
+import { installStateFixturePath, recordInstallOwnership, recordPluginSelection, RETIRED_CLI_LINES, seedGlobalPackageFixture } from '../helpers/install-ownership';
 import { writeFakeHc } from '../helpers/fake-hc';
 import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
 import { applyInstallSelection, beginInstallHostTransaction, installProfileHostMutationPaths, managedInstallSurfaceIsCurrent, readInstallState, recordRefreshedInstallOwnership, loadSkillSurfaceCatalog, rollbackInstallHostTransaction, versions } from '../../src/cli/installer/install-profile';
@@ -981,9 +981,43 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
         },
       });
+      // The 0.32 bin link that Bun keeps after the rename, and a user file that still calls the old command.
+      const retiredLink = join(home, '.bun', 'bin', 'repo-harness');
+      const cliEntry = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness', 'src', 'cli', 'index.ts');
+      mkdirSync(dirname(cliEntry), { recursive: true });
+      if (!existsSync(cliEntry)) writeFileSync(cliEntry, '#!/usr/bin/env bun\n');
+      mkdirSync(dirname(retiredLink), { recursive: true });
+      symlinkSync(cliEntry, retiredLink);
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      // Host-file notice path: each call and the prose line give a notice; the exclusions and the managed rules block that update writes do not.
+      const agents = join(home, '.codex', 'AGENTS.md');
+      const userText = [...RETIRED_CLI_LINES.calls, RETIRED_CLI_LINES.prose, ...RETIRED_CLI_LINES.excluded].join('\n');
+      const managedBlock = renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' });
+      writeFileSync(agents, `${userText}\n${managedBlock}`);
       const result = update({ plugins: FULL_PLUGINS });
 
       expect(result.exitCode).toBe(0);
+      expect(lstatSync(retiredLink, { throwIfNoEntry: false })).toBeUndefined();
+      expect(result.steps.find((step) => step.step === 'retire the repo-harness command link')?.detail).toBe(`Removed ${retiredLink}. The command is rh.`);
+      const named = RETIRED_CLI_LINES.calls.length + 1;
+      expect(result.steps.find((step) => step.step === 'find repo-harness command calls in user files')?.detail).toBe(
+        `${named} line(s) in files that you own name repo-harness; update does not change them. Change each line that calls it to rh: ${Array.from({ length: named }, (_, index) => `${agents}:${index + 1}`).join(', ')}.`);
+      expect(readFileSync(agents, 'utf8')).toStartWith(userText);
+      // A file at the link path without the exact proof stays, with its removal command.
+      writeFileSync(retiredLink, 'owner file');
+      const retireDetail = () => update({ plugins: FULL_PLUGINS }).steps.find((step) => step.step === 'retire the repo-harness command link')?.detail;
+      expect(retireDetail()).toBe(`${retiredLink} is not proved to be this package's launcher; it stays. Remove it by hand when you do not need it: rm '${retiredLink}'. The command is rh.`);
+      expect(readFileSync(retiredLink, 'utf8')).toBe('owner file');
+      rmSync(retiredLink);
+      // Windows launchers are never removed: they get a notice with the PowerShell removal command.
+      const exe = `${retiredLink}.exe`;
+      const record = `${retiredLink}.bunx`;
+      writeFileSync(exe, 'launcher');
+      writeFileSync(record, Buffer.from('..\\install\\global\\node_modules\\repo-harness\\src\\cli\\index.ts', 'utf16le'));
+      expect(retireDetail()).toBe(`${exe}, ${record} stays: update does not remove Windows launchers. Remove them in PowerShell: Remove-Item -LiteralPath '${exe}', '${record}'. The command is rh.`);
+      expect([existsSync(exe), existsSync(record)]).toEqual([true, true]);
+      rmSync(exe);
+      rmSync(record);
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({ status: 'ok' });
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')?.detail).toContain(`archctx@${ARCHCTX_PIN}`);
       const archctxLink = join(home, '.bun', 'bin', 'archctx');
@@ -2022,7 +2056,7 @@ exit 0
       expect(result.exitCode).toBe(0);
       expect(installStep?.status).toBe('skipped');
       expect(installStep?.detail).toBe(
-        'already installed from Bun global package source; version=9.9.9; latest=99.0.0 available — run: repo-harness update',
+        'already installed from Bun global package source; version=9.9.9; latest=99.0.0 available — run: rh update',
       );
       expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n');
     } finally {
@@ -2096,7 +2130,7 @@ exit 0
       encoding: 'utf-8',
     });
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain('Usage: repo-harness install');
+    expect(res.stdout).toContain('Usage: rh install');
     expect(res.stdout).toContain('--target <target>');
     expect(res.stdout).toContain('--no-cli');
     expect(res.stdout).not.toContain('--with-reverse-skill');
@@ -2454,7 +2488,7 @@ exit 0
       encoding: 'utf-8',
     });
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain('Usage: repo-harness update');
+    expect(res.stdout).toContain('Usage: rh update');
     expect(res.stdout).toContain('--version <version>');
     expect(res.stdout).toContain('--channel <channel>');
     expect(res.stdout).toContain('--check');
@@ -2493,7 +2527,7 @@ exit 0
       }
       setupConsoleFixture(home, source);
       const seedGlobalPackage = `import { seedGlobalPackageFixture } from ${JSON.stringify(new URL('../helpers/install-ownership.ts', import.meta.url).href)}; seedGlobalPackageFixture(process.env, { mutable: true });`;
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "-" || "\${1:-}" == "-e" || "\${1:-}" == *.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; "${process.execPath}" -e '${seedGlobalPackage.replaceAll("'", "'\\''")}' || exit $?; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "-" || "\${1:-}" == "-e" || "\${1:-}" == *.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/rh"; chmod +x "$HOME/.bun/bin/rh"; "${process.execPath}" -e '${seedGlobalPackage.replaceAll("'", "'\\''")}' || exit $?; fi\nexit 0\n`);
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 printf '%s\\n' "$*" >> "${bunxLog}"
@@ -2907,7 +2941,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       symlinkSync(ROOT, join(home, '.codex', 'skills', 'repo-harness'), 'dir');
       writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({ hooks: buildManagedHooks('codex', env) }));
       mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
-      symlinkSync(CLI, join(home, '.bun', 'bin', 'repo-harness'));
+      symlinkSync(CLI, join(home, '.bun', 'bin', 'rh'));
       // Core owns its facades and the agent fleet, so a core-only state needs them present.
       for (const pkg of loadSkillSurfaceCatalog().packages.filter(entry => entry.kind === 'facade' && entry.owner === 'core' && !entry.explicitOnly)) {
         mkdirSync(join(home, '.codex', 'skills', pkg.name), { recursive: true });
@@ -3179,7 +3213,7 @@ describe('Codex Waza projection', () => {
         if (mode === 'unknown-directory') {
           expect(result.exitCode).toBe(1);
           expect(waza?.detail).toContain('refusing to refresh unowned host skill');
-          expect(waza?.detail).toContain('then run: repo-harness install --target codex');
+          expect(waza?.detail).toContain('then run: rh install --target codex');
           expect(lstatSync(think).isDirectory()).toBe(true);
           expect(readFileSync(join(think, 'SKILL.md'), 'utf8')).toBe('user instructions\n');
         } else {
@@ -3333,8 +3367,8 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(result.exitCode).toBe(0);
     const step = rulesStep(result);
     expect(step?.status).toBe('skipped');
-    expect(step?.detail).toContain(`skipped-legacy:${path} (legacy repo-harness rules without markers; run \`repo-harness update --report-language follow|zh-CN|en\``);
-    expect(step?.detail).toContain(`skipped-unrecorded:${claudePath} (managed block has no recorded reporting language; run \`repo-harness update --report-language follow|zh-CN|en\`)`);
+    expect(step?.detail).toContain(`skipped-legacy:${path} (legacy repo-harness rules without markers; run \`rh update --report-language follow|zh-CN|en\``);
+    expect(step?.detail).toContain(`skipped-unrecorded:${claudePath} (managed block has no recorded reporting language; run \`rh update --report-language follow|zh-CN|en\`)`);
     expect(readFileSync(path, 'utf-8')).toBe(mixedLegacy);
     expect(readFileSync(claudePath, 'utf-8')).toBe(unrecorded);
   }), 30_000);
@@ -3411,7 +3445,7 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(readFileSync(path, 'utf-8')).toBe(`${mixedLegacy}\n## Added later\n`);
   }));
 
-  test.skipIf(process.getuid?.() === 0)('a failed backup copy leaves the rules file unwritten', () => withRulesRuntime(({ home, path }) => {
+  test.skipIf(process.getuid?.() === 0)('a failed backup copy leaves the rules file unwritten and stops update', () => withRulesRuntime(({ home, path, run }) => {
     writeFileSync(path, mixedLegacy);
     mkdirSync(backupDir(home), { recursive: true });
     chmodSync(backupDir(home), 0o500);
@@ -3419,6 +3453,10 @@ describe('Global Working Rules refresh during install and update', () => {
       const applied = applyGlobalContextRefresh(preflightGlobalContextRefresh(ROOT, home, ['codex'], 'en'), home);
       expect(applied.status).toBe('failed');
       expect(applied.detail).toStartWith(`failed:${path} (EACCES`);
+      // In update mode the failed refresh is the last step: no later host write and no user-file notice run.
+      const update = run('en');
+      expect(update.exitCode).toBe(1);
+      expect(update.steps.at(-1)).toMatchObject({ step: 'refresh global working rules', status: 'failed' });
     } finally {
       chmodSync(backupDir(home), 0o700);
     }
@@ -3498,7 +3536,7 @@ describe('Global Working Rules refresh during install and update', () => {
     const skipped = run();
     expect(skipped.exitCode).toBe(0);
     expect(rulesStep(skipped)?.status).toBe('skipped');
-    expect(rulesStep(skipped)?.detail).toContain('not opted in; run `repo-harness update --report-language follow|zh-CN|en` to install the rules');
+    expect(rulesStep(skipped)?.detail).toContain('not opted in; run `rh update --report-language follow|zh-CN|en` to install the rules');
     expect(existsSync(path)).toBe(false);
 
     const created = run('follow');

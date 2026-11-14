@@ -1,4 +1,4 @@
-// The shipped GitHub events Worker and `repo-harness events install`. Fixtures replace only
+// The shipped GitHub events Worker and `rh events install`. Fixtures replace only
 // external I/O: the Bot webhook, Cloudflare KV and Queue bindings, `wrangler` and the GitHub API.
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { createHash, createHmac, generateKeyPairSync, verify } from 'node:crypto';
@@ -218,7 +218,7 @@ if (args[0] === 'deploy') appendFileSync(process.env.WRANGLER_OUTPUT_FILE_PATH, 
   return { root, publicKey, api, asked, deps, options, wranglerCalls, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
-describe('repo-harness events install', () => {
+describe('rh events install', () => {
   test('it lists the three approval points, asks once, and changes nothing on no', async () => {
     const fixture = installFixture();
     const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);

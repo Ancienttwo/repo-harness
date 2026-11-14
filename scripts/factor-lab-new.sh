@@ -16,7 +16,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --name) NAME="${2:-}"; shift 2 ;;
     --help)
-      echo "Usage: repo-harness run factor-lab-new --name <slug>"
+      echo "Usage: rh run factor-lab-new --name <slug>"
       exit 0
       ;;
     *)

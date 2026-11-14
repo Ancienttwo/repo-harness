@@ -98,7 +98,7 @@ export interface OperatorAppProps {
   readonly writeAdvisorMessage?: AdvisorMessageWriter;
   readonly readNotifyStatus?: NotifyStatusReader;
   readonly initialNotifyStatus?: NotifyStatusV1;
-  /** The cached `repo-harness setup check` result behind the Agents, Skills and Hooks pages. */
+  /** The cached `rh setup check` result behind the Agents, Skills and Hooks pages. */
   readonly readSetup?: SetupReader;
   readonly initialSetup?: SetupSnapshotV2;
   /** The worktree collector's cached result behind the Worktree page, the Board cleanup signal and Home's reclaimable space. */

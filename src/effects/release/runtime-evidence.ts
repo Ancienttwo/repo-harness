@@ -87,7 +87,7 @@ type InstalledPackageReadback = {
   readonly installed_hook: string;
 };
 
-function canonicalPackageBin(packageRoot: string, binValue: unknown, key: 'repo-harness' | 'repo-harness-hook'): { readonly executable: string; readonly tarballMember: string } {
+function canonicalPackageBin(packageRoot: string, binValue: unknown, key: 'rh' | 'repo-harness-hook'): { readonly executable: string; readonly tarballMember: string } {
   if (typeof binValue !== 'string' || binValue.trim() === '' || isAbsolute(binValue) || binValue.includes('\\') || binValue.includes('\0')) {
     throw new Error(`installed package bin.${key} must be a repository-relative file`);
   }
@@ -129,11 +129,11 @@ function installedPackageReadback(path: string, packageName: string, expectedVer
     throw new Error('installed package manifest must declare canonical bin targets');
   }
   const bins = record.bin as Record<string, unknown>;
-  const cli = canonicalPackageBin(packageRoot, bins['repo-harness'], 'repo-harness');
+  const cli = canonicalPackageBin(packageRoot, bins.rh, 'rh');
   const hook = canonicalPackageBin(packageRoot, bins['repo-harness-hook'], 'repo-harness-hook');
   for (const [label, actual, expected] of [
     ['package.json', readFileSync(manifest), tarballMember(tarball, 'package/package.json')],
-    ['repo-harness bin', readFileSync(cli.executable), tarballMember(tarball, cli.tarballMember)],
+    ['rh bin', readFileSync(cli.executable), tarballMember(tarball, cli.tarballMember)],
     ['repo-harness-hook bin', readFileSync(hook.executable), tarballMember(tarball, hook.tarballMember)],
   ] as const) {
     if (!actual.equals(expected)) throw new Error(`installed ${label} does not match published tarball member`);

@@ -18,7 +18,7 @@ while [[ $# -gt 0 ]]; do
     --name) NAME="${2:-}"; shift 2 ;;
     --reason) REASON="${2:-}"; shift 2 ;;
     --help)
-      echo "Usage: repo-harness run factor-lab-reject --name <slug> --reason <text>"
+      echo "Usage: rh run factor-lab-reject --name <slug> --reason <text>"
       exit 0
       ;;
     *)

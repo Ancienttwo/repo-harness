@@ -324,7 +324,7 @@ export function buildFleetCommand(): Command {
     .requiredOption('--body-file <path>', 'UTF-8 file containing the untrusted message body')
     .option('--message-id <messageId>', 'Stable UUID for an idempotent retry')
     .option('--in-reply-to <messageId>', 'Prior message UUID')
-    .option('--bot <bot-id>', 'Registered Bot that sends this message (see `repo-harness bots register`)')
+    .option('--bot <bot-id>', 'Registered Bot that sends this message (see `rh bots register`)')
     .action((options: {
       readonly taskId: string;
       readonly context: string;

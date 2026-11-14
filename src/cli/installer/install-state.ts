@@ -61,13 +61,13 @@ export function enabledPlugins(state: Pick<RecordedInstallState, 'plugins'>): re
 }
 
 function invalidInstallState(path: string, detail: string): InstallStateError {
-  return new InstallStateError('install_state_invalid', path, `install state ${detail}; inspect: repo-harness install --state: ${path}`);
+  return new InstallStateError('install_state_invalid', path, `install state ${detail}; inspect: rh install --state: ${path}`);
 }
 
 /** The installer throws the same error for a surface that fails its host-path check. */
 export function invalidOwnership(path: string): InstallStateError {
   return new InstallStateError('install_state_invalid_ownership', path,
-    `install state has an invalid ownership surface (unknown path, malformed entry, or an owner that is not enabled); inspect: repo-harness install --state: ${path}`);
+    `install state has an invalid ownership surface (unknown path, malformed entry, or an owner that is not enabled); inspect: rh install --state: ${path}`);
 }
 
 function parsePlugins(raw: unknown, coreVersion: string, path: string): readonly InstalledPlugin[] {
@@ -98,7 +98,7 @@ function parseSelection(raw: unknown, ids: readonly PluginId[], path: string, la
 
 /** 0.25.4 is the last release that reads protocol 2: its `update` migrates the state to protocol 3 (#1607). */
 const PROTOCOL_2_BRIDGE = 'bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4';
-const CURRENT_PACKAGE_UPDATE = `bun add -g repo-harness@${PACKAGE_VERSION} --no-cache && repo-harness update`;
+const CURRENT_PACKAGE_UPDATE = `bun add -g repo-harness@${PACKAGE_VERSION} --no-cache && rh update`;
 
 function parseSnapshot(raw: unknown, path: string, label: string): RecordedInstallSnapshot {
   if (!isRecord(raw)) throw invalidInstallState(path, `${label} is not an object`);

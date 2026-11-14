@@ -9,7 +9,7 @@ import { architecturePort, isArchitectureUnavailable } from '../../core/architec
 import { globalConfigurationWriter, mutateGlobalConfiguration } from '../../effects/configuration/global-configuration';
 import { DEFAULT_SEATS_CONFIG, INTRODUCED_ROUTING_DEFAULTS, ROUTING_CLASSES, SeatsConfigMigrationRequiredError, decodeSeatsConfig } from '../../core/board/seats-settings';
 import { checkSeatRoutingModels, seatsRanges } from '../../effects/board/seats-configuration';
-import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "fs";
 import { upsertManagedBlock } from "../../core/adoption/managed-block";
 import { assertConfigurationPath } from "../installer/configuration-ownership";
 import { runtimeStateIgnoreOperation, userExcludesFilePath } from "../../effects/adoption/gitignore-plan";
@@ -18,7 +18,9 @@ import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { syncWazaSharedRules, wazaStagingRulesAbsent } from "../installer/waza-rules";
-import { applyGlobalContextRefresh, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
+import { applyGlobalContextRefresh, GLOBAL_RULES_BEGIN, GLOBAL_RULES_END, globalContextPath, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
+import { CLI_NAME, namesRetiredCli, RETIRED_CLI_NAME } from "../../core/skill-surface/cli-name";
+import { shellQuote } from "../../core/shell-quote";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
 import { syncCrossReviewSkills } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
@@ -510,7 +512,7 @@ function reconcileManagedRuntime(
           try { linkTarget = realpathSync(link); } catch { /* A dangling link is also a conflict. */ }
           // A link into the Bun global archctx package is managed, whatever its version; the install below moves it to the pin.
           const managed = linkTarget !== null && existsSync(managedRoot) && linkTarget.startsWith(realpathSync(managedRoot) + sep);
-          if (!managed) return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_CONFLICT: ${link} is not the managed archctx link. Move or remove it, then rerun repo-harness update.` };
+          if (!managed) return { step: 'verify managed runtime dependencies', status: 'failed', detail: `RH_ARCHCTX_BIN_CONFLICT: ${link} is not the managed archctx link. Move or remove it, then rerun rh update.` };
           const current = managedPackage();
           if (linkTarget === current.target && current.version === version && recordValue(globalManifest.dependencies).archctx === version) return { step: 'verify managed runtime dependencies', status: 'ok', detail: initial.detail };
         }
@@ -536,7 +538,7 @@ function reconcileManagedRuntime(
     step: "verify managed runtime dependencies",
     status: "failed",
     detail: `managed runtime mismatch: ${initial.detail}`,
-    stderr: `Automatic remove/reinstall is disabled because a failed reinstall could remove the working CLI. Run \`${bunExecutable} remove -g repo-harness\`, then \`${bunExecutable} add -g ${installSpec}\`, and rerun repo-harness update.`,
+    stderr: `Automatic remove/reinstall is disabled because a failed reinstall could remove the working CLI. Run \`${bunExecutable} remove -g repo-harness\`, then \`${bunExecutable} add -g ${installSpec}\`, and rerun rh update.`,
   };
 }
 
@@ -590,7 +592,7 @@ function updateAvailableHint(version: string | null, env?: NodeJS.ProcessEnv): s
   if (!latest.version) return "";
   const comparison = compareVersions(version, latest.version);
   if (comparison === null || comparison >= 0) return "";
-  return `; latest=${latest.version} available — run: repo-harness update`;
+  return `; latest=${latest.version} available — run: rh update`;
 }
 
 function isCheckoutSource(sourceRoot: string): boolean {
@@ -924,7 +926,7 @@ const REGISTERED_PREVIEW_TIMEOUT_MS = 30_000;
  * When the count cannot be computed, the line says so instead of a number.
  */
 export function updateRegisteredUpgradeSummary(cwd: string, installedCli: boolean): string {
-  const hint = 'Preview: repo-harness upgrade --registered';
+  const hint = 'Preview: rh upgrade --registered';
   const unavailable = (reason: string) => `Registered repo upgrade check could not be computed: ${reason}. ${hint}`;
   const run = runInstalledUpgrade(['--registered', '--json'], cwd, installedCli, REGISTERED_PREVIEW_TIMEOUT_MS);
   if ('failure' in run) return unavailable(run.failure);
@@ -935,17 +937,95 @@ export function updateRegisteredUpgradeSummary(cwd: string, installedCli: boolea
     payload = null;
   }
   const record = payload !== null && typeof payload === 'object' && !Array.isArray(payload)
-    ? payload as { repos?: unknown; error?: unknown } : null;
+    ? payload as { repos?: unknown; error?: unknown; revision?: unknown } : null;
   const reportedError = typeof record?.error === 'string' ? record.error.trim() : '';
   if (!record || !Array.isArray(record.repos) || reportedError !== '') {
     return unavailable(redactProcessOutput(reportedError || run.stderr) || 'upgrade --registered --json returned no repo list');
   }
-  const repos = record.repos.map((repo) => (repo !== null && typeof repo === 'object' ? repo : {}) as { status?: unknown; pending?: unknown });
-  const pending = repos.filter((repo) => repo.status === 'ready' && repo.pending === true).length;
+  const repos = record.repos.map((repo) => (repo !== null && typeof repo === 'object' ? repo : {}) as { path?: unknown; status?: unknown; pending?: unknown });
+  const pending = repos.filter((repo) => repo.status === 'ready' && repo.pending === true);
   const skipped = repos.filter((repo) => repo.status === 'skipped').length;
   const failed = repos.filter((repo) => repo.status === 'failed').length;
-  return `Registered repos: ${pending} of ${repos.length} have pending project upgrade work`
-    + `${skipped > 0 ? `; ${skipped} skipped` : ''}${failed > 0 ? `; ${failed} failed` : ''}. ${hint}`;
+  // Update writes no project file. The registered apply, bound to this preview revision, rewrites the managed references.
+  const apply = pending.length > 0 && typeof record.revision === 'string'
+    ? `. Apply: ${CLI_NAME} upgrade --registered --apply --expected-revision ${record.revision}` : '';
+  const names = pending.map((repo) => String(repo.path));
+  return `Registered repos: ${pending.length} of ${repos.length} have pending project upgrade work`
+    + `${names.length > 0 ? ` (${names.join(', ')})` : ''}`
+    + `${skipped > 0 ? `; ${skipped} skipped` : ''}${failed > 0 ? `; ${failed} failed` : ''}. ${hint}${apply}`;
+}
+
+export const RETIRED_CLI_LINK_STEP = `retire the ${RETIRED_CLI_NAME} command link`;
+export const RETIRED_CLI_REFERENCES_STEP = `find ${RETIRED_CLI_NAME} command calls in user files`;
+
+/**
+ * Bun keeps the bin launcher of a name that the new package version no longer declares, and that
+ * launcher runs the new package. Update removes only what an exact proof shows as the package's:
+ * a symlink whose realpath equals the installed CLI entry. Every other file at the launcher paths,
+ * the Windows .exe/.bunx pair included, gets a notice with its removal command and no change.
+ */
+function retireCliLink(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
+  const step = RETIRED_CLI_LINK_STEP;
+  const bin = join(env.BUN_INSTALL ?? join(homeDir(env), '.bun'), 'bin');
+  const link = join(bin, RETIRED_CLI_NAME);
+  const windows = [`${RETIRED_CLI_NAME}.exe`, `${RETIRED_CLI_NAME}.bunx`].map(name => join(bin, name))
+    .filter(path => lstatSync(path, { throwIfNoEntry: false }) !== undefined);
+  const linkStat = lstatSync(link, { throwIfNoEntry: false });
+  if (!linkStat && windows.length === 0) return { step, status: 'skipped', detail: 'No retired command launcher.' };
+  const details: string[] = [];
+  if (linkStat) {
+    const packageRoot = bunGlobalPackageRoot(env);
+    const entry = packageRoot === null ? null : join(packageRoot, 'src', 'cli', 'index.ts');
+    let proved = false;
+    try { proved = linkStat.isSymbolicLink() && entry !== null && realpathSync(link) === realpathSync(entry); } catch { /* A dangling link or a missing entry is no proof. */ }
+    if (!proved) details.push(`${link} is not proved to be this package's launcher; it stays. Remove it by hand when you do not need it: rm ${shellQuote(link)}.`);
+    else {
+      try {
+        unlinkSync(link);
+        details.push(`Removed ${link}.`);
+      } catch (error) {
+        details.push(`${link} could not be removed (${(error as NodeJS.ErrnoException).code ?? 'error'}); it stays. Remove it by hand: rm ${shellQuote(link)}.`);
+      }
+    }
+  }
+  // Bun on Windows writes a .exe launcher and a .bunx record. No exact proof exists for them, so they stay.
+  if (windows.length > 0) {
+    details.push(`${windows.join(', ')} stays: update does not remove Windows launchers. Remove them in PowerShell: Remove-Item -LiteralPath ${windows.map(path => `'${path.replaceAll("'", "''")}'`).join(', ')}.`);
+  }
+  return { step, status: 'ok', detail: `${details.join(' ')} The command is ${CLI_NAME}.` };
+}
+
+/** Update rewrites only the files that it manages; a user-owned call of the retired command gets a notice. */
+function findRetiredCliCalls(env: NodeJS.ProcessEnv, target: InstallTargetSpec): GlobalRuntimeStep {
+  const step = RETIRED_CLI_REFERENCES_STEP;
+  const home = homeDir(env);
+  const hosts = hostIds(target);
+  const files = [
+    ...hosts.map(host => globalContextPath(home, host)),
+    ...(hosts.includes('claude') ? [join(home, '.claude', 'settings.json')] : []),
+  ];
+  const unread: string[] = [];
+  const calls = files.flatMap((path) => {
+    if (!existsSync(path)) return [];
+    let text: string;
+    try { text = readFileSync(path, 'utf8'); } catch (error) {
+      unread.push(`${path} (${(error as NodeJS.ErrnoException).code ?? 'unreadable'})`);
+      return [];
+    }
+    // Update writes the managed rules block itself, so the scan skips the span between its markers.
+    let managed = false;
+    return text.split('\n').flatMap((line, index) => {
+      const skip = managed || line.includes(GLOBAL_RULES_BEGIN);
+      managed = skip && !line.includes(GLOBAL_RULES_END);
+      return !skip && namesRetiredCli(line) ? [`${path}:${index + 1}`] : [];
+    });
+  });
+  const notRead = unread.length > 0 ? ` Not read: ${unread.join(', ')}.` : '';
+  if (calls.length === 0) return { step, status: 'skipped', detail: `No user file names ${RETIRED_CLI_NAME}.${notRead}` };
+  return {
+    step, status: 'ok',
+    detail: `${calls.length} line(s) in files that you own name ${RETIRED_CLI_NAME}; update does not change them. Change each line that calls it to ${CLI_NAME}: ${calls.join(', ')}.${notRead}`,
+  };
 }
 
 const AGENT_FLEET_STEP = 'install agent fleet';
@@ -963,7 +1043,7 @@ function writeRuntimeIgnoreRules(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
     assertConfigurationPath(target.path, dirname(target.path));
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    return { step, status: 'failed', detail: `${target.path}: ${reason}; set core.excludesFile to the real file, then run repo-harness update again` };
+    return { step, status: 'failed', detail: `${target.path}: ${reason}; set core.excludesFile to the real file, then run rh update again` };
   }
   try {
     const existing = existsSync(target.path) ? readFileSync(target.path, 'utf-8') : '';
@@ -1303,7 +1383,7 @@ function preflightStagedSkillProjection(
       const destination = join(root.path, skill);
       if (!pathEntryExists(destination)) continue;
       if (skillLinkMatches(destination, source)) continue;
-      return { step, status: 'failed', detail: `refusing to refresh unowned host skill ${destination}; preserve or move this path, then run: repo-harness install --target ${target}` };
+      return { step, status: 'failed', detail: `refusing to refresh unowned host skill ${destination}; preserve or move this path, then run: rh install --target ${target}` };
     }
   }
   return null;
@@ -1725,14 +1805,14 @@ export function ensureHerdrCore(input: HerdrCoreInstallInput): HerdrCoreInstallR
   const assetName = HC_ASSET_NAMES[input.platform];
   const asset = assetName === undefined ? undefined : input.assets[assetName];
   if (assetName === undefined || asset === undefined) {
-    return fail(`no herdr-core release asset for ${input.platform}; install hc >=${minVersion} manually (Herdr.app or a herdr-core release), then run repo-harness ${input.command}`);
+    return fail(`no herdr-core release asset for ${input.platform}; install hc >=${minVersion} manually (Herdr.app or a herdr-core release), then run rh ${input.command}`);
   }
   const layout = hcInstallLayout(assetName, env);
   if ("failure" in layout) return fail(layout.failure);
   for (const name of [...layout.members, layout.link]) {
     const path = join(layout.dir, name);
     // An earlier run may have installed it into a dir that is still off PATH.
-    if (pathEntryExists(path)) return fail(`hc is not on PATH, and ${path} exists; refusing to overwrite it; add ${layout.dir} to PATH, then rerun repo-harness ${input.command}`);
+    if (pathEntryExists(path)) return fail(`hc is not on PATH, and ${path} exists; refusing to overwrite it; add ${layout.dir} to PATH, then rerun rh ${input.command}`);
   }
   const scratch = mkdtempSync(join(tmpdir(), "repo-harness-hc-"));
   try {
@@ -1925,6 +2005,8 @@ export function runGlobalRuntimeSetup(
 
   steps.push({ step: GLOBAL_RULES_REFRESH_STEP, ...applyGlobalContextRefresh(globalRules, homeDir(env)) });
   if (steps.at(-1)?.status === "failed") return finalizeRuntimeResult(steps);
+  // After the refresh, so the managed block is current and every remaining call is in user text.
+  if (updateMode) steps.push(findRetiredCliCalls(env, target));
 
   const refreshExternalSkills = opts.externalSkills === true;
   if (refreshExternalSkills) {
@@ -2035,5 +2117,7 @@ export function runGlobalRuntimeSetup(
     steps.push({ ...pi, ...(pi.created ? { owned_surface: piPackageSurface(pi.source) } : {}) });
   }
   steps.push(writeRuntimeIgnoreRules(env));
+  // Last, and only after every other step passed: a failed update keeps the previous command.
+  if (updateMode && steps.every(step => step.status !== 'failed')) steps.push(retireCliLink(env));
   return finalizeRuntimeResult(steps);
 }

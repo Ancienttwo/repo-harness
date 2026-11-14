@@ -26,7 +26,7 @@ export default defineConfig({
   publicDir: brandAssets,
   plugins: [react(), tailwindcss(), designTokens()],
   // `bun run dev:operator` serves the board from source; reads go to a local
-  // `repo-harness operator serve`, on its default loopback port unless
+  // `rh operator serve`, on its default loopback port unless
   // OPERATOR_API_ORIGIN names another one.
   server: {
     host: '127.0.0.1',

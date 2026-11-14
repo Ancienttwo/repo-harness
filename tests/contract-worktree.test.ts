@@ -187,7 +187,7 @@ describe("contract-worktree helper integration", () => {
 
   test("contract-worktree start creates the worktree and runs CodeGraph only for a selected architecture plugin", () => {
     const cases = [
-      { name: "not-selected", state: null, skipped: "the architecture plugin is not selected; run: repo-harness install" },
+      { name: "not-selected", state: null, skipped: "the architecture plugin is not selected; run: rh install" },
       { name: "unreadable", state: "{", skipped: "the install selection cannot be read" },
       { name: "selected", state: "selected", skipped: null },
     ] as const;

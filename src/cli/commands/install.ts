@@ -1,6 +1,6 @@
 import { runUserUninstall } from '../installer/uninstall';
 /**
- * `repo-harness install|uninstall --target codex|claude|both --location global`
+ * `rh install|uninstall --target codex|claude|both --location global`
  *
  * Resolves --target to AgentTarget list for install. Uninstall restores
  * owned user configuration. Idempotent: re-run with no diff returns
@@ -40,7 +40,7 @@ function resolveTargets(spec: InstallTargetSpec) {
   const t = getTarget(spec);
   if (!t) {
     throw new Error(
-      `repo-harness install: unknown --target "${spec}" (known: ${listTargetIds().join(', ')}, both)`,
+      `rh install: unknown --target "${spec}" (known: ${listTargetIds().join(', ')}, both)`,
     );
   }
   return [t];
@@ -48,7 +48,7 @@ function resolveTargets(spec: InstallTargetSpec) {
 
 export function runInstall(opts: InstallCommandOptions): InstallCommandResult {
   if (opts.location !== 'global') {
-    return { exitCode: 2, lines: [`repo-harness install: invalid --location "${opts.location}" (expected: global)`] };
+    return { exitCode: 2, lines: [`rh install: invalid --location "${opts.location}" (expected: global)`] };
   }
   const targets = resolveTargets(opts.target);
   const lines: string[] = [];
@@ -74,7 +74,7 @@ export function runInstall(opts: InstallCommandOptions): InstallCommandResult {
 
 export function runUninstall(opts: UninstallCommandOptions): InstallCommandResult {
   if (opts.location !== 'global') {
-    return { exitCode: 2, lines: [`repo-harness uninstall: invalid --location "${opts.location}" (expected: global)`] };
+    return { exitCode: 2, lines: [`rh uninstall: invalid --location "${opts.location}" (expected: global)`] };
   }
   return runUserUninstall(opts);
 }

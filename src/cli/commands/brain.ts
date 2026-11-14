@@ -1,5 +1,5 @@
 /**
- * `agentic-dev brain` / `repo-harness brain` — explicit external knowledge
+ * `agentic-dev brain` / `rh brain` — explicit external knowledge
  * sync surface.
  *
  * This command owns the deliberate write boundary from repo files into
@@ -92,7 +92,7 @@ export interface BrainSyncResult {
 const VALID_SCOPES = new Set(['reference-configs', 'architecture', 'project-docs', 'knowledge', 'workstreams', 'all']);
 const DEFAULT_MANIFEST = '.ai/harness/brain-manifest.json';
 const VALID_ROLES = new Set(['externalized', 'partial', 'repo-authored']);
-const SYNC_COMMAND = 'repo-harness brain sync';
+const SYNC_COMMAND = 'rh brain sync';
 
 function normalizeSlashes(value: string): string {
   return value.replaceAll(path.sep, '/');
@@ -313,7 +313,8 @@ function validatePolicy(repoRoot: string, manifest: BrainManifest, manifestRel: 
   if (typeof manifestFile === 'string' && manifestFile !== manifestRel) {
     issue(issues, 'error', `Policy external_knowledge.manifest_file points to ${manifestFile}, expected ${manifestRel}`);
   }
-  if (typeof syncScript === 'string' && syncScript.startsWith('repo-harness ')) {
+  // A command value must be the sync command; `repo-harness brain sync` names the retired command.
+  if (typeof syncScript === 'string' && (syncScript.startsWith('rh ') || syncScript.startsWith('repo-harness '))) {
     if (syncScript !== SYNC_COMMAND) {
       issue(issues, 'error', `Policy external_knowledge.sync_script must be "${SYNC_COMMAND}" or a repo file: ${syncScript}`);
     }

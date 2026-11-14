@@ -119,7 +119,7 @@
 | 清理 worktree：一键清理、清理会话、归档 | linked worktree 与本地分支；git 不再登记的残留目录；`docs/archive-<slug>` 分支 | 绿色项一键清理；非绿色项在你发起的清理会话里逐项授权，先把值得留的内容归档进 `docs/archive/`（Draft PR），再删；执行前逐项重核 | 删在用的 worktree；没授权、或授权后内容变了还删；凭据类文件进 `docs/`；删远端分支；agent 自己归档或删除 |
 | 顾问席对话：发文字、读回输出（G38） | 看板当前 parent 的顾问席 hc 终端，按 board 的 seat 标签找到 | hcSend 只发纯文字；回复用 hcRead 读顾问席终端最近的输出，脱敏后显示；状态取 hc turn 事件 | 发给编排席或执行席；停止、中断或重启顾问席；读其他终端；放宽顾问席规则（不改代码、不提交、不写 GitHub） |
 
-- 给任务 owner 发消息交给 Bot：现有入口是 CLI `repo-harness fleet message send`，要求 admission 与 claim 上下文；控制台只读显示 task inbox 的消息与投递回执。
+- 给任务 owner 发消息交给 Bot：现有入口是 CLI `rh fleet message send`，要求 admission 与 claim 上下文；控制台只读显示 task inbox 的消息与投递回执。
 - 编码会话不接入控制台：不向用户 harness 里的会话、编排席或执行席发消息、停止或注入内容。顾问席是唯一例外：只发文字、读回输出，不能停止它（G38）。
 - 宿主投影（install、update、profile 切换）和 registry 清理仍然只给命令，由用户在终端执行。
 - 每个写入请求都要过 Origin / Sec-Fetch-Site 校验和写 token；token 由页面响应用 HttpOnly、SameSite=Strict 的 cookie 下发。会话沙箱禁止连回环地址，agent 拿不到 token，也调不到写入 API。本机其他进程与用户同权，服务端分不出人点和程序调用，所以非绿色项的授权绑定你看到的会丢内容摘要；CLI 删非绿色项要在终端确认，非交互环境拒绝。失败在 UI 里显示具体原因，不假装成功。
@@ -222,17 +222,17 @@
 | G21 | P1 | 测试到能力的映射 | 只有 26 个 model 节点写了 verification 命令，其中 1 条引用的文件已不存在 | 从 model 与 import 反向图生成投影，带 drift 检查，不另立权威 | 测试、架构 |
 | G22 | P1 | 架构图层数据 | 控制台只有模块列表和一跳依赖图；没有变更、违规、PR 影响面、测试、决策图层 | 见「架构」一节；上游 arch-context#407、#408、#409 已完成，repo-harness 已锁定 archctx 0.11.1（#1430） | 架构 |
 | G23 | P1 | Worktree 清单与磁盘占用 | Dev Activity 已列出登记仓库的 linked worktree，PR 合并后标 cleanup\_pending；但没有大小、来源和占用进程，残留目录不在列表里 | 后台 collector 加合并判定、来源归类、进程检查和低频 du；每个 worktree 一个稳定 id；浏览器不拿绝对路径；看板的「worktree 还没清理」改用它，退役 cleanup\_pending | Worktree、首页 |
-| G24 | P1 | 清理写入与统一 CLI | contract-worktree sweep 只管 repo-harness 自己开的；MCP 另有 cleanup；没有覆盖所有来源的入口 | 新增 repo-harness worktrees list 与 clean，clean 对绿色项直接删，非绿色项要带授权并在终端确认；HTTP 只做薄封装；执行前重核、拓扑锁、审计 | Worktree |
+| G24 | P1 | 清理写入与统一 CLI | contract-worktree sweep 只管 repo-harness 自己开的；MCP 另有 cleanup；没有覆盖所有来源的入口 | 新增 rh worktrees list 与 clean，clean 对绿色项直接删，非绿色项要带授权并在终端确认；HTTP 只做薄封装；执行前重核、拓扑锁、审计 | Worktree |
 | G25 | P1 | Worktree 清理会话 | 没有 | 清理调查跑在评审宿主里，runtime 只用 codex，不开会话，不用文档会话的宿主（D12，#1721 M69）；评审的 OS 边界多一条规则，禁止读目标 worktree 和它们的 Git 目录；服务端把观察写成清单，agent 只按清单给建议和归档计划；你逐项授权后，服务端先归档进 docs/archive/ 再删 | Worktree |
 | G26 | P1 | 统一的 worktree 记录 | 三套记录格式和位置各不相同；portal skill 与手开的 worktree 不留记录；只有任务 agent 记结束状态 | 每条创建路径写同一份记录：创建方、用途、关联任务或 PR、时间；closeout 写结束状态 | Worktree |
 | G27 | P1 | 架构模型补全 | 节点都没填 layer；没有外部系统和拓扑节点；0 条 ADR，manifest 的决策目录不存在 | agent 按 repo-harness-architecture 补模型；manifest 的决策目录改到 docs/adr | 架构 |
 | G28 | P1 | 高合并量下的看板容量 | 已合并 PR 查询取 7 天窗口、上限 200 行；超出就把整个 GitHub 来源标为不可用，看板、今天已发布和今日摘要一起变空 | 缩短窗口或按日期分页，计数改用 search API 的总数；只有超限的那一类标不可用 | 首页、看板 |
 | G29 | P1 | Bot 接入状态 | 控制台没有 MCP、Bot、admission 和 herdr 会话的路由或页面；System 页只显示 notify 插件和运行时摘要 | 新 collector：mcp doctor --json（不带 --live）、OAuth 元数据、registry、审计最新一条、herdr status 与快照、notify 各渠道；Bots 页只读，改接入只给命令 | Bots |
-| G30 | P1 | Bot 身份与归属 | 没有 Bot 登记，bot\_id 是自由文本；MCP 审计的 actor 只有 mcp:\<profile>；任务消息的发送者固定为 user；运行时记录没有派发者；没有收回单个 OAuth 客户端的命令 | 全局 bots/\<bot-id>.json 与 repo-harness bots register；MCP 审计、任务消息、herdr 派活都带 bot id；新增 repo-harness mcp clients list 与 revoke；登记只用于归属，不授权 | Bots、任务抽屉 |
+| G30 | P1 | Bot 身份与归属 | 没有 Bot 登记，bot\_id 是自由文本；MCP 审计的 actor 只有 mcp:\<profile>；任务消息的发送者固定为 user；运行时记录没有派发者；没有收回单个 OAuth 客户端的命令 | 全局 bots/\<bot-id>.json 与 rh bots register；MCP 审计、任务消息、herdr 派活都带 bot id；新增 rh mcp clients list 与 revoke；登记只用于归属，不授权 | Bots、任务抽屉 |
 | G31 | P2 | Slack 渠道与通知负载 | notify 插件只发不收；一个插件配一个 Slack webhook；只记所有渠道合并后的最新一次投递；负载里没有仓库、任务和请求 id | 每个渠道分别记最近一次投递和结果；负载带仓库、任务和请求 id；Bot 之间的对话留在 Slack，repo-harness 不读 Slack | Bots、系统 |
 | G32 | P1 | herdr 版本对齐 | 已解决：#1090 把观测 pin 升到上游 0.9.5、protocol 22，#1124 去掉 program status，不再依赖 fork add5f99a（#1086） | 页面写明期望版本与实际版本；对齐 pin 或去掉 fork 依赖，单独排期 | Bots、看板、系统 |
 | G33 | P1 | 席位配置 | 三种席位只在 herdr-notify.md 的 Herdr Dispatch 里写成约定；config.json 没有 seats 段，fleet 名单没有落点 | config.json#seats 与 GET/POST /api/v1/settings/seats，修订号和 409 与 agents 段一样；可选范围从 task-role-profiles.ts 推出 | 设置 · 席位 |
-| G34 | P1 | 席位启动命令 | 编排席手写 herdr-app 的 --argv，没有生成 argv 的命令 | repo-harness seats argv \<seat> --json；Herdr Dispatch 的 Runtime commands 改用它 | 设置 · 席位 |
+| G34 | P1 | 席位启动命令 | 编排席手写 herdr-app 的 --argv，没有生成 argv 的命令 | rh seats argv \<seat> --json；Herdr Dispatch 的 Runtime commands 改用它 | 设置 · 席位 |
 | G35 | P1 | fleet 名单落到宿主 | Claude 能在启动参数里拒掉 sub-agent；Codex 没有按会话限制 sub-agent 的开关；Pi 不装 fleet | Claude 强制；Codex 只写进启动说明，页面标「不强制」；Pi 锁住。Claude 档位传法、sub-agent 是否跟着席位的工具限制，实现时核实 | 设置 · 席位 |
 | G36 | P2 | 编排席推荐档位不一致 | herdr-notify.md 推荐 Opus high，agents/fleet/orchestrator.md 写 Opus xhigh | 已定（2026-11-03）：默认 high，用户在席位设置里自己调；orchestrator.md 随 3.5 改成 high | 设置 · 席位 |
 | G37 | P1 | classic herdr CLI 退役 | owner 2026-11-03：新版本弃用 herdr CLI，全面改用 herdr-app + herdr-core。仓库里传输 herdr.ts、task-session、review --launch herdr、operator collector、notify 插件、强 readiness 和 CI 的 install-pinned-herdr 仍只认 classic（#1413 列表） | 迁移 issue #1474（子 issue #1475–#1483）：逐个表面改到 hc / herdr-app，一次性迁移后删掉 classic 路径，不留回退 | Bots、看板、系统、席位 |
@@ -283,7 +283,7 @@
 - **安装探测**：`installation()` 先在 PATH 上查找，再起子进程跑 `--version` 和就绪检查（如 `codex app-server --help`），所以并入 setup collector 的 10 分钟周期，GET 只读缓存。`OAR_<X>_BIN` 环境变量可以固定可执行文件。
 - **能力差异**：OAR 按会话对象上有没有 `steer` 成员判断能否插入当前轮，会话打开后才知道。kimi、antigravity、opencode v2 没有 steer；codex 没有撤回排队消息；所有 runtime 都能停止本轮。设置页显示静态能力表，会话页按实际会话置灰按钮。
 - **配置**：`~/.repo-harness/config.json` 现在只有 `architecture`、`brainRoot`、`protectedHelperRuntime`、`security` 四个键，按 `HOME` 定位，不看 `REPO_HARNESS_HOME`。新增 `agents` 段：`{enabled: [id], uses: {docs: [id], review: [id]}, default_docs: id}`，`review` 只接受 claude、codex。
-- **修复命令**：`repo-harness setup check`、`repo-harness install --target codex|claude|both --profile minimal|full`、`repo-harness update`；页面按漂移类型给出对应的一条。
+- **修复命令**：`rh setup check`、`rh install --target codex|claude|both --profile minimal|full`、`rh update`；页面按漂移类型给出对应的一条。
 - **OAR 升级**：单独排期升到 0.71.x，不绑进 UI 首版。会话、事件和启动约定不变；新增按 runtime 单独加载的入口（约 1–2.5 MB 堆内存，根入口约 50 MB），适合探测 collector；配置表单 `./forms` 在 0.71.0 只覆盖 grok。
 
 ### CLI 清单（G18）
@@ -347,9 +347,9 @@ Bots 页读这三条路的状态；三条路里只有 CLI → herdr 能派活。
 | Slack：Bot ↔ Bot | repo-harness 不读 Slack，也不转发 Bot 之间的消息；Bot 在频道里直接对话。repo-harness 只有 herdr notify 插件往一个 incoming webhook 发 blocked（可选 done），5 秒超时，不重试；同一插件也发 Discord、Telegram 和 Bot webhook | 每个渠道是否配置、最近一次投递的时间和结果；Slack 频道名和跳转链接；webhook URL 和 token 只显示「已配置」 | 只记所有渠道合并后的最新一次投递；负载里没有仓库、任务和请求 id，频道里分不出是哪个任务（G31） |
 | herdr：Bot → agent | Bot 在 herdr pane 里运行，用 `herdr agent start`、`prompt`、`wait`、`read` 派活；pane 状态变化由 notify 插件推回 Bot。repo-harness 只用 socket 的 `ping`、`session.snapshot` 和 `events.subscribe`。pin 已对齐上游 v0.9.5（#1090），不再依赖 fork `add5f99a`（#1086、#1124） | herdr 服务状态、期望版本与实际版本、会话和 pane 数、每个 agent pane 的状态和最近一次派活；终端文字、标题和 cwd 不显示 | G32 已解决（#1090、#1124）；运行时记录没有派发者，分不出是哪个 Bot 派的活（G30） |
 
-- **Bot 名单（G30）**：现在没有 Bot 登记。`review admit` 里的 `bot_id` 是自由文本；`fleet message send` 的发送者固定为 user。新增全局 `~/.repo-harness/bots/<bot-id>.json`，由 `repo-harness bots register` 写入：名字、宿主（Hermes、Grok、Dot 等）、MCP OAuth client id、Slack 机器人 id、herdr agent 名。MCP 审计、任务消息和 herdr 派活都带 bot id；对不上的显示「未登记」。登记只用于归属，不授权：权限仍由 MCP profile、仓库读写模式和 admission 决定。
-- **改接入只给命令**：仓库读写用 `repo-harness mcp access set --repo <仓库> --mode read_only|read_write`；删除连接器和凭据用 `repo-harness mcp uninstall --target chatgpt|codex|both --services-stopped`；装 notify 插件用 `repo-harness herdr notify install`。现在没有收回单个 OAuth 客户端的命令，新增 `repo-harness mcp clients list` 和 `revoke <client-id>`（G30）。这些都是凭据和权限操作，属于硬边界，由用户在终端执行。
-- **读法（G29）**：后台 collector 跑 `repo-harness mcp doctor --json`，不带 `--live`（带了会注册并保存一个客户端）。OAuth 文件只取 client id、签发时间、profile 和过期时间；token 字符串是 map 的键，不进投影。另读 registry 的读写模式与修订号、各仓库审计日志的最新一条、`herdr status --json` 与 socket 快照、notify 插件状态。GET 只读缓存（不变量 #3）。
+- **Bot 名单（G30）**：现在没有 Bot 登记。`review admit` 里的 `bot_id` 是自由文本；`fleet message send` 的发送者固定为 user。新增全局 `~/.repo-harness/bots/<bot-id>.json`，由 `rh bots register` 写入：名字、宿主（Hermes、Grok、Dot 等）、MCP OAuth client id、Slack 机器人 id、herdr agent 名。MCP 审计、任务消息和 herdr 派活都带 bot id；对不上的显示「未登记」。登记只用于归属，不授权：权限仍由 MCP profile、仓库读写模式和 admission 决定。
+- **改接入只给命令**：仓库读写用 `rh mcp access set --repo <仓库> --mode read_only|read_write`；删除连接器和凭据用 `rh mcp uninstall --target chatgpt|codex|both --services-stopped`；装 notify 插件用 `rh herdr notify install`。现在没有收回单个 OAuth 客户端的命令，新增 `rh mcp clients list` 和 `revoke <client-id>`（G30）。这些都是凭据和权限操作，属于硬边界，由用户在终端执行。
+- **读法（G29）**：后台 collector 跑 `rh mcp doctor --json`，不带 `--live`（带了会注册并保存一个客户端）。OAuth 文件只取 client id、签发时间、profile 和过期时间；token 字符串是 map 的键，不进投影。另读 registry 的读写模式与修订号、各仓库审计日志的最新一条、`herdr status --json` 与 socket 快照、notify 插件状态。GET 只读缓存（不变量 #3）。
 - **herdr 版本（G32）**：已解决。#1090 把观测 pin 升到上游 0.9.5、protocol 22，#1124 去掉 program status，不再依赖 fork `add5f99a`。版本不符时页面仍写期望版本和实际版本，不显示成「没连上」（#1093）。
 - **notify 读错会话**：读插件状态时没带 `--session`（`notify-status.ts:130-132`），安装时带了（`herdr.ts:140`）；用非默认会话时，System 页会显示别的会话的插件。随切片 1.8 修。
 
@@ -365,7 +365,7 @@ issue-flow 在 Herdr 里开三种进程 agent，统称席位：编排席（orche
 
 - **配置（G33）**：`~/.repo-harness/config.json` 加 `seats` 段，每个席位存 `runtime`、`model`、`effort` 和 `fleet`。runtime 只能选 Agent 接入里已启用、能在 pane 里跑的 claude、codex、pi。`model` 或 `effort` 为 null 时用宿主默认。可选范围不另写一份：角色清单来自 `task-role-profiles.ts` 的 `MANAGED_AGENTS`，可写角色来自 `WRITABLE_AGENTS`。`GET`/`POST /api/v1/settings/seats` 沿用 agents 段的 `expected_revision`、`request_id` 和 409。服务端拒绝顾问席的可写角色和编排席的任何角色，前端只是同一规则的投影。
 - **工具（G33）**：每个席位按能力组开关工具：读代码（常开）、改文件、Shell、联网、任务列表、MCP · repo-harness、GitHub 写入。Claude 把关掉的组写进 `--disallowedTools`；Codex 只有改文件（`-s read-only|workspace-write`）和联网能强制：可写席位按 `net` 写 `sandbox_workspace_write.network_access`，带 `net` 时为 `true`（#1961）；只读席位保持 `-s read-only`，`net` 只开 web search；不带 `net` 的席位把 `web_search` 设为 `disabled`，启动说明写不要联网；Shell 关不掉，其余只写进启动说明。GitHub 写入是 Bash 前缀规则，只拦常见命令，页面这样标。席位规则锁住的组不能打开：编排席和顾问席不改文件，顾问席不写 GitHub。sub-agent 不单独配工具（owner 2026-11-03）。
-- **启动命令（G34）**：新增 `repo-harness seats argv <seat> --json`，按保存的配置打印 argv。Herdr Dispatch 的 Runtime commands 把手写的 `--argv '[...]'` 换成这条命令。没有 `seats` 段时打印宿主默认 argv 并写明来源，不猜。
+- **启动命令（G34）**：新增 `rh seats argv <seat> --json`，按保存的配置打印 argv。Herdr Dispatch 的 Runtime commands 把手写的 `--argv '[...]'` 换成这条命令。没有 `seats` 段时打印宿主默认 argv 并写明来源，不猜。
 - **名单落到宿主（G35）**：Claude 在启动参数里拒掉名单外的 `Agent(<role>)`，名单是强制的。Codex 没有按会话限制 sub-agent 的开关，名单只写进启动说明，页面标「不强制」，不拿提示冒充限制。Pi 不装 fleet，名单锁住。Claude 档位的传法和拒绝规则的名字，实现时按当前 Claude Code 核实。
 - **生效范围**：只对新开的 pane 生效，正在运行的 pane 不变。operator 还读不到 hc 里运行的 pane（#1413 留给后续 issue），页面不显示运行数。
 - **顾问席对话（G38）**：看板的办公室视图里点顾问席，弹出对话框。顾问席本来就是开平行讨论方案的席位：没有 claim 角色，不做决定，讨论结果仍由它写成 replan 提案交编排席决定。编排席不开对话，它只认 board 上的 plan、claim 和 decision；执行席只听编排席。owner 2026-11-04 决定；视觉稿见 [Board · Pixel 办公室](https://claude.ai/artifact/TgArwqpdtxG34p7gB2jFB7)。
@@ -400,7 +400,7 @@ issue-flow 在 Herdr 里开三种进程 agent，统称席位：编排席（orche
 3. **agent 启动**：OAR 固定用免确认模式启动（Claude 带 bypass flag，Codex 为 danger-full-access），只能在上面的 OS 边界里跑。按 `CLAUDE.md`，这类确认绕过要用户逐项批准（待决问题 3）。隔离没验证过的 runtime 不启用；边界建不起来就不启动，不退回无隔离运行。
 4. **事件**：会话目录在 `~/.repo-harness/operator/sessions/<sid>/`，在沙箱可写范围之外。宿主先脱敏再落盘，追加到 `events.jsonl`（0600）：消息正文、工具类别、仓库内相对路径、执行状态、轮次边界、失败类别；消息正文也过 `SECRET_TOKEN_PATTERNS`。原始工具参数、完整命令、终端输出、环境变量和推理过程不落盘也不显示，用结构化的操作摘要代替。
 5. **推送**：浏览器按游标轮询 `GET /api/v1/sessions/{sid}/events?after=<epoch>.<seq>`，进行中 1 s 一次，空闲 30 s 一次。宿主每次重启 epoch 加一，因为 OAR 恢复会话后 `seq` 从 0 重新计数。
-6. **提交**：由服务端的 effect 执行，agent 没有推送权限，也拿不到 GitHub 凭据。服务端列出相对基线的全部改动（含未跟踪文件），确认都在可写范围内；用 `repo-harness architecture-projection hand-edits --json` 确认没碰生成区，碰了回 422 `generated_region`；核对 `expected_diff_sha256`。用户看过完整 diff 后点一次「提交、推送并创建 Draft PR」。三步分别记审计；失败时显示停在哪一步，重试从那一步接着做，不重复提交，也不重复开 PR。
+6. **提交**：由服务端的 effect 执行，agent 没有推送权限，也拿不到 GitHub 凭据。服务端列出相对基线的全部改动（含未跟踪文件），确认都在可写范围内；用 `rh architecture-projection hand-edits --json` 确认没碰生成区，碰了回 422 `generated_region`；核对 `expected_diff_sha256`。用户看过完整 diff 后点一次「提交、推送并创建 Draft PR」。三步分别记审计；失败时显示停在哪一步，重试从那一步接着做，不重复提交，也不重复开 PR。
 7. **丢弃与清理**：「丢弃」要先停下本轮，再列出会丢的内容：未提交和未跟踪的文件、未推送的提交，并算出这份清单的内容摘要。用户确认后，服务端在锁内重算，清单或摘要变了回 409 `loss_changed`，不删。合并后的 worktree 不由会话自己删，交给现有的 closeout 和 sweep（`cleanupExactWorktree`），同样记审计。已推送的分支只给命令。这与 `CLAUDE.md` 的删除规则一致。
 8. **平台**：Linux 和 Windows 在有对应的 OS 边界之前回 501 `platform_unsupported`。只读的控制台各平台都能用。
 
@@ -465,7 +465,7 @@ issue-flow 在 Herdr 里开三种进程 agent，统称席位：编排席（orche
 - **清单**：按目录、按架构能力两种分组；每组显示文件数、用例数、通道、平台门槛（`darwinTest`、昂贵通道）和记录耗时。
 - **结果**：最近一次日常全量的状态和失败文件、打开的 `[CI repair]` issue、当前 PR 的必需检查、本机 verification plan 运行结果（passed、failed、reused）。
 - **TDD**：任务抽屉列出这个任务的 diff 改到的测试文件，以及它的 verification plan 检查结果。同一检查在 base 上失败、在 head 上通过时标「红→绿」。这里只陈述证据，不当门槛；没有结果的检查显示「无结果」，不算通过。
-- **命令**：受影响测试的 `bun run test:files <files> --timeout 60000 --max-concurrency 1`、`bash scripts/check-ci.sh affected`；adopted 仓库用 `repo-harness run verify-sprint --test <file>`。
+- **命令**：受影响测试的 `bun run test:files <files> --timeout 60000 --max-concurrency 1`、`bash scripts/check-ci.sh affected`；adopted 仓库用 `rh run verify-sprint --test <file>`。
 - **维护提示**：没有耗时记录的文件、指向已删文件的耗时和 verification 引用、仍按 issue 编号命名的约 10 个测试文件。
 
 数据来源都走后台 collector，GET 只读缓存：
@@ -509,7 +509,7 @@ Worktree 页把这台机器上所有 worktree 的磁盘占用画成一张图，�
 - **清理会话（G25）**：你在 Worktree 页选好非绿色项、打开清理计划，再点「请 agent 给建议」。服务端为这份计划启动一次调查，不开 `worktree_cleanup` 类型的会话，也不用文档会话的宿主（D12，#1721 M69）。agent 在评审宿主里运行：它读不到目标 worktree 和它们的 Git 目录，只读服务端写的观察清单，只写自己的输出目录。它按清单判断非绿色项：提交是否还在远端、PR 是否已关闭、未提交和被忽略的文件是不是可重建的构建产物；补丁相似只作参考，不当合并证明。然后给每项写删或留、理由、证据，以及值得保留的内容归档到哪；服务端校验后把它作为新的计划版本，不预先授权任何一项。页面用磁盘图对比清理前后：绿色项默认勾选；黄色项默认不勾，你看过证据和会丢的东西后逐项勾选，就是授权；红色项不给删除入口。PR 已关闭或远端分支已删，不说明本地内容可以丢，所以黄色项默认不勾。agent 自己不归档、不删任何东西。
 - **授权后执行**：你点「授权并执行」后，服务端逐项重核：绿色项按规则删；黄色项先按计划归档、再删，而且只有会丢内容的摘要和你看到的一致才动手，变了就跳过并要求重新授权；红色项一律跳过。删除复用 sweep 的回收区与收据（`cleanupExactWorktree`），给它加一个带授权的模式，允许删脏的、未合并的 worktree 和 git 不再登记的残留目录。本地分支随授权一起删；远端分支不动。
 - **归档**：已经在 git 历史里的内容（已推送或已合并的提交）不用归档，能从历史找回。要归档的是未提交、未推送或被忽略但值得留的内容，统一放进 `docs/archive/<日期>-<worktree>/`：文档保留原来的相对路径；未推送的提交用 `git format-patch` 存成补丁；目录里一份 `SOURCE.md` 记仓库、worktree、分支、基线提交、原路径和清理会话 id。服务端走文档会话的同一条提交流程：提交到 `docs/archive-<slug>` 分支、推送并开 Draft PR；推送成功才删 worktree。归档进了 git 历史，以后能按 `SOURCE.md` 和提交记录追到来源。凭据类文件（`.env` 等）不进 `docs/`：要留的话，服务端原样移到 `~/.repo-harness/archive/<repo-key>/`，权限 0600，不读也不显示内容；大的二进制文件也放这里，`SOURCE.md` 记它的 sha256。
-- **CLI 对等**：新增 `repo-harness worktrees list --json` 和 `repo-harness worktrees clean --ids … --expected-digest …`，覆盖所有来源；现有的 `contract-worktree sweep` 只管 repo-harness 自己开的那批。
+- **CLI 对等**：新增 `rh worktrees list --json` 和 `rh worktrees clean --ids … --expected-digest …`，覆盖所有来源；现有的 `contract-worktree sweep` 只管 repo-harness 自己开的那批。
 - **预防**：合同的 closeout 已经会删已合并且干净的 worktree，页面能看出哪次 closeout 没跑；首页的今日摘要加一行可回收空间。worktree 根目录按 [#987](https://github.com/Ancienttwo/repo-harness/issues/987) 统一在系统临时目录：[#983](https://github.com/Ancienttwo/repo-harness/issues/983) 把模板改成 `{{system_tmp}}`，[#985](https://github.com/Ancienttwo/repo-harness/issues/985) 拦截根目录外的 `git worktree add`；控制台不另立根目录。合并后通知负责 agent 收尾见 [#993](https://github.com/Ancienttwo/repo-harness/issues/993)。
 
 ## 待决问题与里程碑
@@ -568,10 +568,10 @@ Worktree 页把这台机器上所有 worktree 的磁盘占用画成一张图，�
 | 2.4 分层、时序、拓扑底图（G11、G27，#1145） | 三张底图与视图切换；五个图层沿用 2.2 的数据 | 三张底图选中元素后都显示代码量、依赖边和修复命令；没有手写数字 |
 | 3.1 写入通道（G1） | POST 白名单、token、审计、幂等、锁；改 write-boundary 测试 | 跨站、缺 token、错 Content-Type 都被拒；同一 request\_id 配不同内容回 409；结果审计失败显示「待核对」；都有测试 |
 | 3.2 Agent 接入（G6、G9） | 配置 `agents` 段、安装探测、设置页 | 修订号冲突回 409；评审宿主测试仍通过 |
-| 3.3 Bot 登记与归属（G30） | bots/\<bot-id>.json 与 repo-harness bots register；MCP 审计、任务消息、herdr 派活带 bot id；repo-harness mcp clients list 与 revoke | 每条审计、任务消息和派活记录都对到已登记的 Bot 或显示「未登记」；revoke 后该客户端的 token 失效；都有测试 |
+| 3.3 Bot 登记与归属（G30） | bots/\<bot-id>.json 与 rh bots register；MCP 审计、任务消息、herdr 派活带 bot id；rh mcp clients list 与 revoke | 每条审计、任务消息和派活记录都对到已登记的 Bot 或显示「未登记」；revoke 后该客户端的 token 失效；都有测试 |
 | 3.4 Slack 渠道（G31） | notify 插件按渠道记录投递结果；负载带仓库、任务和请求 id | 一个渠道失败不掩盖其他渠道的结果；负载和状态里没有密钥样例 |
 | 3.5 席位配置与设置页（G33、G36） | config.json 的 seats 段、GET/POST /api/v1/settings/seats、设置 · 席位页；统一编排席的推荐档位 | 顾问席选可写角色、编排席选任何角色都被服务端拒绝；修订号冲突回 409；保存后运行中的 pane 不变；都有测试 |
-| 3.6 席位启动命令（G34、G35） | repo-harness seats argv；Herdr Dispatch 的 Runtime commands 改用它；Claude 启动参数拒掉名单外的 sub-agent | Claude pane 里调名单外角色被拒，有测试或手工记录；Codex 的 argv 不带假装的限制参数；check:reference-configs 通过 |
+| 3.6 席位启动命令（G34、G35） | rh seats argv；Herdr Dispatch 的 Runtime commands 改用它；Claude 启动参数拒掉名单外的 sub-agent | Claude pane 里调名单外角色被拒，有测试或手工记录；Codex 的 argv 不带假装的限制参数；check:reference-configs 通过 |
 | 3.7 顾问席对话（G38） | 顾问席消息与读回路由；看板办公室视图的顾问席对话框 | 编排席、执行席和其他 parent 的终端地址都被拒；没有活的顾问席终端回 409；读回文本里的密钥样例被脱敏；都有测试 |
 | 4.1 docs host（G5） | 从 #932 恢复隔离代码，收窄到 `docs/` | macOS 上零模型测试：`.git`、源码、生成目标写不了，凭据读不到，回环地址连不上，git push 失败 |
 | 4.2 引用与会话（G8） | 引用校验、会话创建、worktree | 引用失效回 409；worktree 只在约定根目录下 |
@@ -579,7 +579,7 @@ Worktree 页把这台机器上所有 worktree 的磁盘占用画成一张图，�
 | 4.4 提交与丢弃 | commit、push、Draft PR、丢弃 | 范围外和生成区的改动拒绝提交；丢弃清单变了回 409；合并后的 worktree 交给 closeout 和 sweep |
 | 4.5 追加说明、停止与会话读路由（#1146） | POST messages 与 stop；GET 会话列表、详情、diff 与丢弃清单 | steer\_unsupported 不自动排队；stop 后会话保留；响应里没有绝对路径和原始工具参数 |
 | 4.6 文档会话前端（#1147） | 首页发起、文档引用、文档会话页、侧栏「最近」 | 4-HOME、4-DOCS、4-DSES 场景都有测试；没有向编码会话发消息的控件 |
-| 5.1 Worktree 一键清理（G24） | repo-harness worktrees list 与 clean、POST /api/v1/worktrees/cleanup | 一键清理只删绿色项；没授权的非绿色项和在用的都删不掉，有测试；摘要变了回 409 |
+| 5.1 Worktree 一键清理（G24） | rh worktrees list 与 clean、POST /api/v1/worktrees/cleanup | 一键清理只删绿色项；没授权的非绿色项和在用的都删不掉，有测试；摘要变了回 409 |
 | 5.2 清理会话（G25） | 清理调查（评审宿主加禁读目标的规则，不开会话，D12，#1721 M69）、计划审阅页、带授权的删除、归档到 docs/archive/ | agent 进程写不了任何仓库；没授权的、授权后内容变了的、在用的都删不掉；归档推送成功前不删 |
 
 ## 来源

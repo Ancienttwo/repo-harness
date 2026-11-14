@@ -18,7 +18,7 @@ seat is a process (`SKILL.md`, Seats, sub-agents and claim roles).
 | Writer | Child issue, or one PR slot of it | Worker | Its branch, its PR body, status comments | PR merged, or released or handed-off status |
 | Head owner | One PR | The writer of that PR | Pushes to the PR branch. Only this role pushes | Merge, or a handoff that names the next head owner |
 | Acceptor | One review in one round of one PR (`acceptor.md` §2.2 sets the reviews of a round) | A read-only reviewer; the gatekeeper is the default (`acceptor.md`) | Its review threads and the acceptance record row, through the review-round runner | The acceptance record row for its review |
-| Integrator | Main branch publication | Orchestrator | Merge with `repo-harness publication merge` only (`orchestrator.md` §9) | Merge done, or handoff |
+| Integrator | Main branch publication | Orchestrator | Merge with `rh publication merge` only (`orchestrator.md` §9) | Merge done, or handoff |
 
 Rules that keep the topology safe:
 
@@ -42,7 +42,7 @@ Rules that keep the topology safe:
   coordinator of that sub-tree, opens grandchildren and dispatches them.
   It does not also implement them.
 - **One merge path.** The integrator merges only with
-  `repo-harness publication merge`. When `publication.acceptance_merge` is
+  `rh publication merge`. When `publication.acceptance_merge` is
   `off` on the PR base, the executor does not merge. The integrator posts
   that the PR is ready, and the owner merges.
 - **One integrator.** Only the integrator merges into main, so the plan

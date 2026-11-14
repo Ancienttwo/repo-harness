@@ -42,7 +42,7 @@ export function validateRepoAdoptionTarget(
       step: "validate repo target",
       status: "failed",
       detail:
-        `refusing to apply repo harness to HOME (${repoRoot}); run repo-harness init --repo <git-repo> from an intended project`,
+        `refusing to apply repo harness to HOME (${repoRoot}); run rh init --repo <git-repo> from an intended project`,
     };
   }
 

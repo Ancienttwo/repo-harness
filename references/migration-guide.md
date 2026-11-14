@@ -1,7 +1,7 @@
 # Migration Guide (current repo-harness contract)
 
 This guide upgrades an existing repository to the current `repo-harness`
-tasks-first contract. The canonical public entrypoint is `repo-harness init`.
+tasks-first contract. The canonical public entrypoint is `rh init`.
 
 ## Current Contract Surface
 
@@ -15,7 +15,7 @@ tasks-first contract. The canonical public entrypoint is `repo-harness init`.
 - **User-level host adapters**: `~/.claude/settings.json` and
   `~/.codex/hooks.json`; repo-local adapter files are user-owned inputs for
   manual review.
-- **Operator helpers**: `repo-harness run <helper>` runs the installed package
+- **Operator helpers**: `rh run <helper>` runs the installed package
   helpers. No shell operator library ships. Init preserves legacy repo copies
   of `workflow-state.sh`.
 - Stable product truth lives in `docs/spec.md`.
@@ -41,10 +41,10 @@ tasks-first contract. The canonical public entrypoint is `repo-harness init`.
 
 ```bash
 # Preview only
-repo-harness init --repo /path/to/project --dry-run
+rh init --repo /path/to/project --dry-run
 
 # Apply migration
-repo-harness init --repo /path/to/project
+rh init --repo /path/to/project
 ```
 
 ## What the Transaction Does
@@ -77,7 +77,7 @@ treats mutating update commands as probes.
 1. Review the user-level Claude/Codex adapter entries for project-specific
    command exceptions and trust the Codex settings entry.
 2. Run doctor for legacy `workflow-state.sh` copy guidance. Change callers to
-   `repo-harness run <helper>` and test them. Back up old copies before manual
+   `rh run <helper>` and test them. Back up old copies before manual
    removal. Review local edits first.
 3. Confirm `.claude/settings.local.json` contains only personal overrides.
 4. Confirm `docs/spec.md`, `tasks/reviews/`, and `.ai/harness/` match the live
@@ -91,7 +91,7 @@ treats mutating update commands as probes.
    fresh advisory snapshot when needed.
 9. Run project smoke checks, `check:task-sync`, and `check:task-workflow`.
 10. Record changed task state in the issue or PR.
-11. Run `repo-harness run verify-sprint` when an active sprint review exists.
+11. Run `rh run verify-sprint` when an active sprint review exists.
 12. Commit the migration as one isolated change-set.
 
 ## Rollback

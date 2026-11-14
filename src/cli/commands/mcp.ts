@@ -10,7 +10,7 @@ async function runMcpAction(action: () => void | Promise<void>): Promise<void> {
   try {
     await action();
   } catch (error) {
-    console.error(`repo-harness mcp: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(`rh mcp: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(2);
   }
 }

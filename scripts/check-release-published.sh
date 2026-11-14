@@ -86,7 +86,7 @@ bun scripts/runtime-evidence-receipt.ts verify \
   --registry "$VIEW_JSON" \
   --tarball "$TMP_DIR/$PACKED_TARBALL" \
   --installed-package "$RUNTIME_APP/node_modules/$PACKAGE_NAME" \
-  --installed-cli "$RUNTIME_APP/node_modules/.bin/repo-harness" \
+  --installed-cli "$RUNTIME_APP/node_modules/.bin/rh" \
   --installed-hook "$RUNTIME_APP/node_modules/.bin/repo-harness-hook" \
   --hook-repo "$RUNTIME_REPO"
 

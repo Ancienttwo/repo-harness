@@ -14,7 +14,7 @@ example `imagegen-frontend-web`, `design-taste-frontend`) may produce the
 Preview Attachment below, but they are optional enhancers, never a substitute
 for the checklist.
 
-Before filling this template, read `repo-harness docs show ux-feature-guard`.
+Before filling this template, read `rh docs show ux-feature-guard`.
 The UX Feature Guard section below is the behavior/authority hand-off to BDD;
 do not create a parallel guard artifact.
 -->

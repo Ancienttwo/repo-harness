@@ -77,7 +77,7 @@
       "source": "user-level-runtime-docs",
       "repoStubDirectory": "docs/reference-configs",
       "packageDirectory": "assets/reference-configs",
-      "resolverCommand": "repo-harness docs path <doc-id>",
+      "resolverCommand": "rh docs path <doc-id>",
       "stubMarker": "<!-- repo-harness: reference-config-stub v1 -->"
     }
   },
@@ -278,7 +278,7 @@
         "lines": [
           "# Lessons",
           "",
-          "This file is the lessons ledger. For its format and rules, run `repo-harness docs show agentic-development-flow` and read the Lessons Retro section.",
+          "This file is the lessons ledger. For its format and rules, run `rh docs show agentic-development-flow` and read the Lessons Retro section.",
           "",
           "## Template",
           "",
@@ -1652,7 +1652,7 @@
             ".claude/templates/design-brief.template.md": "sha256:1516596cfde879c59d0923eb080e97b1e5f6749de1cdb615af41deb8a295d760",
             ".ai/hooks/README.md": "sha256:48c5882d1c5c2c55f087940400d80f213765328fcffe4bac83abe1058f7bd3fe"
           },
-          "summary": "Remove the workflow templates and the hooks README that init copied; skills read the templates from the package through repo-harness docs path. Keep edited copies as the repository's own templates.",
+          "summary": "Remove the workflow templates and the hooks README that init copied; skills read the templates from the package through rh docs path. Keep edited copies as the repository's own templates.",
           "retiredBy": "2319",
           "historicalFingerprints": {
             "docs/prds/prd.template.md": [
@@ -1848,8 +1848,8 @@
             "AGENTS.md": "assets/templates/root-context.md"
           },
           "fingerprints": {
-            "CLAUDE.md": "sha256:d33c0754ac7ba2c6babb9069febc8e80793f119849e456a6eab24b6ecc104453",
-            "AGENTS.md": "sha256:d33c0754ac7ba2c6babb9069febc8e80793f119849e456a6eab24b6ecc104453"
+            "CLAUDE.md": "sha256:5ec6c523a550df4dc3e36d1bbfa8470fa3dd48e494a1b8c5de52b9bd6276f5a1",
+            "AGENTS.md": "sha256:5ec6c523a550df4dc3e36d1bbfa8470fa3dd48e494a1b8c5de52b9bd6276f5a1"
           },
           "historicalFingerprints": {
             "CLAUDE.md": [
@@ -1857,14 +1857,16 @@
               "sha256:d0a9dbfe744eeb5907a729a5bffc20e7605144e62804641febf3c7d9c82fbf04",
               "sha256:0885ee7d538eab0e71defb0f49e02c3f15ef40c81135ea5208b8d08f8c482440",
               "sha256:bd02a59fe0c8fa11a6b66b1fd36169e001e9512345a115a1f303543c25fea776",
-              "sha256:58b9816cad7ffe1ba2380b15b3c5c41ab0ab862696763c618037bc904f93c026"
+              "sha256:58b9816cad7ffe1ba2380b15b3c5c41ab0ab862696763c618037bc904f93c026",
+              "sha256:d33c0754ac7ba2c6babb9069febc8e80793f119849e456a6eab24b6ecc104453"
             ],
             "AGENTS.md": [
               "sha256:956b22a5a55e517e0253b636d3a4c542b03ccbe2a3ce40c3beea573ef03204db",
               "sha256:d0a9dbfe744eeb5907a729a5bffc20e7605144e62804641febf3c7d9c82fbf04",
               "sha256:0885ee7d538eab0e71defb0f49e02c3f15ef40c81135ea5208b8d08f8c482440",
               "sha256:bd02a59fe0c8fa11a6b66b1fd36169e001e9512345a115a1f303543c25fea776",
-              "sha256:58b9816cad7ffe1ba2380b15b3c5c41ab0ab862696763c618037bc904f93c026"
+              "sha256:58b9816cad7ffe1ba2380b15b3c5c41ab0ab862696763c618037bc904f93c026",
+              "sha256:d33c0754ac7ba2c6babb9069febc8e80793f119849e456a6eab24b6ecc104453"
             ]
           },
           "summary": "Replace the unchanged pre-IPDD root context with the invariant root context; keep any user-edited file as user-owned.",

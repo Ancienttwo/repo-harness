@@ -21,7 +21,7 @@ function brain(cwd: string, args: string[], brainRoot: string) {
   return run("bun", [CLI, "brain", ...args, "--repo", cwd], cwd, { REPO_HARNESS_BRAIN_ROOT: brainRoot });
 }
 
-describe("repo-harness brain", () => {
+describe("rh brain", () => {
   test("brain sync mirrors opted-in repo docs and brain check reports drift", () => {
     const cwd = tmpWorkspace("brain-sync");
     try {
@@ -296,7 +296,7 @@ describe("repo-harness brain", () => {
       expect(res.stdout).toContain("Policy external_knowledge.sync_script is missing: scripts/missing-sync.sh");
     });
 
-    test("accepts the repo-harness brain sync command as the policy sync_script", () => {
+    test("accepts the rh brain sync command as the policy sync_script", () => {
       const res = checkManifest([stubEntry()], (cwd) =>
         writeFileSync(
           join(cwd, ".ai/harness/policy.json"),
@@ -305,7 +305,7 @@ describe("repo-harness brain", () => {
               external_knowledge: {
                 manifest_file: ".ai/harness/brain-manifest.json",
                 project_path: "brain/demo/*",
-                sync_script: "repo-harness brain sync",
+                sync_script: "rh brain sync",
               },
             },
           }),
@@ -315,12 +315,12 @@ describe("repo-harness brain", () => {
     });
   });
 
-  test("repo-harness run fails on the retired brain helper ids", () => {
+  test("rh run fails on the retired brain helper ids", () => {
     const cwd = tmpWorkspace("brain-retired-helper");
     try {
       for (const [helper, replacement] of [
-        ["check-brain-manifest", "repo-harness brain check"],
-        ["sync-brain-docs", "repo-harness brain sync"],
+        ["check-brain-manifest", "rh brain check"],
+        ["sync-brain-docs", "rh brain sync"],
       ]) {
         const res = run("bun", [CLI, "run", helper], cwd);
         expect(res.status).toBe(2);

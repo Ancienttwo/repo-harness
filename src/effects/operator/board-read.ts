@@ -71,12 +71,12 @@ const ADVISOR_MODE = (args: readonly string[], stdin?: string): BoardCliMode<Adv
   },
 });
 
-/** `repo-harness board advisor send --parent <n> --json` with the text on stdin. A `read_only` repository refuses it. */
+/** `rh board advisor send --parent <n> --json` with the text on stdin. A `read_only` repository refuses it. */
 export function sendRepositoryAdvisor(input: BoardReadInput & { readonly text: string }): Promise<unknown> {
   return runBoardCli(input, ADVISOR_MODE(['send', '--parent', String(input.parent)], input.text));
 }
 
-/** `repo-harness board advisor transcript --parent <n> --json`: the redacted read-back of the advisor seat. */
+/** `rh board advisor transcript --parent <n> --json`: the redacted read-back of the advisor seat. */
 export function readRepositoryAdvisorTranscript(input: BoardReadInput): Promise<unknown> {
   return runBoardCli(input, ADVISOR_MODE(['transcript', '--parent', String(input.parent)]));
 }

@@ -42,19 +42,19 @@ function oneLine(message: string): string {
 function fixFor(diagnostic: CapabilityRegistryDiagnostic, mode: CapabilitySourceMode): string {
   switch (diagnostic.code) {
     case 'ARCHCONTEXT_RESOLVE_FAILED':
-      return PACKAGE_ERROR_CODES.has(diagnostic.archctxErrorCode ?? '') ? 'repo-harness update' : 'repo-harness doctor --json';
+      return PACKAGE_ERROR_CODES.has(diagnostic.archctxErrorCode ?? '') ? 'rh update' : 'rh doctor --json';
     case 'ARCHCONTEXT_RESOLVE_TIMEOUT':
     case 'ARCHCONTEXT_RESOLVE_UNAVAILABLE':
-      return 'repo-harness state resolve --json';
+      return 'rh state resolve --json';
     case 'ARCHCONTEXT_MODEL_REJECTED':
-      return 'edit .archcontext/model/nodes, then run repo-harness run capability-resolver match --path <path>';
+      return 'edit .archcontext/model/nodes, then run rh run capability-resolver match --path <path>';
     case 'AMBIGUOUS_MATCH':
     case 'ARCHCONTEXT_OWNER_UNKNOWN':
       return mode === 'archcontext'
-        ? `repo-harness run capability-resolver match --path ${diagnostic.path}`
-        : 'repo-harness run capability-resolver validate';
+        ? `rh run capability-resolver match --path ${diagnostic.path}`
+        : 'rh run capability-resolver validate';
     default:
-      return 'repo-harness run capability-resolver validate';
+      return 'rh run capability-resolver validate';
   }
 }
 

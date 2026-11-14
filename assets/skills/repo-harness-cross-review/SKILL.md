@@ -15,7 +15,7 @@ ownership lives in `src/effects/review/generic-review.ts`, the OAR host and
 - Acceptance through a persistent Herdr task session: `references/generic-review.md`.
 - Operator-attended acceptance in the Claude desktop app without Herdr:
   `references/generic-review.md`, section "App terminal launch".
-- Explicit harness selection belongs to `repo-harness review round --harness`.
+- Explicit harness selection belongs to `rh review round --harness`.
 
 ## Boundaries
 

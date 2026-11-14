@@ -33,8 +33,8 @@ irm https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.ps1 
 Bun がすでに PATH にある場合は、次のコマンドも使えます。
 
 ```bash
-bunx repo-harness@latest install     # Bun one-shot bootstrap
-npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
+bunx -p repo-harness@latest rh install     # Bun one-shot bootstrap
+npx -y -p repo-harness@latest rh install   # npx fallback; the CLI still runs on Bun
 ```
 
 ## 最初のコマンド
@@ -42,8 +42,8 @@ npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
 対象リポジトリのルートで、まずプレビューし、次に適用します。
 
 ```bash
-repo-harness init --dry-run
-repo-harness init
+rh init --dry-run
+rh init
 ```
 
 `--dry-run` は作成または更新するファイルを報告するだけで、ファイルを書き込みません。

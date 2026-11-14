@@ -4,7 +4,7 @@ import { TASK_INBOX_RETIREMENT_MARKER } from '../../core/fleet/task-inbox-layout
 
 export class TaskInboxLayoutError extends Error {
   constructor(readonly code: 'task_inbox_migration_required' | 'task_inbox_migration_incomplete' | 'task_inbox_layout_invalid', message: string) {
-    super(`${message}; use repo-harness fleet inbox migrate-layout --json to inspect the offline migration`);
+    super(`${message}; use rh fleet inbox migrate-layout --json to inspect the offline migration`);
     this.name = 'TaskInboxLayoutError';
   }
 }

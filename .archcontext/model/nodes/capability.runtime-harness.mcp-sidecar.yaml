@@ -48,7 +48,7 @@
     "verification": [
       "bun test tests/cli/mcp*.test.ts",
       "bun run check:type",
-      "repo-harness mcp doctor --repo ."
+      "rh mcp doctor --repo ."
     ]
   }
 }

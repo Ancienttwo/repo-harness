@@ -30,7 +30,7 @@ the mutation executes only when the selected registered repo has
 ## Repo Administration
 
 Adopted repos are registered in `~/.repo-harness/registered-repos.json` by
-`repo-harness init`.
+`rh init`.
 Use `discover_harness_repos` from the MCP client to discover the registered
 `repo_id` before calling general repo tools. `list_allowed_roots` is only for
 the separate session-local workspace capability.
@@ -61,7 +61,7 @@ CodeGraph readiness is checked by:
 
 ```bash
 bash scripts/ensure-codegraph.sh --sync
-repo-harness setup check --target codex --check-updates --json
+rh setup check --target codex --check-updates --json
 ```
 
 The expected healthy state is `index=up-to-date` and configured MCP entries for
@@ -275,13 +275,13 @@ Use the affected MCP reader tests for current behavior checks.
 
 ## Server Profiles
 
-`repo-harness mcp serve` and `repo-harness mcp doctor` need the `mcp` plugin.
+`rh mcp serve` and `rh mcp doctor` need the `mcp` plugin.
 Add it to an explicit list with
-`repo-harness install --plugins <your plugins>,mcp`. Without the plugin, each
+`rh install --plugins <your plugins>,mcp`. Without the plugin, each
 command exits 1 and prints this repair, and `mcp serve` writes nothing to
 stdout.
 
-`repo-harness mcp serve --profile <profile>` selects the tool surface. The
+`rh mcp serve --profile <profile>` selects the tool surface. The
 default `planner` profile is read-and-plan only: the client reads workflow and
 repo state, writes PRD artifacts, and holds no default source-code write
 access, arbitrary shell execution, or agent runner. The `executor` profile

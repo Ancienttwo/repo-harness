@@ -22,7 +22,7 @@ import { formatRegisteredUpgradeResult, runRegisteredUpgrade, type RegisteredRep
 import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry, type RegisteredReposFixture } from '../helpers/registered-repos';
 // The sweep's process inventory is a fixture input: Linux CI cannot prove that /proc lists every process.
 import '../helpers/controlled-worktree-processes';
-import { installStateFixturePath } from '../helpers/install-ownership';
+import { installStateFixturePath, RETIRED_CLI_LINES } from '../helpers/install-ownership';
 
 const ROOT = join(import.meta.dir, '../..');
 const FIXTURES = join(ROOT, 'tests/fixtures');
@@ -450,7 +450,7 @@ describe('upgrade with real release bytes', () => {
     const previousTemplate = rootTemplate.replace(
       "- Write output text in a plain technical style: short sentences, one idea per sentence, active voice. For `en`, follow ASD-STE100 Simplified Technical English. For `zh-CN`, write plain Chinese (简明中文) with the same rules and keep technical terms in English. For `follow-user`, use the user's language with the same rules.",
       '- Write output text in ASD-STE100 Simplified Technical English: short sentences, one idea per sentence, active voice.',
-    );
+    ).replace('`rh run contract-worktree start', '`repo-harness run contract-worktree start');
     const cleanRoot = join(opts.cwd, 'CLAUDE.md');
     const editedRoot = join(opts.cwd, 'AGENTS.md');
     put(cleanRoot, previousTemplate);
@@ -791,7 +791,7 @@ describe('legacy workflow-state upgrade report', () => {
       expect(check.exitCode).toBe(1);
       expect(check.items).toHaveLength(1);
       expect(check.items[0]).toEqual(expect.objectContaining({ path, action: 'report', ownership: 'unowned', proof: null }));
-      expect(check.items[0]?.reason).toContain('repo-harness run <helper>');
+      expect(check.items[0]?.reason).toContain('rh run <helper>');
       expect(check.items[0]?.reason).not.toContain('hook-lib');
       expect(check.items[0]?.reason).toContain('back up');
       expect(check.items[0]?.reason).toContain('review local edits');
@@ -816,7 +816,7 @@ describe('legacy workflow-state upgrade report', () => {
     });
     const text = invoke([]); const json = invoke(['--json']);
     expect(text.status, text.stderr).toBe(1); expect(json.status, json.stderr).toBe(1);
-    expect(text.stdout).toContain(path); expect(text.stdout).toContain('repo-harness run <helper>');
+    expect(text.stdout).toContain(path); expect(text.stdout).toContain('rh run <helper>');
     const { items } = JSON.parse(json.stdout);
     expect(items).toHaveLength(1);
     expect(items[0]).toEqual(expect.objectContaining({ path, action: 'report' }));
@@ -827,21 +827,61 @@ describe('legacy workflow-state upgrade report', () => {
   test('package scripts that call a helper outside the shipped registry are report-only', () => sandbox((opts) => {
     const path = join(opts.cwd, 'package.json');
     const bytes = `${JSON.stringify({ name: 'fixture', scripts: {
-      'workflow:check': 'repo-harness run check-task-workflow --strict',
-      'check:task-sync': 'repo-harness run check-task-sync',
+      'workflow:check': 'rh run check-task-workflow --strict',
+      'check:task-sync': 'rh run check-task-sync',
       'plan:new': 'bunx repo-harness run new-plan',
-      'check:context-files': 'repo-harness run check-context-files',
-      'spec:new': 'repo-harness run new-spec.sh',
+      'check:context-files': 'rh run check-context-files',
+      'spec:new': 'rh run new-spec.sh',
+      'brain:old': 'repo-harness brain check',
+      'board:env': 'env FOO=1 repo-harness board seats',
+      'board:inline': 'FOO=1 repo-harness board seats',
+      'cli:version': 'time -p repo-harness --version',
+      'check:deploy-sql': 'sudo repo-harness run check-deploy-sql-order --verbose',
+      'check:brain': 'repo-harness brain check',
+      'sync:brain': 'rh brain sync',
       test: 'bun test',
+      ...Object.fromEntries(RETIRED_CLI_LINES.calls.map((line, index) => [`call:${index}`, line])),
+      ...Object.fromEntries(RETIRED_CLI_LINES.excluded.map((line, index) => [`excluded:${index}`, line])),
     } }, null, '\t')}\n`;
     put(path, bytes);
     const check = runUpgrade({ ...opts, scope: 'project' });
     expect(check.items).toEqual([expect.objectContaining({ path, surface: 'file', retiredBy: 'retired-script-reference', action: 'report', ownership: 'unowned' })]);
-    expect(check.items[0]?.reason).toContain('workflow:check: repo-harness run check-task-workflow --strict; check:task-sync: repo-harness run check-task-sync; plan:new: bunx repo-harness run new-plan');
+    expect(check.items[0]?.reason).toContain('workflow:check: rh run check-task-workflow --strict; check:task-sync: rh run check-task-sync; plan:new: bunx repo-harness run new-plan');
+    expect(check.items[0]?.reason).toContain('brain:old: repo-harness brain check (the repo-harness command is now rh)');
+    expect(check.items[0]?.reason).toContain('board:env: env FOO=1 repo-harness board seats (the repo-harness command is now rh)');
+    expect(check.items[0]?.reason).toContain('board:inline: FOO=1 repo-harness board seats (the repo-harness command is now rh)');
+    expect(check.items[0]?.reason).toContain('cli:version: time -p repo-harness --version (the repo-harness command is now rh)');
+    // A script line is a command, so the finding stays pending.
+    expect(check.exitCode).toBe(1);
+    RETIRED_CLI_LINES.calls.forEach((line, index) => expect(check.items[0]?.reason).toContain(`call:${index}: ${line} (the repo-harness command is now rh)`));
+    RETIRED_CLI_LINES.excluded.forEach((_, index) => expect(check.items[0]?.reason).not.toContain(`excluded:${index}:`));
+    // init writes the managed keys on every run, so the inventory does not report them.
+    for (const managed of ['check:deploy-sql:', 'check:brain:', 'sync:brain:']) expect(check.items[0]?.reason).not.toContain(managed);
     for (const live of ['check:context-files', 'spec:new', 'test:']) expect(check.items[0]?.reason).not.toContain(live);
     expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: ['package.json'] }).rejected.map((rejection) => rejection.path)).toEqual(['package.json']);
     expect(runUpgrade({ ...opts, scope: 'project', apply: true }).keptPaths).toContain(path);
     expect(readFileSync(path, 'utf8')).toBe(bytes);
+  }, false));
+
+  test('user-owned project text that names the retired command is advisory; init-owned script keys are not reported', () => sandbox((opts) => {
+    const policy = join(opts.cwd, '.ai/harness/policy.json');
+    const root = join(opts.cwd, 'CLAUDE.md');
+    put(policy, `${JSON.stringify({ information_lifecycle: { external_knowledge: { sync_script: 'repo-harness brain sync' } } }, null, 2)}\n`);
+    put(root, `${[...RETIRED_CLI_LINES.calls, RETIRED_CLI_LINES.prose, ...RETIRED_CLI_LINES.excluded].join('\n')}\n`);
+    put(join(opts.cwd, 'package.json'), `${JSON.stringify({ name: 'fixture', scripts: { 'check:brain': 'repo-harness brain check' } })}\n`);
+    const before = tree(opts.cwd);
+    const check = runUpgrade({ ...opts, scope: 'project' });
+    const named = Array.from({ length: RETIRED_CLI_LINES.calls.length + 1 }, (_, index) => index + 1).join(', ');
+    expect(check.items.filter((item) => item.retiredBy === 'retired-cli-command').map((item) => [item.path, item.action, item.advisory === true, item.reason])).toEqual([
+      [policy, 'report', true, 'Line 4 names repo-harness; change each line that calls it to rh. Upgrade does not edit this file.'],
+      [root, 'report', true, `Line ${named} names repo-harness; change each line that calls it to rh. Upgrade does not edit this file.`],
+    ].sort((left, right) => String(left[0]).localeCompare(String(right[0]))));
+    expect(check.items.some((item) => item.path === join(opts.cwd, 'package.json'))).toBe(false);
+    // Advisory items stay out of the preview exit code, so they do not make the repo pending.
+    expect(check.items.every((item) => item.advisory === true)).toBe(true);
+    expect(check.exitCode).toBe(0);
+    runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(tree(opts.cwd)).toEqual(before);
   }, false));
 
   test('package scripts that run a missing script key are report-only', () => sandbox((opts) => {

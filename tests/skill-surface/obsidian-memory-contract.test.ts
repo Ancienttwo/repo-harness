@@ -122,7 +122,7 @@ describe("obsidian-memory: skill body pins the authority boundary", () => {
 
   test("body keeps hands off manifest-owned vault paths", () => {
     const body = readSkill();
-    // brain_path entries are machine projections of `repo-harness brain sync`.
+    // brain_path entries are machine projections of `rh brain sync`.
     // Hand-writing memory there recreates the dual-authority drift this skill
     // exists to remove, and the next sync silently overwrites it.
     expect(body).toContain("brain-manifest.json");

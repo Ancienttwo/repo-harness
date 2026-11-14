@@ -1,7 +1,7 @@
 // Background Bot access collector (PRD G29). It runs only in the `operator
 // serve` process on a timer, never on a request path; a GET reads `read()`.
 //
-// Sources: `repo-harness mcp doctor --json`, the Bot registry, the repository
+// Sources: `rh mcp doctor --json`, the Bot registry, the repository
 // registry, the newest MCP audit row of each registered repository, the hc
 // core (`hc server status` against the policy pin, and one `hc events`
 // snapshot of the task-session terminals), and the notify

@@ -24,7 +24,7 @@ describe("install script contracts", () => {
     expect(script).toContain(`MIN_BUN_VERSION="${MIN_BUN_VERSION}"`);
     expect(script).toContain('bun_version_at_least "$current_bun_version"');
     expect(script).toContain("bun add -g \"$package_spec\"");
-    expect(script).toContain("repo-harness --version");
+    expect(script).toContain("rh --version");
     expect(script).not.toMatch(/\bnpm\b/);
     expect(script).not.toMatch(/\bnpx\b/);
     expect(script).not.toMatch(/\bnode\b/);
@@ -38,7 +38,7 @@ describe("install script contracts", () => {
     expect(script).toContain(`$MinimumBunVersion = [Version]"${MIN_BUN_VERSION}"`);
     expect(script).toContain('$BunVersion -lt $MinimumBunVersion');
     expect(script).toContain("& bun add -g $PackageSpec");
-    expect(script).toContain("repo-harness --version");
+    expect(script).toContain("rh --version");
     expect(script).not.toMatch(/\bnpm\b/i);
     expect(script).not.toMatch(/\bnpx\b/i);
     expect(script).not.toMatch(/\bnode\b/i);
@@ -59,8 +59,8 @@ describe("install script contracts", () => {
     expect(readme).not.toContain("npm install -g repo-harness");
     expect(zhReadme).toContain("curl -fsSL https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.sh | sh");
     expect(zhReadme).toContain("irm https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.ps1 | iex");
-    expect(zhReadme).toContain("bunx repo-harness@latest install");
-    expect(zhReadme).toContain("npx -y repo-harness@latest install");
+    expect(zhReadme).toContain("bunx -p repo-harness@latest rh install");
+    expect(zhReadme).toContain("npx -y -p repo-harness@latest rh install");
     expect(pkg.files).toContain("install.sh");
     expect(pkg.files).toContain("install.ps1");
   });

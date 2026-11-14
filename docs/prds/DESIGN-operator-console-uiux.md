@@ -22,7 +22,7 @@
 
 ## Purpose & Audience
 
-- Page/surface: `repo-harness operator serve` 的本机控制台（127.0.0.1:4318）。从只读看板扩成本地管理台：16 个页面加任务抽屉，分六期上线。
+- Page/surface: `rh operator serve` 的本机控制台（127.0.0.1:4318）。从只读看板扩成本地管理台：16 个页面加任务抽屉，分六期上线。
 - Primary audience: 一个人或小团队。他在一台机器上管几个 adopted 仓库和几个 coding agent（Claude Code、Codex，其余经 OAR 接入）。
 - Job to be done: 一个窗口答清三件事：什么在等我处理；开发环境哪里漂移；哪些 worktree 和 CLI 可以清。写文档交给 agent，改动以 Draft PR 交回。写代码仍在用户自己的 harness 里。
 
@@ -128,7 +128,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。D11 
 | 看板列、attention、阶段 | `src/core/dev-activity/projection.ts:129`、`:170-178`；`src/core/dev-activity/types.ts:8`、`:91`；`src/effects/dev-activity/collector.ts:35`（60 s 一轮） | extend | attention 只有 `ready_to_merge` 一种（`types.ts:91`），G19 要加三类 |
 | 看板页 | `src/operator-web/Board.tsx:317`（`Board`），部分可用和不可用状态在 `:383-389` | extend | — |
 | 任务抽屉 | `src/operator-web/ItemDrawer.tsx:120`、`src/operator-web/Drawer.tsx`、`TaskEvidence.tsx`、`TaskDiff.tsx` | extend | 加「跟进」命令块（G15）、执行状态（G2）和「这次改到的测试」（1.6） |
-| 给 owner 发消息 | `repo-harness fleet message send`（`src/cli/commands/fleet.ts:412`） | reuse via Bot | 控制台只读显示 inbox 和回执（`RepositoryWorkspace.tsx:253-295`），不发 |
+| 给 owner 发消息 | `rh fleet message send`（`src/cli/commands/fleet.ts:412`） | reuse via Bot | 控制台只读显示 inbox 和回执（`RepositoryWorkspace.tsx:253-295`），不发 |
 | 仓库页与失效登记 | `src/operator-web/RepositoriesPage.tsx:12`、`:61-71`（`fleet prune` 命令、unreachable 状态） | reuse | — |
 | Agents、Skills、Hooks | `src/operator-web/SetupPages.tsx:298`、`:328`、`:416`；`src/core/setup/types.ts:138`（`SetupSnapshotV2`）；`src/cli/hook/route-registry.ts:69`（`ROUTES`） | extend | Hooks 的次数和拒绝要读 hook 事件（G16）；profile 路由数从 registry 读（G17） |
 | 系统页 | `src/operator-web/SystemPage.tsx:67`；notify 状态 `src/effects/operator/notify-status.ts:126-131` | extend | 读插件状态时补 `--session`（PRD「Bot 接入管理」） |
@@ -148,7 +148,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。D11 
 ### Observable & Copy Contract
 
 - Happy/loading/empty states that can actually occur: 有分组的看板；某一列为空；没有等你处理的事；没有文档会话；全部测试通过；CLI 已登录；没有可回收的 worktree。首次加载显示 Kumo `Loader`（现有，`Board.tsx:2`）。空状态用一行字和至多一个像素角色。
-- Invalid/unavailable state: 来源横幅写来源、仓库和数据时间，例如「GitHub 在 Ancienttwo/repo-harness-page 超时，这个仓库的 PR 状态停在 6 分钟前」，链接系统页。服务没起来时显示 unreachable 状态和 `repo-harness operator serve`（`RepositoriesPage.tsx:71`）。agent 状态没有已验证来源时显示空心点和「未知」。写入失败显示错误码对应的原因和 `next_action`。结果审计写失败时显示「待核对」，不报失败，也不自动重放。
+- Invalid/unavailable state: 来源横幅写来源、仓库和数据时间，例如「GitHub 在 Ancienttwo/repo-harness-page 超时，这个仓库的 PR 状态停在 6 分钟前」，链接系统页。服务没起来时显示 unreachable 状态和 `rh operator serve`（`RepositoriesPage.tsx:71`）。agent 状态没有已验证来源时显示空心点和「未知」。写入失败显示错误码对应的原因和 `next_action`。结果审计写失败时显示「待核对」，不报失败，也不自动重放。
 - Machine-readable output contract: 新路由的错误一律 `{error:{code,message,next_action}}`（`server.ts:320-326`）。写入响应字段与错误码以 PRD「写入 API」为准。响应里不出现绝对路径、stderr、环境变量、token、webhook URL；测试同时断言必需字段存在和这些内容不存在。
 - Canonical copy source / sync sites: 中文文案以本稿和画布为准，进 `src/operator-web/i18n.ts` 的 zh 词条；en 词条按同一组键补齐（`i18n.ts:891-902` 的类型检查）。写法规则见 design system README「Writing UI copy」。本稿「画布修正」一节覆盖画布上的错误文案。
 - Fail-loud rule: 来源失败时标「过期」或「不可用」，写来源和时间，不换成空列表或 0。写入失败显示原因，不假装成功。权威值缺失时显示「未知」，不用本地规则补值。
@@ -166,13 +166,13 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。D11 
 | C5 | `WorktreeCleanup` | 会话事件行显示完整命令，如 `git status --porcelain=v2 --branch` | 显示操作类别和摘要，如「读取 worktree 状态 · 11 项」 | D2（清理会话与文档会话共用事件与可见范围） |
 | C6 | `Home`、`Agents`、`Hooks`、`Tests`、`Tools` | 一屏同时出现两个像素角色：首页 `buddy-happy` 与 `buddy-party`；Agents `donkey-bags` 与 `buddy-wrench`；Hooks `hook-cap` 与 `buddy-alert`；测试 `bug` 与 `buddy-sleep`；工具 `hook-carrot` 与 `donkey-bags` | 一屏至多一个。状态角色（alert、wrench、bug、cloud-off）优先于页头装饰。侧栏的像素胡萝卜是标识，不算角色 | design system README「Pixel characters」 |
 | C7 | 所有画板 | 没有主题和语言切换 | 保留现有切换，放在侧栏底部 operator 状态旁 | `App.tsx:334-339` |
-| C8 | `Worktrees` | 「复制命令」「查看命令」没有命令文字 | 绿色和黄色项都给 `repo-harness worktrees clean --ids <id> --expected-digest <digest>`；黄色项在终端会要求逐项确认（非交互环境拒绝）。红色项的「查看占用」只显示占用原因 | PRD「Worktree 管理」CLI 对等 |
+| C8 | `Worktrees` | 「复制命令」「查看命令」没有命令文字 | 绿色和黄色项都给 `rh worktrees clean --ids <id> --expected-digest <digest>`；黄色项在终端会要求逐项确认（非交互环境拒绝）。红色项的「查看占用」只显示占用原因 | PRD「Worktree 管理」CLI 对等 |
 | C9 | `Home` | 第一期就有发起文档会话的输入框 | 第一、二、三期不显示输入框和「新会话」；第四期起显示 | D1；PRD 切片 1.1「不放占位页」 |
 | C10 | 侧栏 | 第一期就有「设置」和「最近」 | 设置随第三期出现；「最近」随第四期出现 | 同 C9 |
 | C11 | `Hooks` | 「最近拒绝」显示仓库外的绝对路径 `/tmp/other-repo/README.md` | 仓库外的路径显示 `[private path]`；仓库内只显示相对路径 | `operator.md` §3.1 第 7 条；G16 |
-| C12 | `Agents` | 修复命令是 `repo-harness install --profile full`，没有宿主 | 带上宿主：`repo-harness install --target claude\|codex\|both --profile minimal\|full`；投影一致时给 `repo-harness update` | `src/cli/commands/install.ts:3`；PRD「开发环境管理」修复命令 |
-| C13 | `Bots` | 命令缺参数，如 `repo-harness mcp access set --repo --mode read_only` | 写出参数：`--repo <仓库> --mode read_only\|read_write`、`repo-harness mcp clients revoke <client-id>` | PRD「Bot 接入管理」 |
-| C14 | `Bots` | 第一期就按已登记的 Bot 列表（「3 个已登记 · 1 个未登记」），并给 `repo-harness bots register`、`mcp clients revoke` 命令 | 第一期按三条路分节：MCP 客户端、通知渠道、herdr pane；Bot 列表、登记和 revoke 命令随第三期（3.3）出现，那时这些命令才存在 | G30 在第三期；PRD 切片 1.8、3.3 |
+| C12 | `Agents` | 修复命令是 `rh install --profile full`，没有宿主 | 带上宿主：`rh install --target claude\|codex\|both --profile minimal\|full`；投影一致时给 `rh update` | `src/cli/commands/install.ts:3`；PRD「开发环境管理」修复命令 |
+| C13 | `Bots` | 命令缺参数，如 `rh mcp access set --repo --mode read_only` | 写出参数：`--repo <仓库> --mode read_only\|read_write`、`rh mcp clients revoke <client-id>` | PRD「Bot 接入管理」 |
+| C14 | `Bots` | 第一期就按已登记的 Bot 列表（「3 个已登记 · 1 个未登记」），并给 `rh bots register`、`mcp clients revoke` 命令 | 第一期按三条路分节：MCP 客户端、通知渠道、herdr pane；Bot 列表、登记和 revoke 命令随第三期（3.3）出现，那时这些命令才存在 | G30 在第三期；PRD 切片 1.8、3.3 |
 | C15 | `Settings` | Pi Durable 列在主列表，写「随 OAR 内置」 | Pi Durable 与 Cursor、Mister Morph 一起放在「需要额外安装」 | PRD「开发环境管理」runtime 清单：OAR 0.62.1 默认注册表只有 7 个 |
 | C16 | `Settings` | 开关改了就生效，没有保存按钮；没有选默认文档 agent 的控件 | 一个「保存」按钮把本次全部改动作为一个 `changes[]` 提交，带 `expected_revision`；加默认文档 agent 的单选，只列已启用文档用途的 runtime | PRD「写入 API」`POST /api/v1/settings/agents` |
 | C17 | `Settings` | 「通过 Console Runtime API 接入」；子导航有「通用、文档会话、外观与语言、关于」 | 不写 Console Runtime API；子导航只有「Agent 接入」，其余不做，不放占位 | PRD「背景与目标」非目标：不显示 OAR 以外的内部实现名；C9 |
@@ -195,7 +195,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。D11 
 - `1-SHELL-P1`：Given 第一期上线，When 用户打开任意页面，Then 侧栏显示工作、接入、观测三组里本期已上线的条目；仓库切换在标识下方；跨仓库页（首页、看板、仓库、接入各页、系统、工具）显示「全部仓库」，单仓库页（任务抽屉、文档、架构、测试）显示当前仓库，格式是 `owner · 分支 · 短 SHA`。
 - `1-SHELL-P2`：Given 用户打开架构页，When 页面加载，Then 侧栏收起成 64px 图标栏；其余页面默认展开；用户的收起选择只存在本浏览器。
 - `1-SHELL-N1`：Given 第一期上线，When 用户查看侧栏和路由，Then 没有设置、文档会话和「最近」的条目，也没有它们的占位页；页头没有第二个仓库切换。
-- `1-SHELL-F1`：Given `operator serve` 没在运行，When 页面刷新，Then 显示 unreachable 状态和可复制的 `repo-harness operator serve`，不显示空看板。
+- `1-SHELL-F1`：Given `operator serve` 没在运行，When 页面刷新，Then 显示 unreachable 状态和可复制的 `rh operator serve`，不显示空看板。
 
 #### 首页
 
@@ -214,7 +214,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。D11 
 
 #### 任务抽屉
 
-- `1-TASK-P1`：Given 任务的会话绑定全部核对通过（binding 哈希、`native-session.json`、进程身份、没有 `closed.json`），When 用户打开任务抽屉，Then owner 一行显示 agent 和状态并标「只读观测」；「跟进」给三条可复制命令：Herdr pane 位置、`claude --resume <id>` 或 `codex resume <id>`、交给 Bot 的 `repo-harness fleet message send …`。
+- `1-TASK-P1`：Given 任务的会话绑定全部核对通过（binding 哈希、`native-session.json`、进程身份、没有 `closed.json`），When 用户打开任务抽屉，Then owner 一行显示 agent 和状态并标「只读观测」；「跟进」给三条可复制命令：Herdr pane 位置、`claude --resume <id>` 或 `codex resume <id>`、交给 Bot 的 `rh fleet message send …`。
 - `1-TASK-P2`：Given 任务的 diff 改到测试文件且 verification plan 有 base 失败、head 通过两条结果，When 用户查看「这次改到的测试」，Then 该检查标「红→绿」；只有一条结果的检查不标「红→绿」，没有结果的标「无结果」。
 - `1-TASK-N1`：Given owner 是运行中的 Claude Code 会话，When 用户打开任务抽屉，Then 抽屉里没有向这个会话发消息、steer 或停止的输入和按钮；task inbox 只读，显示消息和投递回执。
 - `1-TASK-F1`：Given binding 哈希不符、provider 进程已退出或存在 `closed.json`，When 用户打开任务抽屉，Then owner 一行写「没有已验证的会话」，不显示 agent 名，不从分支名或 PR 作者推断。
@@ -222,7 +222,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。D11 
 #### 仓库
 
 - `1-REPO-P1`：Given registry 有 9 个仓库，When 用户打开仓库页，Then 默认显示 6 张卡，每张有健康度、读写模式、worktree 数和打开的 PR 数；点卡片进这个仓库的看板。
-- `1-REPO-N1`：Given registry 有失效登记，When 用户展开失效登记，Then 只给 `repo-harness fleet prune` 和 `repo-harness fleet prune --apply --expected-revision <digest>` 两条命令；页面没有删除按钮。
+- `1-REPO-N1`：Given registry 有失效登记，When 用户展开失效登记，Then 只给 `rh fleet prune` 和 `rh fleet prune --apply --expected-revision <digest>` 两条命令；页面没有删除按钮。
 - `1-REPO-F1`：Given GitHub 对一个仓库超时，When 仓库页加载，Then 这张卡写「GitHub 超时 · Git 可读」和数据时间，PR 数标过期，不显示 0。
 
 #### Worktree
@@ -261,7 +261,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。D11 
 
 #### Agents
 
-- `1-AGENTS-P1`：Given Claude Code 的 hook 路由与期望不一致，When 用户打开 Agents 页，Then 这个宿主标漂移，列出缺失条目，并给出对应的一条修复命令（如 `repo-harness install --target claude --profile full`）。
+- `1-AGENTS-P1`：Given Claude Code 的 hook 路由与期望不一致，When 用户打开 Agents 页，Then 这个宿主标漂移，列出缺失条目，并给出对应的一条修复命令（如 `rh install --target claude --profile full`）。
 - `1-AGENTS-N1`：Given 宿主有漂移，When 用户查看页面，Then 修复只以可复制命令出现，没有安装、更新或切换 profile 的按钮。
 - `1-AGENTS-F1`：Given setup 快照的来源状态是失败或过期，When 页面加载，Then 写「过期」或「不可用」和最近成功时间，不显示「一致」。
 
@@ -285,10 +285,10 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。D11 
 
 #### Bots
 
-- `1-BOTS-P1`：Given 有两个 MCP OAuth 客户端和一个 notify 插件，When 用户打开 Bots 页，Then 三条路（MCP、Slack 等通知渠道、herdr）各一节；MCP 一节每个客户端写名字、profile、授权仓库、读写模式、token 剩余天数、最近一次调用；改接入只给现有命令（`repo-harness mcp access set --repo <仓库> --mode …`）；第一期没有按 Bot 的列表（C14）。
+- `1-BOTS-P1`：Given 有两个 MCP OAuth 客户端和一个 notify 插件，When 用户打开 Bots 页，Then 三条路（MCP、Slack 等通知渠道、herdr）各一节；MCP 一节每个客户端写名字、profile、授权仓库、读写模式、token 剩余天数、最近一次调用；改接入只给现有命令（`rh mcp access set --repo <仓库> --mode …`）；第一期没有按 Bot 的列表（C14）。
 - `1-BOTS-N1`：Given Bots 页已加载，When 检查响应和页面，Then 没有 token、passphrase、webhook URL 和绝对路径；collector 不带 `--live`；页面没有派活或发消息的控件，也没有经 MCP 派活的入口。
 - `1-BOTS-F1`：Given 本机 herdr 低于观测 pin 0.9.5，When 页面加载，Then herdr 一节写「期望 0.9.5（schema 2ecf19a9），实际 0.9.3」，执行状态标不可用，不写「没连上」。
-- `3-BOTS-P1`：Given 第三期上线且 Bot 已用 `repo-harness bots register` 登记，When 用户查看 MCP 审计、任务消息和派活记录，Then 每条都对到 Bot 名；对不上的写「未登记」。
+- `3-BOTS-P1`：Given 第三期上线且 Bot 已用 `rh bots register` 登记，When 用户查看 MCP 审计、任务消息和派活记录，Then 每条都对到 Bot 名；对不上的写「未登记」。
 - `3-BOTS-N1`：Given Slack 渠道已配置，When 用户查看 Slack 一节，Then 只显示是否配置、每个渠道最近一次投递的时间和结果、频道名和跳转链接；没有 Bot 之间对话的内容。
 
 #### 架构
@@ -313,7 +313,7 @@ D1–D10 是用户 2026-10-27 批准的 10 项（原文见 #997 评论）。D11 
 
 #### 工具
 
-- `1-TOOLS-P1`：Given catalog 有 7 个条目，When 用户打开工具页，Then 每个条目是一张卡片，有作者、标签和外链；「本机报告」复制 `repo-harness run check-agent-tooling`（`ToolsPage.tsx:16`）。
+- `1-TOOLS-P1`：Given catalog 有 7 个条目，When 用户打开工具页，Then 每个条目是一张卡片，有作者、标签和外链；「本机报告」复制 `rh run check-agent-tooling`（`ToolsPage.tsx:16`）。
 - `1-TOOLS-N1`：Given 工具页已加载，When 用户查看卡片，Then 没有安装或启用按钮，只有链接和命令。
 - `1-TOOLS-F1`：Given 条目的状态是 `unknown`，When 页面渲染，Then 写「未知」，不显示「已安装」。
 

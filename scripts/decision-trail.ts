@@ -22,8 +22,8 @@ import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
 import { ensureRepoRelativePath } from "../src/effects/path-safety";
 
 const USAGE = `Usage:
-  repo-harness run decision-trail record --phase <p> --decision <d> --why <w> --evidence <ptr> [--evidence <ptr>...] --result <r> [--supersedes <event_id>] [--run-id <id>]
-  repo-harness run decision-trail render [--format tsv|markdown] [--since <event_id>] [--limit N]
+  rh run decision-trail record --phase <p> --decision <d> --why <w> --evidence <ptr> [--evidence <ptr>...] --result <r> [--supersedes <event_id>] [--run-id <id>]
+  rh run decision-trail render [--format tsv|markdown] [--since <event_id>] [--limit N]
 `;
 
 export interface RecordDecisionInput extends DecisionPayload {

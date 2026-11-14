@@ -261,7 +261,7 @@ describe('status command (Phase 1C)', () => {
             nodePath: null,
             command: null,
             version: null,
-            reason: 'global architecture configuration is missing; run repo-harness update once',
+            reason: 'global architecture configuration is missing; run rh update once',
           },
           codeFacts: { requirement: 'required', state: 'not-evaluated' },
           daemonRuntime: { state: 'not-evaluated' },

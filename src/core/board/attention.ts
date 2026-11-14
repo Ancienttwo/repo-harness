@@ -289,7 +289,7 @@ function a9(context: Context): void {
     const pr = seatPullRequest(context.board, terminal, seatItem(context.board, terminal));
     if (pr?.state !== 'merged') continue;
     find(context, 'A9', { issues: terminal.issue === null ? [] : [terminal.issue], pull_requests: [pr.number], terminals: [terminal.address] },
-      `${terminal.seat} ${terminal.address} of merged #${pr.number} is still open; run repo-harness board closeout --pr ${pr.number}`);
+      `${terminal.seat} ${terminal.address} of merged #${pr.number} is still open; run rh board closeout --pr ${pr.number}`);
   }
 }
 
@@ -306,7 +306,7 @@ function a11(context: Context): void {
   for (const decision of boardMergeDecisions(context.board).filter(entry => entry.eligible)) {
     const pr = context.board.pull_requests.find(entry => entry.number === decision.pr)!;
     find(context, 'A11', { issues: itemsOf(context.board, pr), pull_requests: [pr.number] },
-      `eligible: run repo-harness board merge --parent ${context.board.parent.number} --pr ${pr.number}`);
+      `eligible: run rh board merge --parent ${context.board.parent.number} --pr ${pr.number}`);
   }
 }
 
@@ -614,12 +614,12 @@ function r7(context: Context): void {
   }
 }
 
-/** One finding line of `repo-harness board attention`: the priority first, so no line is without one. */
+/** One finding line of `rh board attention`: the priority first, so no line is without one. */
 export function attentionFindingLine(finding: BoardFindingV1): string {
   return `${finding.priority} ${finding.rule} ${finding.route}: ${finding.message}`;
 }
 
-/** The text output of `repo-harness board attention`: one line for each finding, then one for each unevaluated rule. */
+/** The text output of `rh board attention`: one line for each finding, then one for each unevaluated rule. */
 export function renderAttentionText(attention: BoardAttentionV1): string {
   const lines = attention.findings.map(attentionFindingLine);
   if (lines.length === 0) lines.push(`no attention findings for #${attention.parent}`);

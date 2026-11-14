@@ -14,7 +14,7 @@ import { runSetupProcess } from '../../effects/setup/collector';
 import { entries } from '../../effects/state/coordination-worktree-topology';
 
 /**
- * `repo-harness worktrees list|clean|path`: the CLI side of the Worktree page.
+ * `rh worktrees list|clean|path`: the CLI side of the Worktree page.
  * `clean` runs the same effect and write run as `POST /api/v1/worktrees/cleanup`.
  * `path` serves the desktop shell, which opens a row in a local app; no HTTP
  * response carries a worktree path (operator invariant 7).
@@ -57,7 +57,7 @@ export function worktreeListOutput(snapshot: WorktreesSnapshot): WorktreeListOut
   };
 }
 
-export const cleanCommand = (ids: readonly string[], digest: string) => `repo-harness worktrees clean --ids ${ids.join(',')} --expected-digest ${digest}`;
+export const cleanCommand = (ids: readonly string[], digest: string) => `rh worktrees clean --ids ${ids.join(',')} --expected-digest ${digest}`;
 
 function printList(output: WorktreeListOutput): void {
   const names = new Map(output.snapshot.repositories.map(group => [group.repository_id, group.display_name]));
@@ -75,7 +75,7 @@ function printList(output: WorktreeListOutput): void {
 export interface WorktreeCleanOptions { readonly ids: string; readonly expectedDigest: string; readonly requestId?: string; readonly json?: boolean }
 
 function fail(json: boolean | undefined, code: string, message: string): void {
-  console.error(json ? JSON.stringify({ error: { code, message } }) : `repo-harness worktrees: ${code}: ${message}`);
+  console.error(json ? JSON.stringify({ error: { code, message } }) : `rh worktrees: ${code}: ${message}`);
   process.exitCode = 2;
 }
 
@@ -103,7 +103,7 @@ export async function clean(options: WorktreeCleanOptions): Promise<void> {
   if (response.status !== 200) {
     const { error } = response.body as unknown as OperatorWriteErrorBodyV1;
     if (options.json) console.error(JSON.stringify({ request_id: requestId, status: response.status, ...response.body as object }));
-    else console.error(`repo-harness worktrees: ${error.code}: ${error.message} ${error.next_action} (request_id ${requestId})`);
+    else console.error(`rh worktrees: ${error.code}: ${error.message} ${error.next_action} (request_id ${requestId})`);
     process.exitCode = 2;
     return;
   }

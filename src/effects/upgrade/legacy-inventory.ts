@@ -7,6 +7,8 @@ import { hashManagedTree, installedCopyTreeOptions, OWNER_MARKER } from '../mana
 import { isRepoHarnessLegacyTypedHookCommand, retiredHookCommands, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { isRepoHarnessSourceCheckout } from '../source-checkout';
 import { loadWorkflowContractAsset } from '../../core/adoption/workflow-contract-asset';
+import { CLI_NAME, namesRetiredCli, RETIRED_CLI_NAME } from '../../core/skill-surface/cli-name';
+import { MANAGED_PACKAGE_SCRIPTS } from '../../core/adoption/package-scripts';
 import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../../core/skill-surface/catalog';
 
 export interface LeftoverItem {
@@ -26,6 +28,8 @@ export interface LeftoverItem {
   readonly hookEvent?: string;
   readonly hookCommand?: string;
   readonly reason?: string;
+  /** A notice only: the preview exit code and the pending state leave it out. */
+  readonly advisory?: true;
   /** Set only by upgrade operator decisions; the inventory itself never writes it. */
   readonly operatorDecision?: { readonly decision: 'keep' | 'remove'; readonly status: 'applied' | 'stale' | 'rejected' };
 }
@@ -492,10 +496,10 @@ function rootRunTarget(args: string): string | null {
 }
 
 /**
- * `repo-harness run` resolves only the helpers in the shipped registry, and
- * init deletes generated script keys that other scripts may still run. Both
- * fail at run time. User scripts stay as they are; the report lists each key
- * and command.
+ * `rh run` resolves only the helpers in the shipped registry, init deletes
+ * generated script keys that other scripts may still run, and the
+ * `repo-harness` command is retired. Each fails at run time. User scripts stay
+ * as they are; the report lists each key and command.
  */
 function scanPackageScripts(root: string, add: AddItem): void {
   const path = join(root, 'package.json');
@@ -510,17 +514,39 @@ function scanPackageScripts(root: string, add: AddItem): void {
   const resolves = (runner: string, target: string): boolean => Object.hasOwn(scripts, target)
     || (runner === 'bun' && (stat(join(root, target)) !== null || stat(join(root, 'node_modules/.bin', target)) !== null));
   const findings = Object.entries(scripts).flatMap(([key, command]) => {
-    if (typeof command !== 'string') return [];
-    const retired = [...command.matchAll(/\brepo-harness run ([^\s;&|'"`)]+)/g)].some((match) => !runnable.has(match[1]!));
+    // init writes the managed keys on every run, so their values are not the user's.
+    if (typeof command !== 'string' || Object.hasOwn(MANAGED_PACKAGE_SCRIPTS, key)) return [];
+    const retired = [...command.matchAll(/(?<![\w./@-])(?:rh|repo-harness) run ([^\s;&|'"`)]+)/g)].some((match) => !runnable.has(match[1]!));
+    const retiredCli = namesRetiredCli(command) ? [` (the ${RETIRED_CLI_NAME} command is now ${CLI_NAME})`] : [];
     const missing = [...command.matchAll(/\b(bun|npm) run(?=\s)/g)].flatMap((match) => {
       const target = rootRunTarget(command.slice(match.index + match[0].length));
       return target === null || resolves(match[1]!, target) ? [] : [` (missing script "${target}")`];
     });
-    return retired || missing.length > 0 ? [`${key}: ${command}${missing.join('')}`] : [];
+    return retired || missing.length > 0 || retiredCli.length > 0 ? [`${key}: ${command}${[...retiredCli, ...missing].join('')}`] : [];
   });
   if (findings.length === 0) return;
   add({ location: 'project', surface: 'file', path, retiredBy: 'retired-script-reference', ownership: 'unowned', proof: null, action: 'report',
-    reason: `Package scripts call a helper that this package does not ship or a script that package.json does not define; review them without automatic edits: ${findings.join('; ')}` });
+    reason: `Package scripts call a helper that this package does not ship, a script that package.json does not define, or the retired ${RETIRED_CLI_NAME} command; review them without automatic edits: ${findings.join('; ')}` });
+}
+
+/**
+ * Files that init writes once and the user owns afterward, and the policy that the user edits.
+ * A line that names the retired command gets an advisory report: the package keeps the name, so
+ * prose mentions stay. A package script line is a command, so that report stays pending.
+ * Init and upgrade rewrite only managed bytes.
+ * An unchanged released root context is a refresh item instead, which replaces this report.
+ */
+const USER_OWNED_PROJECT_TEXT = ['CLAUDE.md', 'AGENTS.md', 'tasks/lessons.md', '.ai/harness/policy.json'] as const;
+
+function scanRetiredCliCalls(root: string, add: AddItem): void {
+  for (const name of USER_OWNED_PROJECT_TEXT) {
+    const path = join(root, name);
+    if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) continue;
+    const lines = readFileSync(path, 'utf8').split('\n').flatMap((line, index) => namesRetiredCli(line) ? [index + 1] : []);
+    if (lines.length === 0) continue;
+    add({ location: 'project', surface: 'file', path, retiredBy: 'retired-cli-command', ownership: 'unowned', proof: null, action: 'report', advisory: true,
+      reason: `Line ${lines.join(', ')} names ${RETIRED_CLI_NAME}; change each line that calls it to ${CLI_NAME}. Upgrade does not edit this file.` });
+  }
 }
 
 /** codex-handoff-resume is the only retired generator that a release shipped with this marker (resume.md). */
@@ -665,7 +691,7 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
     if (libraryEntry) {
       add({ location: 'project', surface: libraryEntry.isSymbolicLink() ? 'symlink' : libraryEntry.isDirectory() ? 'directory' : 'file',
         path: library, retiredBy: 'legacy-workflow-state-library', ownership: 'unowned', proof: null, action: 'report',
-        reason: 'Legacy workflow-state library. The package no longer ships an operator library. Change callers to repo-harness run <helper>. Test callers, review local edits, and back up the copy before manual removal. Upgrade preserves it.' });
+        reason: 'Legacy workflow-state library. The package no longer ships an operator library. Change callers to rh run <helper>. Test callers, review local edits, and back up the copy before manual removal. Upgrade preserves it.' });
     }
     const scanDocument = (path: string): void => {
       if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) return;
@@ -690,6 +716,7 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
     };
     walk(join(root, '.ai'));
     scanPackageScripts(root, add);
+    scanRetiredCliCalls(root, add);
     // init keeps the ignore rule while these files exist; the rule leaves the block only after they are gone.
     for (const rule of RETIRED_RUNTIME_IGNORE_RULES) {
       for (const file of retiredRuntimeRuleFiles(root, rule)) {
@@ -722,5 +749,5 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
 
 export function formatLegacyLeftoverSummary(plan: { readonly items: readonly LeftoverItem[] } | readonly LeftoverItem[]): string {
   const items = Array.isArray(plan) ? plan as readonly LeftoverItem[] : (plan as { readonly items: readonly LeftoverItem[] }).items;
-  return `${items.length} leftovers (${items.filter((item) => item.action !== 'report').length} removable). Run: repo-harness upgrade`;
+  return `${items.length} leftovers (${items.filter((item) => item.action !== 'report').length} removable). Run: rh upgrade`;
 }

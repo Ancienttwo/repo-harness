@@ -276,8 +276,8 @@ describe("architecture plugin guard", () => {
       ];
       // No install state, then a recorded selection without the plugin.
       for (const [selection, repair] of [
-        [null, "repo-harness install"],
-        [["product"], "repo-harness install --plugins architecture,product"],
+        [null, "rh install"],
+        [["product"], "rh install --plugins architecture,product"],
       ] as const) {
         if (selection) recordPluginSelection({ HOME: envRoot.home }, selection);
         for (const args of commands) {
@@ -288,7 +288,7 @@ describe("architecture plugin guard", () => {
           });
           expect(res.status, `${repair}: ${name}`).toBe(1);
           expect(res.stdout, name).toBe("");
-          expect(res.stderr, name).toContain(`repo-harness ${name} needs the architecture plugin: the architecture plugin is not selected; run: ${repair}\n`);
+          expect(res.stderr, name).toContain(`rh ${name} needs the architecture plugin: the architecture plugin is not selected; run: ${repair}\n`);
         }
       }
       expect(() => readFileSync(logFile, "utf-8")).toThrow();

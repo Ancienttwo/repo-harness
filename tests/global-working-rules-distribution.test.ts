@@ -142,7 +142,7 @@ describe("global working rules distribution", () => {
   });
 
   // Merge semantics moved here from init, which no longer writes host files;
-  // `repo-harness update` applies the same merge inside its host transaction.
+  // `rh update` applies the same merge inside its host transaction.
   const AGENTS_PATH = "/fixture-home/.codex/AGENTS.md";
   const zhBlock = () => renderGlobalRulesBlock(ROOT, { preset: "zh-CN", instruction: "Use Chinese to report to user." });
 

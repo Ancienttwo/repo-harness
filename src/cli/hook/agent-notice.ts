@@ -17,7 +17,7 @@ const MARKER = `${STATE_DIR}agent-notice`;
 const STATUS_MARKER = `${STATE_DIR}agent-notice-status`;
 const ARCHIMAP_MARKER = `${STATE_DIR}agent-notice-archimap`;
 const ARCHIMAP_FILE = 'docs/architecture/archimap.html';
-const STATUS_COMMAND = 'repo-harness architecture-projection status --json';
+const STATUS_COMMAND = 'rh architecture-projection status --json';
 const NOTICE_TIMEOUT_LINE = 'repo-harness: architecture notice: not finished in its time budget; the next hook measures again';
 const MAX_BYTES = 800;
 const MAX_MESSAGE_BYTES = 200;
@@ -167,8 +167,8 @@ function archimapBlock(paths: readonly string[]): NoticeBlock {
 
 function unignoredBlock(): NoticeBlock {
   return {
-    content: `[Architecture] notice unavailable: ${STATE_DIR} is not Git-ignored. Fix: run repo-harness update to write the runtime-state block to the user-level Git excludes file.`,
-    systemMessage: `Architecture: notice unavailable (${STATE_DIR} is not Git-ignored); run repo-harness update.`,
+    content: `[Architecture] notice unavailable: ${STATE_DIR} is not Git-ignored. Fix: run rh update to write the runtime-state block to the user-level Git excludes file.`,
+    systemMessage: `Architecture: notice unavailable (${STATE_DIR} is not Git-ignored); run rh update.`,
   };
 }
 
@@ -213,7 +213,7 @@ function readiness(repoRoot: string, env: NodeJS.ProcessEnv | undefined): Status
   if (global.initialized && global.policy.provider === 'disabled') return { kind: 'disabled' };
   // archctx 0.9.1 checkpoint refuses a repository without this file (AC_MODEL_ADOPTION_REQUIRED, model-missing).
   if (!existsSync(join(repoRoot, ARCHCONTEXT_MANIFEST))) return { kind: 'inactive', cause: `no ArchContext model (${ARCHCONTEXT_MANIFEST} is missing)` };
-  if (!global.initialized) return { kind: 'inactive', cause: 'global architecture configuration is missing; run repo-harness update' };
+  if (!global.initialized) return { kind: 'inactive', cause: 'global architecture configuration is missing; run rh update' };
   return { kind: 'active' };
 }
 

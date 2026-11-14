@@ -39,7 +39,7 @@ describe("UX feature pre-implementation guard", () => {
     const prd = read("assets/skills/repo-harness-product/references/prd.md");
 
 
-    expect(prd).toContain("first read `repo-harness docs show ux-feature-guard`");
+    expect(prd).toContain("first read `rh docs show ux-feature-guard`");
     expect(prd).toContain("do not restate or replace that field schema in the PRD");
     expect(existsSync(join(ROOT, "src/cli/hook/prompt-handler.ts"))).toBe(false);
   });
@@ -56,7 +56,7 @@ describe("UX feature pre-implementation guard", () => {
       if (!operation || operation.kind !== "writeFile") {
         throw new Error("expected UX feature guard adoption write");
       }
-      expect(operation.content).toContain("repo-harness docs show ux-feature-guard");
+      expect(operation.content).toContain("rh docs show ux-feature-guard");
       expect(plan.operations.some((entry) => entry.path?.includes("bdd") && entry.path?.includes("ledger"))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });

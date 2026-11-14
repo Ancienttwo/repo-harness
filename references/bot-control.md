@@ -24,7 +24,7 @@ owners. Get the expected candidate HEAD from the controlling task, not from a
 Bot's claim about which candidate passed.
 
 Protected review and coding results stay with their domain readers
-(`repo-harness review status` and the PM collect path). A missing, conflicting
+(`rh review status` and the PM collect path). A missing, conflicting
 or changing request fails closed. Inspect the same task.
 
 ## Integration limits

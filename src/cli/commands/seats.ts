@@ -100,7 +100,7 @@ function panePrefix(cwd: string, env: NodeJS.ProcessEnv): string {
   }
   const registry = readRepoHarnessRegistryStrictSnapshot({ env });
   const prefix = registry.repos.find(repo => repo.path === root)?.panePrefix;
-  if (prefix === undefined) throw new SeatPaneNameError(`Pane name: run repo-harness seats prefix --repo ${root} --pane-prefix <prefix>.`);
+  if (prefix === undefined) throw new SeatPaneNameError(`Pane name: run rh seats prefix --repo ${root} --pane-prefix <prefix>.`);
   return prefix;
 }
 
@@ -203,7 +203,7 @@ async function effectiveSeatLaunch(seat: string, labels: SeatLabelInput, env: No
 export function seatHandoff(env: NodeJS.ProcessEnv = process.env, now = new Date()): string {
   const identity = seatResetIdentity(env);
   if (identity === null) {
-    throw new SeatsCommandError('seat_identity_missing', 'REPO_HARNESS_SEAT and REPO_HARNESS_SEAT_REPOSITORY name no orchestrator or advisor seat: start the seat with repo-harness seats argv <seat> --repository-id <id>.');
+    throw new SeatsCommandError('seat_identity_missing', 'REPO_HARNESS_SEAT and REPO_HARNESS_SEAT_REPOSITORY name no orchestrator or advisor seat: start the seat with rh seats argv <seat> --repository-id <id>.');
   }
   const transcript = readSeatSession(identity)?.transcriptPath;
   if (transcript === undefined) throw new SeatsCommandError('seat_session_unknown', `The SessionStart record of the ${identity.seat} seat is missing or not valid, so the session transcript is unknown.`);
@@ -250,7 +250,7 @@ export function buildSeatsCommand(loadNotify?: () => Promise<SeatResetNotify>): 
         process.stdout.write(`${JSON.stringify(launch, null, 2)}\n`);
         return;
       }
-      // stdout is the argv alone, so `--argv "$(repo-harness seats argv <seat>)"` takes it as is.
+      // stdout is the argv alone, so `--argv "$(rh seats argv <seat>)"` takes it as is.
       process.stdout.write(`${JSON.stringify(launch.argv)}\n`);
       process.stderr.write(`source: ${launch.source}\n`);
       for (const limit of launch.limits) {

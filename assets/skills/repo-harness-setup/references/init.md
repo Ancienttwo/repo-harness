@@ -5,13 +5,13 @@ installed or refreshed. Run the shared preflight in `../SKILL.md` first.
 
 ## Protocol
 
-1. If running from the target repo root, use `repo-harness init`; do not require `--repo .`.
-2. Apply the canonical transaction with `repo-harness init --repo <repo>`.
-3. If user-level runtime dependencies are missing, run `repo-harness update` separately; repo adoption must not write `HOME`.
+1. If running from the target repo root, use `rh init`; do not require `--repo .`.
+2. Apply the canonical transaction with `rh init --repo <repo>`.
+3. If user-level runtime dependencies are missing, run `rh update` separately; repo adoption must not write `HOME`.
 
 ## Failure Modes
 
-- If global runtime setup is missing, report the exact target and rerun the focused `repo-harness update` command instead of retrying init.
+- If global runtime setup is missing, report the exact target and rerun the focused `rh update` command instead of retrying init.
 
 ## Boundaries
 

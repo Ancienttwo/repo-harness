@@ -56,12 +56,12 @@ curl -fsSL https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/insta
 irm https://raw.githubusercontent.com/aimpact-inc/repo-harness/main/install.ps1 | iex
 ```
 
-Already have Bun? Use `bunx repo-harness@latest install` instead.
+Already have Bun? Use `bunx -p repo-harness@latest rh install` instead.
 
 ```bash
 # 2. From the root of the repository you want to adopt: preview, then apply
-repo-harness init --dry-run   # reports every file it would write; writes nothing
-repo-harness init
+rh init --dry-run   # reports every file it would write; writes nothing
+rh init
 ```
 
 Init ends with a `=== Migration Report ===` that lists what was created or
@@ -71,7 +71,7 @@ Claude or Codex in the repo, hand it an issue, and the hooks take over.
 <details>
 <summary><b>What <code>init</code> adds to your repository</b></summary>
 
-From a `repo-harness init --dry-run` on a fresh repository (abridged):
+From a `rh init --dry-run` on a fresh repository (abridged):
 
 ```text
 your-repo/
@@ -93,7 +93,7 @@ your-repo/
 └── .gitignore                     # one managed block appended
 ```
 
-No helper scripts are copied in. Downstream repos call `repo-harness run <helper>`.
+No helper scripts are copied in. Downstream repos call `rh run <helper>`.
 
 </details>
 
@@ -124,8 +124,8 @@ Three layers, each with one owner:
 | Layer | What lives there | Owner |
 | --- | --- | --- |
 | **Task authority** | Scope, claims, status, dependencies, review evidence | The GitHub issue and its PR |
-| **Repo context** | `docs/spec.md`, `docs/prds/`, `docs/reference-configs/`, `tasks/lessons.md`, `.ai/context/`, `.ai/harness/` | Your repository (written by `repo-harness init`) |
-| **Runtime** | CLI, typed hook handlers, helpers (`repo-harness run <helper>`), skills | The globally installed package — never vendored into your repo |
+| **Repo context** | `docs/spec.md`, `docs/prds/`, `docs/reference-configs/`, `tasks/lessons.md`, `.ai/context/`, `.ai/harness/` | Your repository (written by `rh init`) |
+| **Runtime** | CLI, typed hook handlers, helpers (`rh run <helper>`), skills | The globally installed package — never vendored into your repo |
 
 The user-level adapters in `~/.claude/settings.json` and `~/.codex/hooks.json`
 route host events into `repo-harness-hook`. For repositories that haven't opted
@@ -188,21 +188,21 @@ sequenceDiagram
 
 | Goal | Command |
 | --- | --- |
-| Install / reconcile the global runtime | `repo-harness install` · `repo-harness update` |
-| Read-only health check | `repo-harness update --check` · `repo-harness setup check` |
-| Adopt a repository | `repo-harness init --dry-run` → `repo-harness init` |
-| Run a workflow helper | `repo-harness run <helper>` |
-| Board for a parent issue | `repo-harness board --parent <n> --json` |
-| List open parent issues | `repo-harness board parents --json` |
-| Open the local console (needs the `operator` plugin: `repo-harness install --plugins <your plugins>,operator`) | `repo-harness operator serve` |
-| Clean up finished worktrees (needs the `operator` plugin) | `repo-harness worktrees list` → `repo-harness worktrees clean --ids … --expected-digest …` |
-| Architecture facts / review prompt | `repo-harness module list --json` · `repo-harness module review-prompt <capability> --json` |
-| Refactor suggestions | `repo-harness refactor recommendations` · `repo-harness refactor decide <id> accept\|defer\|reject --reason "…"` |
-| Acceptance review | `repo-harness review round\|status\|close …` ([details](docs/usage.md#persistent-acceptance-review)) |
-| Merge an accepted PR | `repo-harness publication merge` ([policy](docs/control-bot-boundary.md#bot-modes-and-merge)) |
-| MCP sidecar (needs the `mcp` plugin: `repo-harness install --plugins <your plugins>,mcp`) | `repo-harness mcp serve --repo . --profile planner` · `repo-harness mcp doctor --repo .` |
-| Reference docs | `repo-harness docs list` · `repo-harness docs show harness-overview` |
-| Remove leftovers / uninstall | `repo-harness upgrade [--apply]` · `repo-harness uninstall --dry-run` |
+| Install / reconcile the global runtime | `rh install` · `rh update` |
+| Read-only health check | `rh update --check` · `rh setup check` |
+| Adopt a repository | `rh init --dry-run` → `rh init` |
+| Run a workflow helper | `rh run <helper>` |
+| Board for a parent issue | `rh board --parent <n> --json` |
+| List open parent issues | `rh board parents --json` |
+| Open the local console (needs the `operator` plugin: `rh install --plugins <your plugins>,operator`) | `rh operator serve` |
+| Clean up finished worktrees (needs the `operator` plugin) | `rh worktrees list` → `rh worktrees clean --ids … --expected-digest …` |
+| Architecture facts / review prompt | `rh module list --json` · `rh module review-prompt <capability> --json` |
+| Refactor suggestions | `rh refactor recommendations` · `rh refactor decide <id> accept\|defer\|reject --reason "…"` |
+| Acceptance review | `rh review round\|status\|close …` ([details](docs/usage.md#persistent-acceptance-review)) |
+| Merge an accepted PR | `rh publication merge` ([policy](docs/control-bot-boundary.md#bot-modes-and-merge)) |
+| MCP sidecar (needs the `mcp` plugin: `rh install --plugins <your plugins>,mcp`) | `rh mcp serve --repo . --profile planner` · `rh mcp doctor --repo .` |
+| Reference docs | `rh docs list` · `rh docs show harness-overview` |
+| Remove leftovers / uninstall | `rh upgrade [--apply]` · `rh uninstall --dry-run` |
 
 ## Reviewing agent work
 
@@ -235,7 +235,7 @@ flowchart LR
 
 ## Operator console
 
-`repo-harness operator serve` starts a local web board on loopback only. It
+`rh operator serve` starts a local web board on loopback only. It
 shows what needs you, what to continue, stage counts and today's merges across
 every registered repository. It needs the `operator` plugin, which an `all`
 selection includes.
@@ -285,7 +285,7 @@ commands. More in the [usage guide](docs/usage.md#skills).
 - Not a hosted agent gateway, product runtime or database service.
 - Not a replacement for your repo's build, test, deploy or release process.
 - Not a scheduler: it never dispatches work on its own or executes refactors.
-- Not vendored: downstream repos call `repo-harness run <helper>`; no helper
+- Not vendored: downstream repos call `rh run <helper>`; no helper
   scripts are copied into them.
 
 ## Documentation

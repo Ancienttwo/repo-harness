@@ -29,7 +29,7 @@ function Get-BunVersion {
 }
 
 if ($env:REPO_HARNESS_DRY_RUN -eq "1") {
-  Write-Host "DRY RUN: would ensure Bun >= $MinimumBunVersion, install $PackageName@$PackageVersion, and verify repo-harness --version."
+  Write-Host "DRY RUN: would ensure Bun >= $MinimumBunVersion, install $PackageName@$PackageVersion, and verify rh --version."
   exit 0
 }
 
@@ -54,24 +54,24 @@ Write-Host "Installing $PackageSpec with Bun..."
 & bun add -g $PackageSpec
 
 Add-BunToPath
-if (-not (Test-Command "repo-harness")) {
-  throw "repo-harness is not on PATH after installation."
+if (-not (Test-Command "rh")) {
+  throw "rh is not on PATH after installation."
 }
 
-$Version = (& repo-harness --version)
+$Version = (& rh --version)
 if (-not $Version) {
-  throw "repo-harness installed, but version readback failed."
+  throw "rh installed, but version readback failed."
 }
 
 Write-Host "repo-harness $Version installed."
 Write-Host ""
 Write-Host "Next:"
-Write-Host "  repo-harness install"
-Write-Host "  repo-harness init --dry-run"
+Write-Host "  rh install"
+Write-Host "  rh init --dry-run"
 
 $PathSep = [System.IO.Path]::PathSeparator
 if ("$PathSep$OriginalPath$PathSep" -notlike "*$PathSep$BunBin$PathSep*") {
   Write-Host ""
-  Write-Host "To use repo-harness in new shells, add to your PATH:"
+  Write-Host "To use rh in new shells, add to your PATH:"
   Write-Host "  $BunBin"
 }

@@ -122,7 +122,7 @@ pi_copy_file_if_apply() {
 }
 
 pi_print_codex_hook_trust_notice() {
-  echo "Host hook adapters are user-level: run repo-harness install --target both --location global, then trust ~/.codex/hooks.json in Codex Settings."
+  echo "Host hook adapters are user-level: run rh install --target both --location global, then trust ~/.codex/hooks.json in Codex Settings."
 }
 
 pi_write_hook_runtime_readme() {
@@ -140,9 +140,9 @@ pi_write_hook_runtime_readme() {
 # Workflow Helpers
 
 Host events use the user-level `repo-harness-hook` typed runtime.
-Operator helpers run from the installed package: use `repo-harness run <helper>`.
+Operator helpers run from the installed package: use `rh run <helper>`.
 Init preserves legacy files under `.ai/hooks/lib/`.
-Run `repo-harness doctor` for migration guidance.
+Run `rh doctor` for migration guidance.
 EOF_HOOK_README
 }
 
@@ -643,25 +643,25 @@ pi_maybe_install_agent_fleet() {
   local install_output
 
   if [[ ! -f "$policy_file" ]]; then
-    echo "- Agent fleet: no .ai/harness/policy.json found; run 'repo-harness run install-agent-fleet' to install the managed agent fleet manually."
+    echo "- Agent fleet: no .ai/harness/policy.json found; run 'rh run install-agent-fleet' to install the managed agent fleet manually."
     return 0
   fi
 
   raw_install_mode="$(pi_workflow_contract_query_lines "$policy_file" "external_tooling.agent_fleet.install_mode" 2>/dev/null || true)"
 
   if [[ "$raw_install_mode" != "auto-install-on-init" ]]; then
-    echo "- Agent fleet: install_mode=${raw_install_mode:-advisory}; run 'repo-harness run install-agent-fleet' to install the managed agent fleet."
+    echo "- Agent fleet: install_mode=${raw_install_mode:-advisory}; run 'rh run install-agent-fleet' to install the managed agent fleet."
     return 0
   fi
 
   if [[ "$mode" != "apply" ]]; then
-    echo "- Agent fleet: install_mode=auto-install-on-init, but dry-run never writes to the global agent fleet directories; run 'repo-harness run install-agent-fleet' after applying."
+    echo "- Agent fleet: install_mode=auto-install-on-init, but dry-run never writes to the global agent fleet directories; run 'rh run install-agent-fleet' after applying."
     return 0
   fi
 
   installer="$(pi_resolve_external_tooling_detector "$repo_dir" "$fallback_script" || true)"
   if [[ -z "$installer" ]]; then
-    echo "- Agent fleet: install_mode=auto-install-on-init, but the installer script could not be resolved; run 'repo-harness run install-agent-fleet' manually."
+    echo "- Agent fleet: install_mode=auto-install-on-init, but the installer script could not be resolved; run 'rh run install-agent-fleet' manually."
     return 0
   fi
 
@@ -671,7 +671,7 @@ pi_maybe_install_agent_fleet() {
     return 0
   fi
 
-  echo "[warn] Agent fleet install failed (non-fatal); run 'repo-harness run install-agent-fleet' manually." >&2
+  echo "[warn] Agent fleet install failed (non-fatal); run 'rh run install-agent-fleet' manually." >&2
   printf '%s\n' "$install_output" | sed 's/^/  /'
 }
 
@@ -805,7 +805,7 @@ $PI_REFERENCE_CONFIG_STUB_MARKER
 > **Runtime Docs**: user-level repo-harness reference
 > **Doc ID**: $doc_id
 > **Version**: $version
-> **Source Command**: \`repo-harness docs path $doc_id\`
+> **Source Command**: \`rh docs path $doc_id\`
 
 This repo keeps workflow facts and runtime artifacts locally under \`.ai/\`.
 The full generic runtime guide is supplied by the installed repo-harness
@@ -815,8 +815,8 @@ copy of shared documentation.
 Use:
 
 \`\`\`bash
-repo-harness docs path $doc_id
-repo-harness docs show $doc_id
+rh docs path $doc_id
+rh docs show $doc_id
 \`\`\`
 EOF_REFERENCE_STUB
 }
@@ -1158,7 +1158,7 @@ pi_write_context_map() {
   "version": 1,
   "profile": "$(pi_context_profile)",
   "functional_block_selector": {
-    "script": "repo-harness run select-agent-context-blocks",
+    "script": "rh run select-agent-context-blocks",
     "config_file": ".ai/context/agent-context-blocks.txt",
     "env": "REPO_HARNESS_CONTEXT_BLOCKS",
     "rule": "compatibility selector; capability registry is the source of truth"
@@ -1357,10 +1357,10 @@ pi_ensure_task_sync() {
   "name": "$project_name",
   "private": true,
   "scripts": {
-    "check:brain": "repo-harness brain check",
-    "check:context-files": "repo-harness run check-context-files",
-    "check:deploy-sql": "repo-harness run check-deploy-sql-order",
-    "sync:brain": "repo-harness brain sync"
+    "check:brain": "rh brain check",
+    "check:context-files": "rh run check-context-files",
+    "check:deploy-sql": "rh run check-deploy-sql-order",
+    "sync:brain": "rh brain sync"
   }
 }
 EOF_PACKAGE
@@ -1379,19 +1379,19 @@ const file = process.argv[1];
 const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
 pkg.private ??= true;
 pkg.scripts ??= {};
-pkg.scripts["check:brain"] = "repo-harness brain check";
+pkg.scripts["check:brain"] = "rh brain check";
 if (pkg.scripts["check:brain-manifest"] === "repo-harness run check-brain-manifest") {
   delete pkg.scripts["check:brain-manifest"];
 }
-pkg.scripts["check:context-files"] = "repo-harness run check-context-files";
-pkg.scripts["check:deploy-sql"] = "repo-harness run check-deploy-sql-order";
+pkg.scripts["check:context-files"] = "rh run check-context-files";
+pkg.scripts["check:deploy-sql"] = "rh run check-deploy-sql-order";
 if (pkg.scripts["check:task-workflow"] === "repo-harness run check-task-workflow --strict") {
   delete pkg.scripts["check:task-workflow"];
 }
 if (pkg.scripts["check:architecture-sync"] === "repo-harness run check-architecture-sync") {
   delete pkg.scripts["check:architecture-sync"];
 }
-pkg.scripts["sync:brain"] = "repo-harness brain sync";
+pkg.scripts["sync:brain"] = "rh brain sync";
 if (pkg.scripts["sync:brain-docs"] === "repo-harness run sync-brain-docs --all") {
   delete pkg.scripts["sync:brain-docs"];
 }

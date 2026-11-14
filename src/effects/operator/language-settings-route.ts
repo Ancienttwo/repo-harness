@@ -24,7 +24,7 @@ export interface OperatorLanguageSettingsAdapter {
 }
 
 export function requireLanguageSettings(adapter?: OperatorLanguageSettingsAdapter): OperatorLanguageSettingsAdapter {
-  if (!adapter) throw new OperatorWriteRefusal(503, 'language_settings_unavailable', 'Language settings are not configured.', 'Start the console with repo-harness operator serve.');
+  if (!adapter) throw new OperatorWriteRefusal(503, 'language_settings_unavailable', 'Language settings are not configured.', 'Start the console with rh operator serve.');
   return adapter;
 }
 
@@ -79,7 +79,7 @@ function readDocumentationPolicy(repositoryId: string, env: NodeJS.ProcessEnv | 
   }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new OperatorWriteRefusal(409, 'policy_missing', 'The repository policy file is missing.', 'repo-harness init');
+      throw new OperatorWriteRefusal(409, 'policy_missing', 'The repository policy file is missing.', 'rh init');
     }
     throw new OperatorWriteRefusal(409, 'policy_unreadable', 'The repository policy file cannot be read.', 'Make .ai/harness/policy.json a readable regular file, then retry.');
   }

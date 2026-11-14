@@ -45,7 +45,7 @@ Manual probe: to see what named test files do on one runner for a branch head, d
   - Name each PR, branch, task and agent by a name that the human knows. Leave out hashes, paths, commands and test counts unless the human needs one to act.
   - Give each thread exactly one status tag. The tags are `[merged #N]`, `[open PR #N]`, `[in flight <branch>]`, `[verified, uncommitted]`, `[reverted #N]`, `[planned, not started]` and `[blocked: <reason>]`. A thread with no tag is not done.
   - Say what changed for the human, not how the Bot did it. Give the source of each fact or mark it as an inference. Keep planned, dispatched, implemented, verified, merged and released states distinct.
-  - When the task has a decision trail (`repo-harness run decision-trail render`) and the work ran unattended, end the reply with an `Attention` section. Name the reviewer model on the first line. The reviewer must be a different model from the one that did the work. List decisions with weak or missing evidence, verification that the work claims without proof, and choices that look risky in hindsight. "No flags" is a valid value.
+  - When the task has a decision trail (`rh run decision-trail render`) and the work ran unattended, end the reply with an `Attention` section. Name the reviewer model on the first line. The reviewer must be a different model from the one that did the work. List decisions with weak or missing evidence, verification that the work claims without proof, and choices that look risky in hindsight. "No flags" is a valid value.
   - Adapted from the pstack ketchup and recall skills (cursor/plugins, MIT, Lauren Tan).
 
 ## Lessons Retro
@@ -54,7 +54,7 @@ Manual probe: to see what named test files do on one runner for a branch head, d
 - The ledger keeps one watermark line before the first entry: `reviewed-through: <full commit SHA>`. If the line is missing, the first retro reviews the last 24 hours and adds it.
 - Each night, review the default-branch history after the watermark: `git log --first-parent <watermark>..origin/main`. Skip commits that change only `tasks/lessons.md`.
 - Look for three signals: a fix that repairs recent work, a change that should not have merged, and verification that was too thin for the changed behavior. A revert or a follow-up hotfix is evidence.
-- Add at most one entry for each theme on one day. Keep the fields that `repo-harness run maintenance-triage` reads. `- Date:` starts each entry:
+- Add at most one entry for each theme on one day. Keep the fields that `rh run maintenance-triage` reads. `- Date:` starts each entry:
 
 ```markdown
 - Date: <YYYY-MM-DD>
@@ -112,7 +112,7 @@ runtime or task authority.
 
 The orchestrator seat is the long-lived coordinator and integrator seat of
 `repo-harness-issue-flow`. Start it with the argv that
-`repo-harness seats argv orchestrator` prints. It dispatches work and follows
+`rh seats argv orchestrator` prints. It dispatches work and follows
 PRs and CI. It edits no product code. It may call the read-only roles
 `explorer` and `deep-reasoner` as sub-agents. The gatekeeper, the writers
 (`fast-worker`, `deep-worker`, `root-cause-prover`) and the Codex

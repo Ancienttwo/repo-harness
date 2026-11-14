@@ -82,7 +82,7 @@ test('update migrates retired automatic projection settings once and readers ref
   writeFileSync(f.path, JSON.stringify({ brainRoot: '/existing/vault', architecture: {
     projection_provider: 'archctx', projection_apply: 'automatic', projection_failure_gate: 'strict', projection_timeout_ms: 90000,
   } }));
-  expect(() => readGlobalArchitectureConfiguration(f.env)).toThrow('run `repo-harness update` to migrate');
+  expect(() => readGlobalArchitectureConfiguration(f.env)).toThrow('run `rh update` to migrate');
   const migrated = ensureGlobalArchitectureProjection(f.env, globalConfigurationWriter(f.env));
   expect(migrated).toMatchObject({ status: 'ok', detail: expect.stringContaining('migrated retired automatic projection settings') });
   expect(JSON.parse(readFileSync(f.path, 'utf8'))).toEqual({ brainRoot: '/existing/vault', architecture: {
@@ -114,7 +114,7 @@ test('adoption removes architecture settings and every other policy key outside 
     architecture: {
       projection_provider: 'disabled', projection_apply: 'disabled', projection_version: '0.0.1',
       projection_failure_gate: 'strict', projection_timeout_ms: 1000, freshness_gate: 'strict', gate_min_severity: 'high',
-      requests_dir: 'docs/architecture/requests', queue_script: 'repo-harness run architecture-queue',
+      requests_dir: 'docs/architecture/requests', queue_script: 'rh run architecture-queue',
       rule: 'hooks record architecture queue cards and sync controlled local context blocks; agents author semantic snapshots and diagrams',
     },
   });

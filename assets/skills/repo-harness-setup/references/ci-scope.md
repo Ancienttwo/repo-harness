@@ -9,7 +9,7 @@ other families.
 ## Authority
 
 - Confirm the target repo path (step 1 of the shared preflight in `../SKILL.md`).
-  The `repo-harness init --dry-run` step does not apply. This mode does not
+  The `rh init --dry-run` step does not apply. This mode does not
   change harness files.
 - The target workflow, selector, planner, gate, their tests and the release
   runbook or CI note are user-authored files. Edit them in place for the
@@ -132,6 +132,6 @@ Put each limit in the PR description.
 
 ## Boundaries
 
-- Does not run `repo-harness init` or change harness files.
+- Does not run `rh init` or change harness files.
 - Does not dispatch release validation, publish or change repository settings.
 - Does not select platform families from package membership.

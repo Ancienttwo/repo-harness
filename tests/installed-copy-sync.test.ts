@@ -492,7 +492,7 @@ describe("Codex installed copy sync", () => {
       cpSync(join(ROOT, "assets", "skill-commands", "repo-harness-architecture"), join(source, "assets", "skill-commands", "repo-harness-architecture"), { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
       for (const root of roots) mkdirSync(root, { recursive: true });
-      // `repo-harness init` runs this script without a selection; the script default (every plugin) is under test.
+      // `rh init` runs this script without a selection; the script default (every plugin) is under test.
       const env: NodeJS.ProcessEnv = { ...process.env, AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: "0", CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] };
       delete env.REPO_HARNESS_INSTALL_PLUGINS;
       const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], { cwd: ROOT, encoding: "utf-8", timeout: 60000, env });

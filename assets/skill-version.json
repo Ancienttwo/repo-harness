@@ -134,7 +134,7 @@
     },
     {
       "version": "0.5.3",
-      "description": "Fixes repo-harness update --version so the update command can install a pinned package version without being intercepted by the top-level CLI version flag"
+      "description": "Fixes rh update --version so the update command can install a pinned package version without being intercepted by the top-level CLI version flag"
     },
     {
       "version": "0.6.0",

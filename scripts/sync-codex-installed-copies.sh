@@ -353,7 +353,7 @@ remove_retired_owned_facades() {
     else
       local ownership_status=$?
       [[ "$ownership_status" -eq 2 ]] || exit 1
-      echo "[sync-installed] preserving retired facade $dest. Run: repo-harness upgrade" >&2
+      echo "[sync-installed] preserving retired facade $dest. Run: rh upgrade" >&2
     fi
   done
 }
