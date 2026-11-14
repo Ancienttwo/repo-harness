@@ -491,6 +491,11 @@ describe("canonical adoption plan", () => {
       // A stub marker alone is no proof: an edited stub is kept.
       const editedStub = "<!-- repo-harness: reference-config-stub v1 -->\n# repo-harness Reference: external-tooling\n\nMy notes.\n";
       writeFileSync(join(repo, "docs", "reference-configs", "external-tooling.md"), editedStub);
+      // A Windows checkout of a stub that v0.32.0 wrote has CRLF line endings; it is still a released stub.
+      const stubPath = join(repo, "docs", "reference-configs", "design-options.md");
+      const currentStub = planAdoption({ repoRoot: repo, mode: "standard", apply: false }).operations
+        .find((operation) => operation.path === "docs/reference-configs/design-options.md" && operation.kind === "writeFile") as { content: string };
+      writeFileSync(stubPath, currentStub.content.replaceAll("`rh docs ", "`repo-harness docs ").replaceAll("\n", "\r\n"));
       const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: true });
       expect(plan.warnings.filter((warning) => warning.code === "customized-managed-value").map((warning) => warning.message)).toEqual([
         "Preserving docs/reference-configs/external-tooling.md: it is not a reference-config stub that a release wrote; delete it to get the current stub",
@@ -500,6 +505,7 @@ describe("canonical adoption plan", () => {
       expect(apply.ok).toBe(true);
       expect(readFileSync(join(repo, "docs", "reference-configs", "harness-overview.md"), "utf-8")).toBe("# Local Operations Guide\n");
       expect(readFileSync(join(repo, "docs", "reference-configs", "external-tooling.md"), "utf-8")).toBe(editedStub);
+      expect(readFileSync(stubPath, "utf-8")).toBe(currentStub.content);
     } finally {
       cleanup(repo);
     }

@@ -7,11 +7,14 @@ import { join } from "path";
 import {
   GITIGNORE_MANAGED_BLOCK_CONTENT,
   gitignoreManagedBlockOperation,
+  ignoreBlockProof,
   RUNTIME_STATE_IGNORE_CONTENT,
   RUNTIME_STATE_IGNORE_MARKER,
   removeRuntimeStateIgnoreBlock,
+  runtimeStateIgnoreOperation,
   userExcludesFilePath,
 } from "../../src/effects/adoption/gitignore-plan";
+import { upsertManagedBlock } from "../../src/core/adoption/managed-block";
 
 // A repository root without files: no retired runtime rule is kept.
 const ABSENT_REPO = join(tmpdir(), "gitignore-plan-absent-repo");
@@ -109,6 +112,14 @@ describe("gitignore managed block .repo-harness rule", () => {
       expect(kept.status).toBe(0);
       expect(kept.stderr).toContain("[repo-harness] kept edited managed block in .gitignore: # BEGIN: claude-runtime-temp (managed by repo-harness)");
       expect(readFileSync(join(cwd, ".gitignore"), "utf8")).toBe(edited);
+
+      // A released block with a retired-rule section, in a CRLF file, is replaced like in the TS planner.
+      const retiredSection = ["", "# Retired runtime state that still exists; repo-harness upgrade lists these files", ".claude/.session-id", "tasks/current.md"];
+      const releasedRetired = ["# BEGIN: repo-harness generated-runtime", GITIGNORE_MANAGED_BLOCK_CONTENT, ...retiredSection, "# END: repo-harness generated-runtime"].join("\n");
+      writeFileSync(join(cwd, ".gitignore"), `before/\n${releasedRetired}\nafter/\n`.replaceAll("\n", "\r\n"));
+      expect(ensure().status).toBe(0);
+      expect(readFileSync(join(cwd, ".gitignore"), "utf8"))
+        .toBe(`before/\r\n# BEGIN: repo-harness generated-runtime\n${GITIGNORE_MANAGED_BLOCK_CONTENT}\n# END: repo-harness generated-runtime\nafter/\r\n`);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -192,6 +203,23 @@ describe("gitignore managed block .repo-harness rule", () => {
     expect(operation.path).toBe(".gitignore");
     expect(operation.content.split("\n")).toContain(".repo-harness/");
     expect(operation.content).not.toContain(".repo-harness/chatgpt-browser.tokens.json");
+  });
+
+  test("a retired-rule subset proves a project block only at the rendered section position", () => {
+    const header = "# Retired runtime state that still exists; rh upgrade lists these files";
+    const project = (...lines: string[]) => ["# BEGIN: repo-harness generated-runtime", GITIGNORE_MANAGED_BLOCK_CONTENT, ...lines, "# END: repo-harness generated-runtime"].join("\n");
+    const proof = ignoreBlockProof(gitignoreManagedBlockOperation(ABSENT_REPO, "planned", "custom-local/"));
+    expect(proof(project("", header, ".claude/.session-id", "tasks/current.md", "", "custom-local/"))).toBe(true);
+    expect(proof(project("", "custom-local/", "", header, "tasks/current.md"))).toBe(false);
+    expect(proof(project("", header, "", "custom-local/"))).toBe(false);
+    expect(proof(project("", header, "tasks/current.md", "my-rule/", "", "custom-local/"))).toBe(false);
+    expect(proof(project("my-rule/", "", "custom-local/"))).toBe(false);
+
+    // The user excludes renderer has no retired section, so an injected one is an edit.
+    const excludes = runtimeStateIgnoreOperation("/home/user/.config/git/ignore");
+    const injected = [`# BEGIN: ${RUNTIME_STATE_IGNORE_MARKER}`, RUNTIME_STATE_IGNORE_CONTENT, "", header, "tasks/current.md", `# END: ${RUNTIME_STATE_IGNORE_MARKER}`].join("\n");
+    expect(ignoreBlockProof(excludes)(injected)).toBe(false);
+    expect(upsertManagedBlock(`${injected}\n`, excludes, ignoreBlockProof(excludes))).toMatchObject({ changed: false, kept: `# BEGIN: ${RUNTIME_STATE_IGNORE_MARKER}` });
   });
 
   test("extra content is appended without disturbing the directory rule", () => {

@@ -6,7 +6,7 @@ import { managedBlockMarker, renderManagedBlock } from "../../core/adoption/mana
 import { makeOperationId } from "../../core/adoption/operations";
 import { gitSpawnSync } from "../git/runner";
 import { RETIRED_RUNTIME_IGNORE_RULES, retiredRuntimeRuleFiles } from "../upgrade/legacy-inventory";
-import { isReleasedIgnoreBlock } from "../upgrade/released-values";
+import { isReleasedProjectIgnoreBlock, isReleasedUserExcludesBlock, isRetiredRuleSection } from "../upgrade/released-values";
 
 export const GITIGNORE_MANAGED_BLOCK_MARKER = "repo-harness generated-runtime";
 
@@ -29,28 +29,33 @@ function gitignoreManagedBlockContent(repoRoot: string, extraContent: string): s
   return [GITIGNORE_MANAGED_BLOCK_CONTENT, retiredContent, extraContent].filter((content) => content.trim().length > 0).join("\n\n");
 }
 
-/** The block without its current retired-rule section: the header and the in-order retired rules after it. */
-function withoutRetiredSection(block: string): string {
-  const lines = block.split("\n");
-  const at = lines.indexOf(RETIRED_RUNTIME_HEADER);
-  if (at < 1 || lines[at - 1] !== "") return block;
-  let end = at + 1;
-  let next = 0;
-  for (; end < lines.length; end++) {
-    const index = RETIRED_RUNTIME_IGNORE_RULES.indexOf(lines[end]!, next);
-    if (index === -1) break;
-    next = index + 1;
-  }
-  return [...lines.slice(0, at - 1), ...lines.slice(end)].join("\n");
+/**
+ * The current project block with any retired-rule subset at the place where
+ * `gitignoreManagedBlockContent` renders the section: directly after the base content.
+ */
+function isCurrentProjectBlock(operation: AppendManagedBlockOperation, block: string): boolean {
+  const { begin, end } = managedBlockMarker(operation.marker);
+  const content = operation.content.trimEnd();
+  if (!content.startsWith(GITIGNORE_MANAGED_BLOCK_CONTENT)) return block === renderManagedBlock(operation);
+  const afterBase = content.slice(GITIGNORE_MANAGED_BLOCK_CONTENT.length);
+  const ownSection = afterBase.startsWith(`\n\n${RETIRED_RUNTIME_HEADER}\n`) ? afterBase.indexOf("\n\n", 2) : 0;
+  const prefix = `${begin}\n${GITIGNORE_MANAGED_BLOCK_CONTENT}`;
+  const suffix = `${ownSection === -1 ? "" : afterBase.slice(ownSection)}\n${end}`;
+  return block.length >= prefix.length + suffix.length && block.startsWith(prefix) && block.endsWith(suffix)
+    && isRetiredRuleSection(block.slice(prefix.length, block.length - suffix.length), RETIRED_RUNTIME_HEADER, RETIRED_RUNTIME_IGNORE_RULES);
 }
 
 /**
- * Proof that an existing ignore block is managed: a released block, or the
- * current rendering of this operation with any retired-rule subset.
+ * Proof that an existing ignore block is managed. A project block is a released
+ * block or the current rendering with any retired-rule subset. The user excludes
+ * renderer has no retired section, so its block must equal a released block.
  */
 export function ignoreBlockProof(operation: AppendManagedBlockOperation): (block: string) => boolean {
-  const current = withoutRetiredSection(renderManagedBlock(operation));
-  return (block) => isReleasedIgnoreBlock(block) || withoutRetiredSection(block) === current;
+  if (operation.marker === GITIGNORE_MANAGED_BLOCK_MARKER) {
+    return (block) => isReleasedProjectIgnoreBlock(block) || isCurrentProjectBlock(operation, block);
+  }
+  if (operation.marker === RUNTIME_STATE_IGNORE_MARKER) return isReleasedUserExcludesBlock;
+  return () => false;
 }
 
 export function gitignoreManagedBlockOperation(

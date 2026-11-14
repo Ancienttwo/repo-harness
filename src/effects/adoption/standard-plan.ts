@@ -411,7 +411,8 @@ function addReferenceOperations(repoRoot: string, documentationProfile: string, 
     const target = `docs/reference-configs/${name}`;
     const existing = fileContent(repoRoot, target);
     const stub = referenceStub(name);
-    if (existing !== undefined && existing !== stub && !isReleasedReferenceConfig(name.replace(/\.md$/, ""), existing)) {
+    // A Windows checkout converts LF to CRLF; only other byte differences are edits.
+    if (existing !== undefined && existing.replaceAll("\r\n", "\n") !== stub && !isReleasedReferenceConfig(name.replace(/\.md$/, ""), existing)) {
       warnings.push({ code: "customized-managed-value", message: `Preserving ${target}: it is not a reference-config stub that a release wrote; delete it to get the current stub`, risk: "low" });
       continue;
     }
