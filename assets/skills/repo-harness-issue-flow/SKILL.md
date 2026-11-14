@@ -170,7 +170,9 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
 - Dispatch. After the owner approves a batch parent and its plan comment,
   the orchestrator dispatches the plan's issues in plan order with no other
   owner step. A new issue or a changed order goes to the owner or to a joint
-  decision.
+  decision. A new issue that only closes a security gap (no accepted residual,
+  no relaxed control, no grown scope) joins a batch by joint decision, with a
+  notice to the owner.
 - Intake. Open issues are cleared before new ones are filed. During a batch,
   file a new issue only when it blocks an issue of the release set, records
   a defect that a user meets, or the owner asks for it. Search the open
