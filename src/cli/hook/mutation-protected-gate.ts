@@ -22,9 +22,12 @@ import { PROTECTED_REPO_DIRS } from './mutation-protected-dirs';
 export const escapePattern = (text: string) => text.replace(/[\\*?[\]{},~]/g, '\\$&');
 export const unescapePattern = (pattern: string) => pattern.replace(/\\(.)/gs, '$1');
 
-/** Shell pattern match of one path segment; a pattern that does not compile matches, so the guard fails closed. */
-export function segmentMatches(pattern: string, name: string): boolean {
-  // `loose` reads each bracket expression as any one character; it decides when a bracket does not compile, such as `[--x]`.
+/**
+ * Shell pattern match of one path segment. By default a nested or invalid bracket matches every name, as on main, so the evaluator
+ * keeps each main denial (#2369 rule 1). The gate trigger passes `exact`: only a POSIX class (`[[:lower:]]`) matches every name, and a
+ * bracket that does not compile, such as `[--x]`, matches one character, so a command line such as `rh x [--dry-run]` does not trigger.
+ */
+export function segmentMatches(pattern: string, name: string, exact = false): boolean {
   let source = '', loose = '';
   const add = (strict: string, wide = strict) => { source += strict; loose += wide; };
   for (let i = 0; i < pattern.length; i++) {
@@ -35,8 +38,8 @@ export function segmentMatches(pattern: string, name: string): boolean {
     if (ch === '\\') add((pattern[++i] ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     else if (ch === '*') add('.*');
     else if (ch === '?') add('.');
-    // A POSIX class, equivalence class or collating symbol (`[[:lower:]]`) is outside this grammar, so the pattern matches.
-    else if (close > 0 && /\[[:=.]/.test(pattern.slice(i + 1, close))) return true;
+    // A POSIX class, equivalence class or collating symbol is outside this grammar, so the pattern matches.
+    else if (close > 0 && (exact ? /\[[:=.]/ : /\[/).test(pattern.slice(i + 1, close))) return true;
     else if (close > 0) {
       add(`[${negated ? '^' : ''}${unescapePattern(pattern.slice(i + (negated ? 2 : 1), close)).replace(/[\\\]]/g, '\\$&')}]`, '.');
       i = close;
@@ -44,8 +47,8 @@ export function segmentMatches(pattern: string, name: string): boolean {
   }
   // A match with or without case counts: the shell glob is case-sensitive, but `nocaseglob` and the filesystem are not.
   // `u` folds `ſ` to `s` as APFS does.
-  for (const text of [source, loose]) {
-    try { return new RegExp(`^${text}$`, 'u').test(name) || new RegExp(`^${text}$`, 'iu').test(name); } catch { /* try the loose form */ }
+  for (const text of exact ? [source, loose] : [source]) {
+    try { return new RegExp(`^${text}$`, 'u').test(name) || new RegExp(`^${text}$`, 'iu').test(name); } catch { /* the next form */ }
   }
   return true;
 }
@@ -200,7 +203,7 @@ class Resolver {
     // bash 3.2 lets a pattern that starts with `.` match `..`, and a later `..` leaves the matched directory again.
     if (rest.some(part => part === '..' || (part.startsWith('.') && globIndex(part) >= 0 && segmentMatches(part, '..')))) return true;
     const dir = resolve(base, unescapePattern(pattern.slice(0, cut)) || '.');
-    return this.inProtected(dir) || (this.isRoot(dir) && PROTECTED_REPO_DIRS.some(name => segmentMatches(rest[0]!, name)));
+    return this.inProtected(dir) || (this.isRoot(dir) && PROTECTED_REPO_DIRS.some(name => segmentMatches(rest[0]!, name, true)));
   }
 
   /** Rule 8: whether a start path is the repository root or an ancestor of it. */
@@ -259,6 +262,8 @@ interface Word {
   quoted: boolean;
   /** An unquoted `NAME=` or `NAME+=` prefix. */
   assign: boolean;
+  /** The body of each rule 3 data span, in order; the value holds DATA_MARK at each span. */
+  spans?: string[];
 }
 
 interface Op {
@@ -277,21 +282,23 @@ interface Lexed {
   readonly violations: string[];
 }
 
+/** Stands for a rule 3 data span in a word until the gate knows the word's position (joint decision on F5). */
+const DATA_MARK = '\u0000';
 const DATA_HEAD = /"\$\(cat <<\s?'([A-Za-z_][A-Za-z0-9_]*)'\n/y;
 const REDIRECT = /^(\d*)(>>|>\||>&|>|<>|<&|<<<|<<-|<<|<|&>>|&>)$/;
 
-/** Rule 3: the end of a `"$(cat <<'D' ... D\n)"` data span at `at`, or -1. The body has no `$`, backtick, `\`, `"` or delimiter line. */
-function dataSpanEnd(text: string, at: number): number {
+/** Rule 3: the `"$(cat <<'D' ... D\n)"` data span at `at`, or null. The body has no `$`, backtick, `\`, `"` or delimiter line. */
+function dataSpan(text: string, at: number): { end: number; body: string } | null {
   DATA_HEAD.lastIndex = at;
   const head = DATA_HEAD.exec(text);
-  if (!head) return -1;
+  if (!head) return null;
   const close = `\n${head[1]}\n)"`;
   const start = DATA_HEAD.lastIndex;
   const end = text.indexOf(close, start - 1);
-  if (end < 0) return -1;
+  if (end < 0) return null;
   const body = text.slice(start, end);
-  if (/[$`\\"]/.test(body) || body.split('\n').includes(head[1]!)) return -1;
-  return end + close.length;
+  if (/[$`\\"]/.test(body) || body.split('\n').includes(head[1]!)) return null;
+  return { end: end + close.length, body };
 }
 
 interface Frame { tokens: Token[]; closer: ')' | '`' | null; depth: number; quote: boolean }
@@ -366,8 +373,13 @@ function lex(text: string): Lexed {
     if (f.closer === '`' && ch === '`') { pop(); continue; }
     if (f.closer === ')' && ch === ')' && f.depth === 0) { pop(); continue; }
     if (ch === '"') {
-      const end = dataSpanEnd(text, i);
-      if (end > 0) { literal('DATA'); i = end - 1; continue; }
+      const span = dataSpan(text, i);
+      if (span) {
+        literal(DATA_MARK);
+        (current().spans ??= []).push(span.body);
+        i = span.end - 1;
+        continue;
+      }
       current().quoted = true;
       f.quote = true;
       continue;
@@ -382,6 +394,18 @@ function lex(text: string): Lexed {
     }
     if (ch === '`') { push('`'); continue; }
     if (ch === '$' && text[i + 1] === '(') { i++; push(')'); continue; }
+    // In `$'...'` a backslash escapes the quote, so `$'\''` is one character; the joint decision on F4 puts it outside the strict form.
+    if (ch === '$' && text[i + 1] === "'") {
+      violations.push("an ANSI-C $'...' string");
+      let end = i + 2;
+      while (end < text.length && text[end] !== "'") end += text[end] === '\\' ? 2 : 1;
+      const w = current();
+      w.expand = true; w.quoted = true;
+      for (const c of text.slice(i + 2, end)) literal(c);
+      if (end >= text.length) { violations.push('an unclosed quote'); break; }
+      i = end;
+      continue;
+    }
     if (ch === '$' && text[i + 1] === '{') {
       let depth = 0, end = i + 1;
       for (; end < text.length; end++) {
@@ -439,7 +463,7 @@ function lex(text: string): Lexed {
     }
     const w = current();
     if ('*?[{'.includes(ch)) w.glob = true;
-    // `$name`, `$1` and `$'...'` (ANSI-C quoting) change the word at run time.
+    // `$name` and `$1` change the word at run time.
     if (ch === '$') w.expand = true;
     if (ch === '=' && !w.quoted && !w.expand && !w.assign && /^[A-Za-z_][A-Za-z0-9_]*\+?$/.test(w.value)) w.assign = true;
     w.value += ch; w.pattern += ch;
@@ -462,6 +486,8 @@ interface Command {
   readonly redirects: Redirect[];
   /** The separator before the pipeline that holds this command; '' at the start. */
   readonly before: string;
+  /** The operator right after this command: `|` inside a pipeline, else the list separator; 'end' at the end. */
+  readonly after: string;
   readonly pipeline: number;
   readonly last: boolean;
   readonly size: number;
@@ -477,7 +503,7 @@ function commands(tokens: readonly Token[], violations: string[]): Step[] {
   let words: Word[] = [], redirects: Redirect[] = [], before = '', pipeline = 0, inPipeline: Command[] = [];
   const end = (separator: string) => {
     if (words.length || redirects.length) {
-      const command: Command = { kind: 'command', words, redirects, before, pipeline, last: false, size: 0 };
+      const command: Command = { kind: 'command', words, redirects, before, after: separator, pipeline, last: false, size: 0 };
       result.push(command); inPipeline.push(command);
     } else if (separator !== '\n' && separator !== '(' && separator !== ')' && separator !== 'end') violations.push(`an empty command before ${separator}`);
     words = []; redirects = [];
@@ -614,6 +640,35 @@ function recursionFinding(args: readonly Word[], dirs: Dirs, resolver: Resolver)
 // The gate
 // ---------------------------------------------------------------------------
 
+/** Programs whose operands are write targets; only their operands and redirect targets take the writable-directory exemption. */
+const WRITERS = new Set(['touch', 'mkdir', 'rm', 'rmdir', 'mv', 'tee', 'ln', 'truncate']);
+const MOVES_DIR = new Set(['cd', 'pushd', 'popd']);
+/** The option before a commit message, PR or issue body or title: the values that A3 keeps as data. */
+const TEXT_OPTION: Record<string, RegExp> = { git: /^-[A-Za-z]*m$|^--message$/, gh: /^-[bt]$|^--(?:body|title)$/ };
+const TEXT_GLUED: Record<string, RegExp> = { git: /^--message=/, gh: /^--(?:body|title)=/ };
+
+/** A rule 3 span is data as an operand of a read-only program other than cd, or as a message, body or title value of git or gh. */
+function dataPosition(args: readonly Word[], n: number): boolean {
+  const program = args[0]!;
+  if (n === 0 || program.quoted || program.expand) return false;
+  if (program.value !== 'cd' && readOnly(args)) return true;
+  const option = TEXT_OPTION[program.value], glued = TEXT_GLUED[program.value];
+  return !!option && !!glued && (option.test(args[n - 1]!.value) || glued.test(args[n]!.value));
+}
+
+/** Replaces each span mark with DATA in a data position, else with the span body, which then counts for rules 2 and 7. */
+function fillSpans(word: Word, data: boolean): void {
+  const spans = word.spans;
+  if (!spans) return;
+  const fill = (text: string, form: (body: string) => string) => {
+    let n = 0;
+    return text.replaceAll(DATA_MARK, () => data ? 'DATA' : form(spans[n++] ?? ''));
+  };
+  word.value = fill(word.value, body => body);
+  word.pattern = fill(word.pattern, escapePattern);
+  word.spans = undefined;
+}
+
 const NAME = new RegExp(`(?:^|[^\\w.-])(?:${PROTECTED_REPO_DIRS.map(name => name.toUpperCase()).join('|')})(?![\\w.-])`);
 const namesProtected = (text: string) => NAME.test(text.toUpperCase());
 const WRITE_REDIRECT = /^\d*(?:>|>>|>\||<>|&>|&>>)$/;
@@ -640,8 +695,29 @@ export function protectedNameGate(command: string, repoRoot: string, cwd: string
     const outer: Dirs[] = [];
     const steps = commands(tokens, violations);
     const list = steps.filter((step): step is Command => step.kind === 'command');
+    // Rule 3 spans: positions first, since a filled operand can change what readOnly reads.
+    for (const cmd of list) {
+      const data = cmd.words.map((_, n) => dataPosition(cmd.words, n));
+      cmd.words.forEach((word, n) => fillSpans(word, data[n]!));
+      for (const redirect of cmd.redirects) if (redirect.target) fillSpans(redirect.target, false);
+    }
+    // F1 (owner, 2026-11-14): the writable-directory exemption holds only for a write target with no earlier cd, pushd or popd.
+    const moved = new Map<Command, boolean>();
+    list.reduce((seen, cmd) => {
+      moved.set(cmd, seen);
+      const program = cmd.words[0];
+      return seen || (!!program && MOVES_DIR.has(program.value));
+    }, false);
+    const writeTarget = (cmd: Command, word: Word) => {
+      const program = cmd.words[0];
+      if (moved.get(cmd)) return false;
+      if (cmd.redirects.some(r => r.target === word)) return true;
+      return !!program && word !== program && !program.quoted && WRITERS.has(program.value);
+    };
     const pipelineTrigger = new Map<number, boolean>();
-    const wordNames = (word: Word, base: Dirs) => (namesProtected(word.value) && !(word.glob || word.expand ? false : resolver.writableLiteral(word.value, base)))
+    const exempt = (cmd: Command, word: Word, base: Dirs) => !word.glob && !word.expand && writeTarget(cmd, word)
+      && resolver.writableLiteral(word.value, base);
+    const wordNames = (cmd: Command, word: Word, base: Dirs) => (namesProtected(word.value) && !exempt(cmd, word, base))
       || (word.glob && !word.expand && resolver.mayReachProtected(word.pattern, base));
     for (const cmd of steps) {
       // A subshell does not move the shell that started it.
@@ -651,8 +727,8 @@ export function protectedNameGate(command: string, repoRoot: string, cwd: string
       }
       if (!pipelineTrigger.has(cmd.pipeline)) {
         const members = list.filter(other => other.pipeline === cmd.pipeline);
-        pipelineTrigger.set(cmd.pipeline, members.some(member => member.words.some(word => wordNames(word, dirs))
-          || member.redirects.some(r => (r.target !== null && wordNames(r.target, dirs)) || (r.body !== undefined && namesProtected(r.body)))));
+        pipelineTrigger.set(cmd.pipeline, members.some(member => member.words.some(word => wordNames(member, word, dirs))
+          || member.redirects.some(r => (r.target !== null && wordNames(member, r.target, dirs)) || (r.body !== undefined && namesProtected(r.body)))));
       }
       const named = pipelineTrigger.get(cmd.pipeline)!;
       trigger ||= named;
@@ -699,9 +775,11 @@ export function protectedNameGate(command: string, repoRoot: string, cwd: string
         const target = operands.length === 1 && !operands[0]!.expand && !operands[0]!.glob && !operands[0]!.value.startsWith('-')
           && !operands[0]!.value.startsWith('~') && operands[0]!.value ? operands[0]!.value : null;
         const next: Dirs = target === null ? null : isAbsolute(target) ? [resolve(target)] : dirs && dirs.map(dir => resolve(dir, target));
-        // bash runs each command of a pipeline in a subshell; zsh runs the last one in the shell itself.
+        // A cd before `|` runs in a subshell in bash and zsh, so it never moves the shell. A cd before `&` runs in the background,
+        // the last command of a pipeline runs in the shell only in zsh, and a cd after `||`, `;` or a newline may not have run:
+        // each of these adds to the directory set.
         if (cmd.size > 1 && !cmd.last) { /* no effect */ }
-        else if (cmd.size === 1 && (cmd.before === '' || cmd.before === '&&')) dirs = next;
+        else if (cmd.size === 1 && (cmd.before === '' || cmd.before === '&&') && cmd.after !== '&') dirs = next;
         else dirs = dirs && next && [...new Set([...dirs, ...next])];
       } else if (program && MOVES_SHELL.has(program.value)) dirs = null;
     }

@@ -252,7 +252,7 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
     } else if (leaves) candidates.push(target);
     // Relative, so a symlink below a protected directory that leaves the repository is not read as an external target.
     else {
-      const real = realRel(isAbsolute(candidate) ? candidate : `${base}/${candidate}`);
+      const real = protectedPath(rel) ? rel : realRel(isAbsolute(candidate) ? candidate : `${base}/${candidate}`);
       const hit = real === null ? null : protectedPath(real);
       if (hit) candidates.push(hit);
     }

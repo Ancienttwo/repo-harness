@@ -128,6 +128,11 @@ describe('Bash write tripwire host route', () => {
       // The protected-name gate allows a literal target inside a listed directory; the evaluator still denies a redirect into it.
       expect(invokeBash('touch _ops/dispatch/new.md').status).toBe(0);
       expect(invokeBash('touch _ops/other.md').status).toBe(2);
+      // A cd operand never takes the exemption, and a write after a cd, pushd or popd does not take it either (owner F1).
+      for (const command of ['cd _ops/dispatch/work && touch ../../other.md', 'cd _ops/dispatch/sub && find ../.. -delete',
+        'cd _ops/dispatch/sub && touch ../../env/x', 'cd src && touch ../_ops/dispatch/new.md']) {
+        expect({ command, status: invokeBash(command).status }).toEqual({ command, status: 2 });
+      }
       // A glob that can match a protected directory, or a symlink on either side of _ops, is judged by where the write can land.
       const outside = realpathSync(mkdtempSync('/tmp/bash-write-guard-outside-'));
       try {

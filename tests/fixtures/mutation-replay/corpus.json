@@ -16,7 +16,12 @@
     "echo x >&`rm -rf _ops`", "echo x >&\"$(echo y > _ops/x)\"", "echo $(sh <<EOF\nrm -rf _ops\nEOF\n)", "x=$(sh <<EOF\nrm -rf _ops\nEOF\n)",
     "$(true)rm -rf _ops", "$(true) rm -rf _ops", "`true` rm -rf _ops", "$X rm -rf _ops", "eval 'cd _ops' && rm -rf env",
     "sh -c 'cd _ops && rm -rf env'", "env -C _ops rm -rf env", "cat <<EOF > r.txt\n$(echo x > _ops/x)\nEOF",
-    "printf '%s' \"$(cat <<'D'\nhas $x\nD\n)\" > _ops/y", "pushd _ops && rm -rf env"
+    "printf '%s' \"$(cat <<'D'\nhas $x\nD\n)\" > _ops/y", "pushd _ops && rm -rf env",
+    "cd _ops/dispatch/work && touch ../../other.md", "cd _ops/dispatch/sub && find ../.. -delete", "cd _ops/dispatch/sub && touch ../../env/x", "cd _ops/dispatch/sub && git clean -fdx ../..",
+    "rm -f [[]", "rm -f [x--]", "rm -rf [z-a]", "cd /tmp & echo x > _ops/x", "cd /tmp & cp a _ops/x", "cd /tmp | echo x > _ops/x",
+    "echo $'\\'' ; rm -rf _ops/env #'", "echo $'\\'' > _ops/x #'", "rm -rf \"$(cat <<'D'\n_ops/env\nD\n)\"", "echo x > \"$(cat <<'D'\n_ops/x\nD\n)\"",
+    "cp a \"$(cat <<'D'\n_ops/x\nD\n)\"", "cd \"$(cat <<'D'\n_ops\nD\n)\" && touch x", "touch \"$(cat <<'D'\n_ops/x\nD\n)\"", "mkdir -p \"$(cat <<'D'\n_ops/x\nD\n)\"",
+    "mv a \"$(cat <<'D'\n_ops/x\nD\n)\"", "echo x | tee \"$(cat <<'D'\n_ops/x\nD\n)\"", "git rm -r \"$(cat <<'D'\n_ops\nD\n)\""
   ],
   "accepted": {
     "1": ["rm -rf ${X}ps", "rm -rf $(printf _o)ps", "rm -rf \"$P\"/env", "cd \"$(printf _o)ps\" && rm -rf env"],
