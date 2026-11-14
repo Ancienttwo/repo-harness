@@ -52,6 +52,7 @@
     "g\"it\" log -- _ops; perl -e 'unlink \"_ops/x\"'", "'git' log -- _ops; sh -c 'rm -rf env'",
     "git -C {.,-clog.showSignature=true} log -1 --format=%h -- _ops", "git -C $D log -1 -- _ops", "git -C \"$D\" log -- _ops",
     "git -C . -C ${D} log -- _ops", "git -C $(printf .) log -- _ops", "git -C * log -1 -- _ops",
+    "git -C $D log --output=${Y:-_ops}/env -1", "git -C $D diff --output=${Y:-_ref}/x", "git -C $D log --bogus -- MY_OPS", "git -C $D log $X # _ops",
     "git log -1 --format=\"_ops %+G?\"", "git log --format=\"% GK\" -- _ops/env", "git show -s --pretty='format:%-GS' HEAD -- _ops", "git shortlog --format=\"%+G?\" -- _ops"
   ],
   "accepted": {

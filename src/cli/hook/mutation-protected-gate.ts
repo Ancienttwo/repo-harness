@@ -682,7 +682,8 @@ const WRITE_REDIRECT = /^\d*(?:>|>>|>\||<>|&>|&>>)$/;
 
 export const PROTECTED_NAME_GUARD = 'ProtectedNameGuard';
 
-interface Finding { readonly reason: string; readonly fix: string }
+/** `leads`: the denial shows this finding ahead of the strict-form violations, which still feed the trigger. */
+interface Finding { readonly reason: string; readonly fix: string; readonly leads?: true }
 const STRICT = 'Name a protected directory only in simple commands of read-only programs (cat, rg, ls, git log, ...) or as a cp source.';
 const SPLIT = `Split the command line: run the command that names _ops or _ref alone. ${STRICT}`;
 const finding = (reason: string, fix = STRICT): Finding => ({ reason, fix });
@@ -770,7 +771,7 @@ function gitFinding(args: readonly Word[], split: boolean, commands: number): Fi
   if (git && GIT_READ.has(args[git.at]!.value)) {
     const sub = args[git.at]!.value;
     const dir = git.dirs.find(expands);
-    if (dir) return finding(`passes -C ${dir.value} to git, a directory that the shell expands`, GIT_LITERAL_DIR);
+    if (dir) return { ...finding(`passes -C ${dir.value} to git, a directory that the shell expands`, GIT_LITERAL_DIR), leads: true };
     return gitOptionFinding(args, git.at, split ? SPLIT : `Pass git ${sub} only options of its read list, or read with rg, cat or ls.`);
   }
   const sub = git ? args[git.at]!.value : null;
@@ -907,8 +908,7 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
         const known = decision === null;
         const cp = program.value === 'cp' && !program.quoted;
         const operands = args.slice(1);
-        // The expanded git -C directory has its own finding, whose fix names a literal path (#2757).
-        if (!known && decision!.fix !== GIT_LITERAL_DIR && operands.some(word => word.expand)) violations.push(`an expanded word for ${program.value}`);
+        if (!known && operands.some(word => word.expand)) violations.push(`an expanded word for ${program.value}`);
         if (cp) {
           if (operands.some(word => /^-[^-]*t|^--target-directory/.test(word.value))) findings.push(finding('cp with a target-directory option'));
           const destination = operands.filter(word => !word.value.startsWith('-')).at(-1);
@@ -949,7 +949,8 @@ function gate(command: string, repoRoot: string, cwd: string): GateDecision {
   if (recursion) {
     return { trigger, denial: { guard: PROTECTED_NAME_GUARD, reason: `The command runs ${recursion}.`, fix: 'Name the directories to clean below the repository root.' } };
   }
-  const first = !trigger ? null : violations[0] ? finding(`uses ${violations[0]}, outside the strict form`) : findings[0];
+  const first = !trigger ? null
+    : findings.find(f => f.leads) ?? (violations[0] ? finding(`uses ${violations[0]}, outside the strict form`) : findings[0]);
   return {
     trigger,
     denial: first ? { guard: PROTECTED_NAME_GUARD, reason: `The command names _ops or _ref and ${first.reason}.`, fix: first.fix } : null,

@@ -192,6 +192,8 @@ describe('Bash write tripwire host route', () => {
       expect(corpus.ordinary.map(row => row.replaceAll('${MANAGED}', managed)).filter(command => decide(command) !== 0)).toEqual([]);
       // #2757: a git -C directory that the shell expands can become a global option; the fix names a literal path.
       expect(protectedNameGate('git -C $D log -- _ops', cwd, cwd).denial?.fix).toBe('Write the git -C directory as a literal path (git -C <path>).');
+      // R1-F1: the -C finding leads the shown fix, and the expanded-word violation still feeds the raw-text trigger.
+      expect(protectedNameGate('git -C $D log --bogus -- MY_OPS', cwd, cwd).denial?.fix).toBe('Write the git -C directory as a literal path (git -C <path>).');
       // R1-F1: a quoted or escaped read-only program name is a finding of its own, so a later gate-only write cannot pass.
       const quotedLines = [...READ_ONLY].flatMap(name => {
         const args = name === 'git' ? [...GIT_READ.keys()].map(sub => `${sub} -- _ops/env`) : [name === 'gh' ? 'pr view _ops/env' : '_ops/env'];
