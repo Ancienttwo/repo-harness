@@ -50,7 +50,7 @@ check() {
         return
       fi ;;
     breaks)
-      found="$(sed -n 's/^Error: Invariant \(.*\) is violated\.$/\1/p' "$output" | head -1)"
+      found="$(sed -n 's/^Error: Invariant \(.*\) is violated\.$/\1/p' "$output" | awk 'NR == 1')"
       if [[ "$status" -ne 0 && "$found" == "$invariants" ]]; then
         printf '%s BREAKS:%s distinct_states=%s counterexample_length=%s\n' "$cfg" "$found" "$states" "$(grep -c '^State [0-9][0-9]*:' "$output")"
         return
